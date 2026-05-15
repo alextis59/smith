@@ -38,6 +38,9 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
     timeoutMs: options.runtime.timeoutMs,
     env: options.env
   });
+  const killShell = (): void => shell.kill();
+  process.once("SIGINT", killShell);
+  process.once("SIGTERM", killShell);
 
   try {
     for (let turn = 1; turn <= maxTurns; turn += 1) {
@@ -81,6 +84,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       }
     }
   } finally {
+    process.off("SIGINT", killShell);
+    process.off("SIGTERM", killShell);
     shell.kill();
   }
 
