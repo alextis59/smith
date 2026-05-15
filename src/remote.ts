@@ -3,6 +3,7 @@ import { loadConfig, parseCliConfigOverrides, resolveProfile } from "./config.js
 import { runSmithTask } from "./loop.js";
 import { loadSystemPrompt } from "./prompt.js";
 import { generateRemoteId, loadRemoteSession, saveRemoteSession } from "./remote-sessions.js";
+import { createTraceLogger } from "./trace.js";
 import { appendChatIn } from "./transcript.js";
 
 export type RemoteCliOptions = {
@@ -68,15 +69,18 @@ async function startRemote(options: RemoteCliOptions): Promise<void> {
   const selectedProfile = profileName ?? config.defaultProfile;
   const profile = resolveProfile(config, selectedProfile);
   const reviewerProfile = resolveProfile(config, config.runtime.dangerReviewProfile);
+  const systemPrompt = loadSystemPrompt(cwd);
+  const trace = createTraceLogger({ cwd, profileName: selectedProfile, profile, runtime: config.runtime, systemPrompt });
   const result = await runSmithTask({
     cwd,
     prompt: options.prompt,
     profile,
     reviewerProfile,
     runtime: config.runtime,
-    systemPrompt: loadSystemPrompt(cwd),
+    systemPrompt,
     maxTurns: options.maxTurns,
-    env: { ...process.env, SMITH_PROFILE: selectedProfile }
+    env: { ...process.env, SMITH_PROFILE: selectedProfile },
+    trace
   });
 
   const id = generateRemoteId();
@@ -85,7 +89,8 @@ async function startRemote(options: RemoteCliOptions): Promise<void> {
     createdAt: new Date().toISOString(),
     cwd,
     profile: selectedProfile,
-    transcript: result.transcript
+    transcript: result.transcript,
+    tracePath: trace.path
   });
   if (!options.quiet) process.stderr.write(`smith remote session saved: ${id}\n`);
   process.stdout.write(`${result.chatOut}\n`);
@@ -101,6 +106,8 @@ async function resumeRemote(options: RemoteCliOptions): Promise<void> {
   const config = loadConfig({ cwd, cli: { ...options.configOverrides, profile: profileName } });
   const profile = resolveProfile(config, profileName);
   const reviewerProfile = resolveProfile(config, config.runtime.dangerReviewProfile);
+  const systemPrompt = loadSystemPrompt(cwd);
+  const trace = createTraceLogger({ cwd, profileName, profile, runtime: config.runtime, systemPrompt });
   const result = await runSmithTask({
     cwd,
     prompt: answer,
@@ -108,16 +115,18 @@ async function resumeRemote(options: RemoteCliOptions): Promise<void> {
     profile,
     reviewerProfile,
     runtime: config.runtime,
-    systemPrompt: loadSystemPrompt(cwd),
+    systemPrompt,
     maxTurns: options.maxTurns,
-    env: { ...process.env, SMITH_PROFILE: profileName }
+    env: { ...process.env, SMITH_PROFILE: profileName },
+    trace
   });
 
   saveRemoteSession({
     ...session,
     cwd,
     profile: profileName,
-    transcript: result.transcript
+    transcript: result.transcript,
+    tracePath: trace.path
   });
   if (!options.quiet) process.stderr.write(`smith remote session saved: ${session.id}\n`);
   process.stdout.write(`${result.chatOut}\n`);

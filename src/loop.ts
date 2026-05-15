@@ -3,6 +3,7 @@ import { reviewDangerousCommand } from "./danger-review.js";
 import { completeWithProfile, type ProviderFetch } from "./providers/index.js";
 import { PtyShellRunner } from "./pty.js";
 import { appendChatIn, appendTerminalTurn, transcriptToMessages } from "./transcript.js";
+import type { TraceLogger } from "./trace.js";
 
 export type RunMode = "single" | "remote" | "interactive";
 
@@ -19,6 +20,7 @@ export type SmithRunOptions = {
   fetch?: ProviderFetch;
   onTerminalOutput?: (output: string) => void;
   onModelOutput?: (output: string) => void;
+  trace?: TraceLogger;
 };
 
 export type SmithRunResult = {
@@ -47,6 +49,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         options.profile,
         { env: options.env, fetch: options.fetch }
       );
+      options.trace?.write("model output", response.text);
       options.onModelOutput?.(response.text);
       const review = await reviewDangerousCommand({
         command: response.text,
@@ -60,14 +63,17 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       if (!review.allowed) {
         const blockedOutput = "Command too dangerous";
         transcript = appendTerminalTurn(transcript, response.text, blockedOutput);
+        options.trace?.write("terminal output", blockedOutput);
         options.onTerminalOutput?.(blockedOutput);
         continue;
       }
 
       const result = await shell.run(response.text, options.runtime.timeoutMs);
       transcript = appendTerminalTurn(transcript, result.command, result.output);
+      options.trace?.write("terminal output", result.output);
       if (result.output) options.onTerminalOutput?.(result.output);
       if (result.chatOut !== undefined) {
+        options.trace?.write("chat_out", result.chatOut);
         return { chatOut: result.chatOut, turns: turn, transcript };
       }
       if (result.timedOut) {

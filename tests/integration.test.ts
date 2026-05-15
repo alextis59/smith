@@ -21,6 +21,7 @@ describe("Smith CLI integration", () => {
     servers.push(provider.server);
 
     const cwd = mkdtempSync(join(tmpdir(), "smith-e2e-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
     mkdirSync(join(cwd, ".smith"), { recursive: true });
     writeFileSync(join(cwd, "README.md"), "fake project\n", "utf8");
     writeFileSync(
@@ -41,7 +42,7 @@ timeout_ms = 5000
     );
 
     const { stdout, stderr } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "inspect README"], {
-      env: { ...process.env, FAKE_KEY: "test" },
+      env: { ...process.env, HOME: home, FAKE_KEY: "test" },
       timeout: 10_000
     });
 

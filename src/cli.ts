@@ -7,6 +7,7 @@ import { initConfig, loadConfig, parseCliConfigOverrides, resolveProfile, userCo
 import { runSmithTask } from "./loop.js";
 import { loadSystemPrompt } from "./prompt.js";
 import { runRemoteCommand } from "./remote.js";
+import { createTraceLogger } from "./trace.js";
 
 export type ParsedArgs = {
   command: "help" | "version" | "run" | "remote" | "config" | "benchmark";
@@ -87,6 +88,13 @@ async function runCommand(args: string[]): Promise<void> {
   const profile = resolveProfile(config, overrides.profile ?? config.defaultProfile);
   const reviewerProfile = resolveProfile(config, config.runtime.dangerReviewProfile);
   const systemPrompt = loadSystemPrompt(cwd);
+  const trace = createTraceLogger({
+    cwd,
+    profileName: overrides.profile ?? config.defaultProfile,
+    profile,
+    runtime: config.runtime,
+    systemPrompt
+  });
   const prompt = rest.join(" ").trim();
 
   if (!prompt) {
@@ -101,6 +109,7 @@ async function runCommand(args: string[]): Promise<void> {
     reviewerProfile,
     runtime: config.runtime,
     systemPrompt,
+    trace,
     env: process.env,
     onTerminalOutput: (terminalOutput) => {
       process.stdout.write(`${terminalOutput}\n`);
@@ -127,6 +136,7 @@ async function runInteractive(
         reviewerProfile,
         runtime,
         systemPrompt,
+        trace: createTraceLogger({ cwd, profileName: "interactive", profile, runtime, systemPrompt }),
         env: process.env,
         onTerminalOutput: (terminalOutput) => {
           process.stdout.write(`${terminalOutput}\n`);
