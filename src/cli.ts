@@ -6,6 +6,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { initConfig, loadConfig, parseCliConfigOverrides, resolveProfile, userConfigPath } from "./config.js";
 import { runSmithTask } from "./loop.js";
 import { loadSystemPrompt } from "./prompt.js";
+import { runRemoteCommand } from "./remote.js";
 
 export type ParsedArgs = {
   command: "help" | "version" | "run" | "remote" | "config" | "benchmark";
@@ -40,6 +41,10 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
   }
   if (parsed.command === "config") {
     await runConfigCommand(parsed.rest);
+    return;
+  }
+  if (parsed.command === "remote") {
+    await runRemoteCommand(parsed.rest);
     return;
   }
   if (parsed.command === "run") {

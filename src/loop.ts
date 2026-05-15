@@ -8,6 +8,7 @@ export type RunMode = "single" | "remote" | "interactive";
 export type SmithRunOptions = {
   cwd: string;
   prompt: string;
+  initialTranscript?: string;
   profile: ProfileConfig;
   runtime: RuntimeConfig;
   systemPrompt: string;
@@ -26,7 +27,7 @@ export type SmithRunResult = {
 
 export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunResult> {
   const maxTurns = options.maxTurns ?? 20;
-  let transcript = appendChatIn(options.prompt);
+  let transcript = options.initialTranscript ?? appendChatIn(options.prompt);
   const shell = await PtyShellRunner.start({
     cwd: options.cwd,
     shell: options.runtime.shell,

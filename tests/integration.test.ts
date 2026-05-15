@@ -51,6 +51,48 @@ timeout_ms = 5000
     expect(provider.requests).toHaveLength(2);
     expect(provider.requests[0].headers.authorization).toBe("Bearer test");
   });
+
+  it("remote prints only first chat_out to stdout and supports resume", async () => {
+    const provider = await startFakeProvider(["chat_out \"need info\"", "chat_out \"resumed\""]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-remote-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const first = await execFileAsync(
+      "node",
+      [join(process.cwd(), "bin/smith.js"), "remote", "--cwd", cwd, "inspect", "state"],
+      { env: { ...process.env, HOME: home }, timeout: 10_000 }
+    );
+    expect(first.stdout).toBe("need info\n");
+    expect(first.stderr).toMatch(/smith remote session saved: [a-z0-9_-]{6}/);
+    const id = /saved: ([a-z0-9_-]{6})/.exec(first.stderr)?.[1];
+    expect(id).toBeTruthy();
+
+    const resumed = await execFileAsync(
+      "node",
+      [join(process.cwd(), "bin/smith.js"), "remote", "--quiet", "--cwd", cwd, "--resume", id!, "continue"],
+      { env: { ...process.env, HOME: home }, timeout: 10_000 }
+    );
+    expect(resumed.stdout).toBe("resumed\n");
+    expect(resumed.stderr).toBe("");
+  });
 });
 
 async function startFakeProvider(commands: string[]): Promise<{
