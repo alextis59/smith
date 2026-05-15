@@ -67,10 +67,12 @@ async function startRemote(options: RemoteCliOptions): Promise<void> {
   const config = loadConfig({ cwd, cli: { ...options.configOverrides, profile: profileName } });
   const selectedProfile = profileName ?? config.defaultProfile;
   const profile = resolveProfile(config, selectedProfile);
+  const reviewerProfile = resolveProfile(config, config.runtime.dangerReviewProfile);
   const result = await runSmithTask({
     cwd,
     prompt: options.prompt,
     profile,
+    reviewerProfile,
     runtime: config.runtime,
     systemPrompt: loadSystemPrompt(cwd),
     maxTurns: options.maxTurns,
@@ -98,11 +100,13 @@ async function resumeRemote(options: RemoteCliOptions): Promise<void> {
   const profileName = options.configOverrides.profile ?? session.profile;
   const config = loadConfig({ cwd, cli: { ...options.configOverrides, profile: profileName } });
   const profile = resolveProfile(config, profileName);
+  const reviewerProfile = resolveProfile(config, config.runtime.dangerReviewProfile);
   const result = await runSmithTask({
     cwd,
     prompt: answer,
     initialTranscript: `${session.transcript}\n${appendChatIn(answer)}`,
     profile,
+    reviewerProfile,
     runtime: config.runtime,
     systemPrompt: loadSystemPrompt(cwd),
     maxTurns: options.maxTurns,

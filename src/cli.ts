@@ -85,11 +85,12 @@ async function runCommand(args: string[]): Promise<void> {
   const cwd = overrides.cwd ?? process.cwd();
   const config = loadConfig({ cwd, cli: overrides });
   const profile = resolveProfile(config, overrides.profile ?? config.defaultProfile);
+  const reviewerProfile = resolveProfile(config, config.runtime.dangerReviewProfile);
   const systemPrompt = loadSystemPrompt(cwd);
   const prompt = rest.join(" ").trim();
 
   if (!prompt) {
-    await runInteractive(cwd, config.runtime, profile, systemPrompt);
+    await runInteractive(cwd, config.runtime, profile, reviewerProfile, systemPrompt);
     return;
   }
 
@@ -97,6 +98,7 @@ async function runCommand(args: string[]): Promise<void> {
     cwd,
     prompt,
     profile,
+    reviewerProfile,
     runtime: config.runtime,
     systemPrompt,
     env: process.env,
@@ -110,6 +112,7 @@ async function runInteractive(
   cwd: string,
   runtime: ReturnType<typeof loadConfig>["runtime"],
   profile: ReturnType<typeof resolveProfile>,
+  reviewerProfile: ReturnType<typeof resolveProfile>,
   systemPrompt: string
 ): Promise<void> {
   const rl = createInterface({ input, output });
@@ -121,6 +124,7 @@ async function runInteractive(
         cwd,
         prompt,
         profile,
+        reviewerProfile,
         runtime,
         systemPrompt,
         env: process.env,

@@ -1,4 +1,5 @@
 import type { ProfileConfig, RuntimeConfig } from "./config.js";
+import { reviewDangerousCommand } from "./danger-review.js";
 import { completeWithProfile, type ProviderFetch } from "./providers/index.js";
 import { PtyShellRunner } from "./pty.js";
 import { appendChatIn, appendTerminalTurn, transcriptToMessages } from "./transcript.js";
@@ -10,6 +11,7 @@ export type SmithRunOptions = {
   prompt: string;
   initialTranscript?: string;
   profile: ProfileConfig;
+  reviewerProfile?: ProfileConfig;
   runtime: RuntimeConfig;
   systemPrompt: string;
   maxTurns?: number;
@@ -46,6 +48,22 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         { env: options.env, fetch: options.fetch }
       );
       options.onModelOutput?.(response.text);
+      const review = await reviewDangerousCommand({
+        command: response.text,
+        cwd: options.cwd,
+        recentTranscript: transcript,
+        runtime: options.runtime,
+        reviewerProfile: options.reviewerProfile,
+        env: options.env,
+        fetch: options.fetch
+      });
+      if (!review.allowed) {
+        const blockedOutput = "Command too dangerous";
+        transcript = appendTerminalTurn(transcript, response.text, blockedOutput);
+        options.onTerminalOutput?.(blockedOutput);
+        continue;
+      }
+
       const result = await shell.run(response.text, options.runtime.timeoutMs);
       transcript = appendTerminalTurn(transcript, result.command, result.output);
       if (result.output) options.onTerminalOutput?.(result.output);
