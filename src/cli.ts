@@ -8,6 +8,7 @@ import { runSmithTask } from "./loop.js";
 import { loadSystemPrompt } from "./prompt.js";
 import { runRemoteCommand } from "./remote.js";
 import { createTraceLogger } from "./trace.js";
+import { runBenchmarkPath } from "./benchmark/runner.js";
 
 export type ParsedArgs = {
   command: "help" | "version" | "run" | "remote" | "config" | "benchmark";
@@ -46,6 +47,10 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
   }
   if (parsed.command === "remote") {
     await runRemoteCommand(parsed.rest);
+    return;
+  }
+  if (parsed.command === "benchmark") {
+    await runBenchmarkCommand(parsed.rest);
     return;
   }
   if (parsed.command === "run") {
@@ -162,6 +167,23 @@ async function runConfigCommand(args: string[]): Promise<void> {
     return;
   }
   throw new Error("usage: smith config path|init [--cwd <directory>]");
+}
+
+async function runBenchmarkCommand(args: string[]): Promise<void> {
+  const [subcommand, target, ...rest] = args;
+  if (subcommand !== "run" || !target) {
+    throw new Error("usage: smith benchmark run <task-or-directory> [--profile <name>]");
+  }
+  const { overrides } = parseCliConfigOverrides(rest);
+  const results = await runBenchmarkPath(target, { profile: overrides.profile });
+  for (const result of results) {
+    const status = result.passed ? "PASS" : "FAIL";
+    process.stdout.write(`${status} ${result.task} ${result.durationMs}ms trace=${result.traceDir}\n`);
+    if (!result.passed && result.stderr) process.stderr.write(result.stderr);
+  }
+  if (results.some((result) => !result.passed)) {
+    process.exitCode = 1;
+  }
 }
 
 function packageVersion(): string {
