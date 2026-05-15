@@ -20,7 +20,7 @@ describe("CLI skeleton", () => {
     expect(parseArgs(["fix", "tests"])).toEqual({
       command: "run",
       prompt: "fix tests",
-      rest: []
+      rest: ["fix", "tests"]
     });
   });
 
