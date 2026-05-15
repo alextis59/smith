@@ -1,0 +1,32 @@
+{
+  "name": "smith",
+  "version": "0.1.0",
+  "description": "A terminal-first CLI coding agent with provider-format adapters.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "smith": "./bin/smith.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "test": "vitest run",
+    "check": "npm run build && npm test"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "src/",
+    "prompts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.15.18",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.3"
+  }
+}
