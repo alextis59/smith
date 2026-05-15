@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { initConfig, parseCliConfigOverrides, userConfigPath } from "./config.js";
 
 export type ParsedArgs = {
   command: "help" | "version" | "run" | "remote" | "config" | "benchmark";
@@ -32,6 +33,10 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
     process.stdout.write(`${packageVersion()}\n`);
     return;
   }
+  if (parsed.command === "config") {
+    await runConfigCommand(parsed.rest);
+    return;
+  }
 
   throw new Error(`${parsed.command} is not implemented yet`);
 }
@@ -48,6 +53,22 @@ Usage:
 
 Smith is a terminal-first coding agent. This build currently contains the CLI skeleton; runtime features are being implemented by milestone.
 `;
+}
+
+async function runConfigCommand(args: string[]): Promise<void> {
+  const [subcommand, ...rest] = args;
+  const { overrides } = parseCliConfigOverrides(rest);
+  const path = overrides.cwd ? join(overrides.cwd, ".smith", "config.toml") : userConfigPath();
+
+  if (subcommand === "path") {
+    process.stdout.write(`${path}\n`);
+    return;
+  }
+  if (subcommand === "init") {
+    process.stdout.write(`${initConfig(path)}\n`);
+    return;
+  }
+  throw new Error("usage: smith config path|init [--cwd <directory>]");
 }
 
 function packageVersion(): string {
