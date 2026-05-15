@@ -1,0 +1,56 @@
+export type TranscriptEntry = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+export const CHAT_OUT_START = "__SMITH_CHAT_OUT_START__";
+export const CHAT_OUT_END = "__SMITH_CHAT_OUT_END__";
+
+export type ChatOutParseResult = {
+  output: string;
+  chatOut?: string;
+};
+
+export function appendChatIn(input: string): string {
+  return `smith$ chat_in <<'SMITH_USER'\n${input}\nSMITH_USER`;
+}
+
+export function stripShellFence(text: string): string {
+  const trimmed = text.trim();
+  const match = /^(?:```|~~~)(?:sh|shell|bash)?\s*\n([\s\S]*?)\n(?:```|~~~)\s*$/i.exec(trimmed);
+  return match ? match[1].trimEnd() : text;
+}
+
+export function parseChatOutSentinel(output: string): ChatOutParseResult {
+  const start = output.indexOf(CHAT_OUT_START);
+  if (start === -1) return { output };
+  const end = output.indexOf(CHAT_OUT_END, start + CHAT_OUT_START.length);
+  if (end === -1) return { output };
+
+  const before = output.slice(0, start);
+  const rawMessage = output.slice(start + CHAT_OUT_START.length, end);
+  const after = output.slice(end + CHAT_OUT_END.length);
+  const chatOut = rawMessage.replace(/^\r?\n/, "").replace(/\r?\n$/, "");
+  return {
+    output: `${before}${after}`.replace(/\n{3,}/g, "\n\n"),
+    chatOut
+  };
+}
+
+export function transcriptToMessages(
+  systemPrompt: string,
+  transcript: string,
+  maxContextChars: number
+): TranscriptEntry[] {
+  const budget = Math.max(0, maxContextChars - systemPrompt.length);
+  const content = transcript.length > budget ? transcript.slice(transcript.length - budget) : transcript;
+  return [
+    { role: "system", content: systemPrompt },
+    { role: "user", content }
+  ];
+}
+
+export function appendTerminalTurn(transcript: string, command: string, output: string): string {
+  const entry = `smith$ ${command.trimEnd()}\n${output.trimEnd()}`;
+  return transcript ? `${transcript}\n${entry}` : entry;
+}
