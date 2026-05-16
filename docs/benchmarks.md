@@ -63,6 +63,21 @@ Validate task count, required files, executable verifiers, and solved-state veri
 node scripts/validate-benchmarks.mjs
 ```
 
+Run a representative Docker-backed sample with a local fake provider after building the project:
+
+```sh
+npm run build
+node scripts/run-benchmark-sample.mjs
+```
+
+Run every generated task through the same Docker-backed fake-provider path:
+
+```sh
+node scripts/run-benchmark-sample.mjs --all
+```
+
+The latest creation-time validation audit is recorded in [benchmark-validation-audit.md](benchmark-validation-audit.md).
+
 Count task directories:
 
 ```sh
