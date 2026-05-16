@@ -27,5 +27,8 @@ describe("CLI skeleton", () => {
   it("prints expected help sections", () => {
     expect(helpText()).toContain("smith remote");
     expect(helpText()).toContain("smith benchmark run");
+    expect(helpText()).toContain("smith config doctor");
+    expect(helpText()).toContain("--quiet");
+    expect(helpText()).toContain("--json");
   });
 });

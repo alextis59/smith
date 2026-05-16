@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
-import { runBenchmarkTask } from "../src/benchmark/runner.js";
+import { runBenchmarkTask, validateBenchmarkPath } from "../src/benchmark/runner.js";
 
 const hasDocker = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
 
@@ -45,6 +45,15 @@ timeout_ms = 5000
     expect(result.passed, result.stderr).toBe(true);
     expect(result.stdout).toContain("done");
   }, 180_000);
+
+  it("validates benchmark task structure", () => {
+    const task = mkdtempSync(join(tmpdir(), "smith-benchmark-invalid-"));
+    writeFileSync(join(task, "Task.md"), "Do it.", "utf8");
+    const [result] = validateBenchmarkPath(task);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("missing workspace");
+    expect(result.errors).toContain("missing verify.sh");
+  });
 });
 
 async function startFakeProvider(commands: string[]): Promise<{

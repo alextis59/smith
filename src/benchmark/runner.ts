@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -13,12 +13,14 @@ export type BenchmarkTaskResult = {
   stdout: string;
   stderr: string;
   traceDir: string;
+  sandboxDir: string;
 };
 
 export type BenchmarkRunOptions = {
   profile?: string;
   image?: string;
   timeoutMs?: number;
+  keepSandbox?: boolean;
 };
 
 export async function runBenchmarkPath(path: string, options: BenchmarkRunOptions = {}): Promise<BenchmarkTaskResult[]> {
@@ -32,7 +34,7 @@ export async function runBenchmarkPath(path: string, options: BenchmarkRunOption
 
 export async function runBenchmarkTask(taskPath: string, options: BenchmarkRunOptions = {}): Promise<BenchmarkTaskResult> {
   const task = resolve(taskPath);
-  validateTask(task);
+  validateBenchmarkTask(task);
   const repoRoot = findRepoRoot();
   const sandboxRoot = join(repoRoot, ".smith-bench");
   mkdirSync(sandboxRoot, { recursive: true });
@@ -65,6 +67,8 @@ export async function runBenchmarkTask(taskPath: string, options: BenchmarkRunOp
         "run",
         "--rm",
         "--add-host=host.docker.internal:host-gateway",
+        "--user",
+        `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,
         "-e",
         "HOME=/home/smith",
         "-v",
@@ -82,14 +86,17 @@ export async function runBenchmarkTask(taskPath: string, options: BenchmarkRunOp
       ],
       { timeout: options.timeoutMs ?? 120_000, maxBuffer: 1024 * 1024 * 10 }
     );
-    return {
+    const taskResult = {
       task,
       passed: true,
       durationMs: Date.now() - started,
       stdout: result.stdout,
       stderr: result.stderr,
-      traceDir: join(home, ".smith", "runs")
+      traceDir: join(home, ".smith", "runs"),
+      sandboxDir: sandbox
     };
+    if (!options.keepSandbox) cleanupSandbox(sandbox);
+    return taskResult;
   } catch (error) {
     const failed = error as { stdout?: string; stderr?: string };
     return {
@@ -98,7 +105,8 @@ export async function runBenchmarkTask(taskPath: string, options: BenchmarkRunOp
       durationMs: Date.now() - started,
       stdout: failed.stdout ?? "",
       stderr: failed.stderr ?? String(error),
-      traceDir: join(home, ".smith", "runs")
+      traceDir: join(home, ".smith", "runs"),
+      sandboxDir: sandbox
     };
   }
 }
@@ -108,12 +116,52 @@ function discoverTasks(path: string): string[] {
   if (existsSync(join(root, "Task.md"))) return [root];
   return readdirSync(root)
     .map((name) => join(root, name))
-    .filter((entry) => statSync(entry).isDirectory() && existsSync(join(entry, "Task.md")));
+    .filter((entry) => statSync(entry).isDirectory() && existsSync(join(entry, "Task.md")))
+    .sort((left, right) => left.localeCompare(right));
 }
 
-function validateTask(task: string): void {
-  for (const file of ["Task.md", "workspace", "verify.sh"]) {
-    if (!existsSync(join(task, file))) throw new Error(`benchmark task missing ${file}: ${task}`);
+export type BenchmarkValidationResult = {
+  task: string;
+  valid: boolean;
+  errors: string[];
+};
+
+export function validateBenchmarkPath(path: string): BenchmarkValidationResult[] {
+  return discoverTasks(path).map((task) => {
+    const errors = benchmarkTaskErrors(task);
+    return { task, valid: errors.length === 0, errors };
+  });
+}
+
+export function validateBenchmarkTask(task: string): void {
+  const errors = benchmarkTaskErrors(task);
+  if (errors.length > 0) throw new Error(`invalid benchmark task ${task}: ${errors.join("; ")}`);
+}
+
+function benchmarkTaskErrors(task: string): string[] {
+  const errors: string[] = [];
+  const taskFile = join(task, "Task.md");
+  const workspace = join(task, "workspace");
+  const verify = join(task, "verify.sh");
+  if (!existsSync(taskFile)) errors.push("missing Task.md");
+  if (!existsSync(workspace)) {
+    errors.push("missing workspace");
+  } else if (!statSync(workspace).isDirectory()) {
+    errors.push("workspace is not a directory");
+  }
+  if (!existsSync(verify)) {
+    errors.push("missing verify.sh");
+  } else if (!statSync(verify).isFile()) {
+    errors.push("verify.sh is not a file");
+  }
+  return errors;
+}
+
+function cleanupSandbox(sandbox: string): void {
+  try {
+    rmSync(sandbox, { recursive: true, force: true });
+  } catch {
+    // Docker-created files can be owned by a different uid on some hosts.
   }
 }
 

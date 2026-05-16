@@ -93,6 +93,45 @@ timeout_ms = 5000
     );
     expect(resumed.stdout).toBe("resumed\n");
     expect(resumed.stderr).toBe("");
+
+    const listed = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "remote", "list", "--json"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+    expect(JSON.parse(listed.stdout)[0]).toMatchObject({ id, profile: "fake", lastPrompt: "continue" });
+  });
+
+  it("supports quiet JSON output for normal runs", async () => {
+    const provider = await startFakeProvider(["printf hidden", "chat_out \"visible\""]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-json-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync(
+      "node",
+      [join(process.cwd(), "bin/smith.js"), "--quiet", "--json", "--cwd", cwd, "inspect"],
+      { env: { ...process.env, HOME: home }, timeout: 10_000 }
+    );
+    const parsed = JSON.parse(stdout);
+    expect(parsed.chatOut).toBe("visible");
+    expect(stdout).not.toContain("hidden");
   });
 });
 
