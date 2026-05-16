@@ -193,6 +193,8 @@ smith benchmark run ./benchmarks --profile fast
 
 The runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace.
 
+See [docs/benchmarks.md](docs/benchmarks.md) for the task taxonomy, maintenance workflow, and validation commands.
+
 ## Development
 
 ```sh
