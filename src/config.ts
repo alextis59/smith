@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, parse as parsePath, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
 
-export type AdapterName = "openai-chat" | "openai-responses" | "gemini" | "anthropic-messages";
+export type AdapterName = "openai-chat" | "openai-responses" | "chatgpt-codex" | "gemini" | "anthropic-messages";
 export type ReasoningEffort = "low" | "medium" | "high";
 export type DangerReviewMode = "off" | "ask" | "deterministic" | "llm";
 
@@ -11,6 +11,7 @@ export type ProfileConfig = {
   adapter: AdapterName;
   baseUrl: string;
   apiKeyEnv?: string;
+  codexAuthPath?: string;
   model: string;
   temperature?: number;
   maxOutputTokens?: number;
@@ -38,6 +39,7 @@ export type RuntimeConfig = {
   providerRetryDelayMs: number;
   providerDebug: boolean;
   remoteSessionTtlDays: number;
+  logDir?: string;
 };
 
 export type SmithConfig = {
@@ -63,6 +65,7 @@ export type CliConfigOverrides = {
   adapter?: AdapterName;
   baseUrl?: string;
   apiKeyEnv?: string;
+  codexAuthPath?: string;
   model?: string;
   temperature?: number;
   maxOutputTokens?: number;
@@ -84,6 +87,7 @@ export type CliConfigOverrides = {
   providerRetryDelayMs?: number;
   providerDebug?: boolean;
   remoteSessionTtlDays?: number;
+  logDir?: string;
 };
 
 type RawConfig = Record<string, unknown>;
@@ -161,6 +165,10 @@ export function loadConfig(options: ConfigLoadOptions = {}): SmithConfig {
   if (options.cli) {
     config = applyCliOverrides(config, options.cli);
   }
+  const envLogDir = options.env?.SMITH_LOG_DIR ?? process.env.SMITH_LOG_DIR;
+  if (!config.runtime.logDir && envLogDir) {
+    config.runtime.logDir = envLogDir;
+  }
 
   config.files = files;
   validateConfig(config);
@@ -218,6 +226,9 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
         break;
       case "--api-key-env":
         overrides.apiKeyEnv = readValue();
+        break;
+      case "--codex-auth-path":
+        overrides.codexAuthPath = readValue();
         break;
       case "--model":
         overrides.model = readValue();
@@ -281,6 +292,9 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
         break;
       case "--remote-session-ttl-days":
         overrides.remoteSessionTtlDays = Number.parseInt(readValue(), 10);
+        break;
+      case "--log-dir":
+        overrides.logDir = readValue();
         break;
       default:
         rest.push(arg);
@@ -380,6 +394,7 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.adapter ? { adapter: cli.adapter } : {}),
     ...(cli.baseUrl ? { baseUrl: cli.baseUrl } : {}),
     ...(cli.apiKeyEnv ? { apiKeyEnv: cli.apiKeyEnv } : {}),
+    ...(cli.codexAuthPath ? { codexAuthPath: cli.codexAuthPath } : {}),
     ...(cli.model ? { model: cli.model } : {}),
     ...(cli.temperature !== undefined ? { temperature: cli.temperature } : {}),
     ...(cli.maxOutputTokens !== undefined ? { maxOutputTokens: cli.maxOutputTokens } : {}),
@@ -410,7 +425,8 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.providerRetries !== undefined ? { providerRetries: cli.providerRetries } : {}),
     ...(cli.providerRetryDelayMs !== undefined ? { providerRetryDelayMs: cli.providerRetryDelayMs } : {}),
     ...(cli.providerDebug !== undefined ? { providerDebug: cli.providerDebug } : {}),
-    ...(cli.remoteSessionTtlDays !== undefined ? { remoteSessionTtlDays: cli.remoteSessionTtlDays } : {})
+    ...(cli.remoteSessionTtlDays !== undefined ? { remoteSessionTtlDays: cli.remoteSessionTtlDays } : {}),
+    ...(cli.logDir !== undefined ? { logDir: cli.logDir } : {})
   };
 
   return next;
@@ -422,6 +438,7 @@ function mergeProfile(previous: ProfileConfig, raw: RawConfig): ProfileConfig {
     ...(raw.adapter ? { adapter: parseAdapter(String(raw.adapter)) } : {}),
     ...(typeof raw.base_url === "string" ? { baseUrl: raw.base_url } : {}),
     ...(typeof raw.api_key_env === "string" ? { apiKeyEnv: raw.api_key_env } : {}),
+    ...(typeof raw.codex_auth_path === "string" ? { codexAuthPath: raw.codex_auth_path } : {}),
     ...(typeof raw.model === "string" ? { model: raw.model } : {}),
     ...(typeof raw.temperature === "number" ? { temperature: raw.temperature } : {}),
     ...(typeof raw.max_output_tokens === "number" ? { maxOutputTokens: raw.max_output_tokens } : {}),
@@ -461,7 +478,8 @@ function mergeRuntime(previous: RuntimeConfig, raw: RawConfig): RuntimeConfig {
     ...(typeof raw.provider_retries === "number" ? { providerRetries: raw.provider_retries } : {}),
     ...(typeof raw.provider_retry_delay_ms === "number" ? { providerRetryDelayMs: raw.provider_retry_delay_ms } : {}),
     ...(typeof raw.provider_debug === "boolean" ? { providerDebug: raw.provider_debug } : {}),
-    ...(typeof raw.remote_session_ttl_days === "number" ? { remoteSessionTtlDays: raw.remote_session_ttl_days } : {})
+    ...(typeof raw.remote_session_ttl_days === "number" ? { remoteSessionTtlDays: raw.remote_session_ttl_days } : {}),
+    ...(typeof raw.log_dir === "string" ? { logDir: raw.log_dir } : {})
   };
 }
 
@@ -474,6 +492,7 @@ function parseAdapter(value: string): AdapterName {
   if (
     value === "openai-chat" ||
     value === "openai-responses" ||
+    value === "chatgpt-codex" ||
     value === "gemini" ||
     value === "anthropic-messages"
   ) {
@@ -544,6 +563,9 @@ export function validateConfig(config: SmithConfig): void {
   validateInteger("runtime.provider_retries", config.runtime.providerRetries, 0, 10);
   validateInteger("runtime.provider_retry_delay_ms", config.runtime.providerRetryDelayMs, 0, 60_000);
   validateInteger("runtime.remote_session_ttl_days", config.runtime.remoteSessionTtlDays, 1, 3650);
+  if (config.runtime.logDir !== undefined && !config.runtime.logDir.trim()) {
+    throw new Error("runtime.log_dir must not be empty");
+  }
   if (!config.runtime.shell.trim()) throw new Error("runtime.shell must not be empty");
   if (!config.profiles[config.defaultProfile]) {
     throw new Error(`default_profile '${config.defaultProfile}' does not match a configured profile`);

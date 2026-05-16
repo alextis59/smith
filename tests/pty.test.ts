@@ -14,6 +14,17 @@ describe("PTY shell runner", () => {
     try {
       const echo = await runner.run("echo hello", 2000);
       expect(echo.output).toContain("hello");
+      expect(echo.output).not.toContain("echo hello");
+      expect(echo.exitCode).toBe(0);
+
+      const ansi = await runner.run("printf '\\033[?2004hhello\\033[0m\\n'", 2000);
+      expect(ansi.output).toContain("hello");
+      expect(ansi.output).not.toContain("\x1B[?2004h");
+      expect(ansi.output).not.toContain("\x1B[0m");
+      expect(ansi.exitCode).toBe(0);
+
+      const failed = await runner.run("false", 2000);
+      expect(failed.exitCode).toBe(1);
 
       const result = await runner.run("chat_out done", 2000);
       expect(result.chatOut).toBe("done");

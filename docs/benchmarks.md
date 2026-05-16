@@ -39,6 +39,7 @@ Run one task:
 
 ```sh
 smith benchmark run ./benchmarks/011-parse-port-default --profile fast
+smith benchmark run ./benchmarks/011-parse-port-default --agent codex --model gpt-5.4-mini --reasoning-effort high
 ```
 
 Run every task:
@@ -53,10 +54,22 @@ Use runner controls:
 smith benchmark run ./benchmarks --timeout-ms 120000 --image node:22-bookworm
 smith benchmark run ./benchmarks --json
 smith benchmark run ./benchmarks/011-parse-port-default --keep-sandbox
+smith benchmark run ./benchmarks/011-parse-port-default --log-dir /tmp/smith --json
 smith benchmark validate ./benchmarks
 ```
 
-The benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. Tasks run in stable sorted order. Successful sandboxes are removed automatically; failed sandboxes are retained for inspection.
+The default benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. With `--agent codex`, the runner executes `codex exec` against the copied workspace on the host, then runs the same verifier. Tasks run in stable sorted order. Successful sandboxes are removed automatically; failed sandboxes are retained for inspection.
+
+Use `--log-dir /tmp/smith` or `SMITH_LOG_DIR=/tmp/smith` when iterating on failures. The runner writes one redacted JSON session log per task with the task id, command, stdout/stderr, trace path, sandbox path, usage, verifier result, model output, terminal output, and parsed provider event summaries.
+
+Benchmark results report usage and estimated cost per task and in the summary when the selected agent exposes token counts and pricing is configured. Smith uses the active profile's input/output token prices. Codex has default `gpt-5.4-mini` prices and supports explicit overrides:
+
+```sh
+smith benchmark run ./benchmarks --agent codex --model gpt-5.4-mini --reasoning-effort high \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5
+```
 
 Projects can set a default benchmark profile:
 

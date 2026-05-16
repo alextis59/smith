@@ -8,6 +8,7 @@ message
 SMITH
 
 Only use chat_out when your task is finished, when you are blocked, or when you need the user to answer a question.
+Do not call chat_out to describe intended or imagined work. If files must change, first run shell commands that actually inspect and edit them.
 In remote mode, your first chat_out ends the run and becomes stdout for the parent Smith.
 Use ordinary shell commands to inspect and edit files.
 Use smith_patch for focused edits:

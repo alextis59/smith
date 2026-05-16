@@ -7,8 +7,15 @@ import { initConfig, loadConfig, parseCliConfigOverrides, resolveApiKey, resolve
 import { runSmithTask } from "./loop.js";
 import { loadSystemPrompt } from "./prompt.js";
 import { runRemoteCommand } from "./remote.js";
+import { summarizeTrace, writeSessionLog } from "./session-log.js";
 import { createTraceLogger } from "./trace.js";
-import { runBenchmarkPath, validateBenchmarkPath } from "./benchmark/runner.js";
+import {
+  runBenchmarkPath,
+  validateBenchmarkPath,
+  type BenchmarkAgent,
+  type BenchmarkCostRates,
+  type BenchmarkUsage
+} from "./benchmark/runner.js";
 
 export type ParsedArgs = {
   command: "help" | "version" | "run" | "remote" | "config" | "benchmark";
@@ -80,9 +87,10 @@ Options:
   --json
   --profile <name>
   --model <model>
-  --adapter <openai-chat|openai-responses|gemini|anthropic-messages>
+  --adapter <openai-chat|openai-responses|chatgpt-codex|gemini|anthropic-messages>
   --base-url <url>
   --api-key-env <name>
+  --codex-auth-path <path>
   --temperature <number>
   --max-output-tokens <number>
   --reasoning-effort <low|medium|high>
@@ -92,12 +100,16 @@ Options:
   --max-turns <count>
   --danger-review <off|ask|deterministic|llm>
   --read-only
+  --log-dir <dir>
+  --agent <smith|codex>
+  --cached-input-cost-per-million-tokens <usd>
 
 Examples:
   smith --profile fast "summarize failing tests"
   smith --quiet --json "inspect package scripts"
   smith config doctor --profile default
   smith benchmark run ./benchmarks/001-release-note-summary --timeout-ms 120000
+  smith benchmark run ./benchmarks --agent codex --model gpt-5.4-mini --reasoning-effort high
 `;
 }
 
@@ -110,6 +122,7 @@ async function runCommand(args: string[]): Promise<void> {
   const profile = resolveProfile(config, selectedProfile);
   const reviewerProfile = resolveProfile(config, config.runtime.dangerReviewProfile);
   const systemPrompt = loadSystemPrompt(cwd);
+  const startedAt = new Date().toISOString();
   const trace = createTraceLogger({
     cwd,
     profileName: selectedProfile,
@@ -137,8 +150,23 @@ async function runCommand(args: string[]): Promise<void> {
       if (!outputOptions.quiet && !outputOptions.json) process.stdout.write(`${terminalOutput}\n`);
     }
   });
+  const logPath = writeSessionLog(config.runtime.logDir, "run", {
+    kind: "smith.run",
+    startedAt,
+    completedAt: new Date().toISOString(),
+    cwd,
+    command: `smith ${args.map(shellQuoteForLog).join(" ")}`,
+    profile: selectedProfile,
+    adapter: profile.adapter,
+    model: profile.model,
+    turns: result.turns,
+    tracePath: trace.path,
+    usage: result.usage,
+    chatOut: result.chatOut,
+    ...summarizeTrace(trace.path)
+  });
   if (outputOptions.json) {
-    process.stdout.write(`${JSON.stringify({ chatOut: result.chatOut, turns: result.turns, usage: result.usage, tracePath: trace.path }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ chatOut: result.chatOut, turns: result.turns, usage: result.usage, tracePath: trace.path, logPath }, null, 2)}\n`);
   } else if (outputOptions.quiet) {
     process.stdout.write(`${result.chatOut}\n`);
   }
@@ -239,25 +267,50 @@ async function runBenchmarkCommand(args: string[]): Promise<void> {
     if (results.some((result) => !result.valid)) process.exitCode = 1;
     return;
   }
-  const config = loadConfig({ cwd: process.cwd(), cli: options.configOverrides });
-  const profile = options.configOverrides.profile ?? config.benchmark.defaultProfile;
+  const agent = options.agent ?? "smith";
+  const config = agent === "smith" ? loadConfig({ cwd: process.cwd(), cli: options.configOverrides }) : undefined;
+  const profile = options.configOverrides.profile ?? config?.benchmark.defaultProfile;
+  const resolvedProfile = config ? resolveProfile(config, profile) : undefined;
+  const model = options.configOverrides.model ?? resolvedProfile?.model;
+  const cost = benchmarkCostRates({
+    agent,
+    model,
+    cliInputCost: options.configOverrides.inputCostPerMillionTokens,
+    cliCachedInputCost: options.cachedInputCostPerMillionTokens,
+    cliOutputCost: options.configOverrides.outputCostPerMillionTokens,
+    profileCost: resolvedProfile
+      ? {
+          inputCostPerMillionTokens: resolvedProfile.inputCostPerMillionTokens,
+          outputCostPerMillionTokens: resolvedProfile.outputCostPerMillionTokens
+        }
+      : undefined
+  });
   const results = await runBenchmarkPath(target, {
+    agent,
     profile,
+    smithArgs: options.smithArgs,
+    model,
+    reasoningEffort: options.configOverrides.reasoningEffort,
     image: options.image,
     timeoutMs: options.timeoutMs,
-    keepSandbox: options.keepSandbox
+    keepSandbox: options.keepSandbox,
+    cost,
+    logDir: options.logDir
   });
   if (options.json) {
     process.stdout.write(`${JSON.stringify({ summary: benchmarkSummary(results), results }, null, 2)}\n`);
   } else {
     for (const result of results) {
       const status = result.passed ? "PASS" : "FAIL";
-      process.stdout.write(`${status} ${result.task} ${result.durationMs}ms trace=${result.traceDir}\n`);
+      const costText = result.usage?.costUsd !== undefined ? ` cost=$${result.usage.costUsd.toFixed(6)}` : "";
+      const logText = result.logPath ? ` log=${result.logPath}` : "";
+      process.stdout.write(`${status} ${result.task} ${result.durationMs}ms${costText} trace=${result.traceDir}${logText}\n`);
       if (options.keepSandbox) process.stdout.write(`sandbox=${result.sandboxDir}\n`);
       if (!result.passed && result.stderr) process.stderr.write(result.stderr);
     }
     const summary = benchmarkSummary(results);
-    process.stdout.write(`Summary: ${summary.passed}/${summary.total} passed, ${summary.failed} failed, ${summary.durationMs}ms\n`);
+    const costText = summary.costUsd !== undefined ? `, cost=$${summary.costUsd.toFixed(6)}` : "";
+    process.stdout.write(`Summary: ${summary.passed}/${summary.total} passed, ${summary.failed} failed, ${summary.durationMs}ms${costText}\n`);
     if (summary.failedTasks.length > 0) process.stdout.write(`Failed tasks: ${summary.failedTasks.join(", ")}\n`);
   }
   if (results.some((result) => !result.passed)) {
@@ -279,16 +332,23 @@ function parseOutputOptions(args: string[]): { quiet: boolean; json: boolean; re
 
 function parseBenchmarkOptions(args: string[]): {
   configOverrides: ReturnType<typeof parseCliConfigOverrides>["overrides"];
+  smithArgs: string[];
   timeoutMs?: number;
   image?: string;
+  agent?: BenchmarkAgent;
   json: boolean;
   keepSandbox: boolean;
+  cachedInputCostPerMillionTokens?: number;
+  logDir?: string;
 } {
   const smithArgs: string[] = [];
   let timeoutMs: number | undefined;
   let image: string | undefined;
+  let agent: BenchmarkAgent | undefined;
   let json = false;
   let keepSandbox = false;
+  let cachedInputCostPerMillionTokens: number | undefined;
+  let logDir: string | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     const [flag, inline] = arg.startsWith("--") ? splitFlag(arg) : [arg, undefined];
@@ -301,22 +361,98 @@ function parseBenchmarkOptions(args: string[]): {
     };
     if (flag === "--timeout-ms") timeoutMs = Number.parseInt(readValue(), 10);
     else if (flag === "--image") image = readValue();
+    else if (flag === "--agent") agent = parseBenchmarkAgent(readValue());
     else if (flag === "--json") json = true;
     else if (flag === "--keep-sandbox") keepSandbox = true;
+    else if (flag === "--cached-input-cost-per-million-tokens") cachedInputCostPerMillionTokens = Number(readValue());
+    else if (flag === "--log-dir") logDir = readValue();
     else smithArgs.push(arg);
   }
-  return { configOverrides: parseCliConfigOverrides(smithArgs).overrides, timeoutMs, image, json, keepSandbox };
+  return {
+    configOverrides: parseCliConfigOverrides(smithArgs).overrides,
+    smithArgs,
+    timeoutMs,
+    image,
+    agent,
+    json,
+    keepSandbox,
+    cachedInputCostPerMillionTokens,
+    logDir
+  };
 }
 
-function benchmarkSummary(results: Array<{ passed: boolean; durationMs: number; task: string }>) {
+function parseBenchmarkAgent(value: string): BenchmarkAgent {
+  if (value === "smith" || value === "codex") return value;
+  throw new Error(`unsupported benchmark agent '${value}'`);
+}
+
+function benchmarkSummary(results: Array<{ passed: boolean; durationMs: number; task: string; usage?: BenchmarkUsage }>) {
   const failedTasks = results.filter((result) => !result.passed).map((result) => result.task);
+  const usage = addBenchmarkUsage(results.map((result) => result.usage));
   return {
     total: results.length,
     passed: results.length - failedTasks.length,
     failed: failedTasks.length,
     durationMs: results.reduce((sum, result) => sum + result.durationMs, 0),
+    usage,
+    ...(usage?.costUsd !== undefined ? { costUsd: usage.costUsd } : {}),
     failedTasks
   };
+}
+
+function addBenchmarkUsage(usages: Array<BenchmarkUsage | undefined>): BenchmarkUsage | undefined {
+  let total: BenchmarkUsage | undefined;
+  for (const usage of usages) {
+    if (!usage) continue;
+    total = {
+      inputTokens: (total?.inputTokens ?? 0) + usage.inputTokens,
+      cachedInputTokens: (total?.cachedInputTokens ?? 0) + usage.cachedInputTokens,
+      outputTokens: (total?.outputTokens ?? 0) + usage.outputTokens,
+      reasoningOutputTokens: (total?.reasoningOutputTokens ?? 0) + usage.reasoningOutputTokens,
+      totalTokens: (total?.totalTokens ?? 0) + usage.totalTokens,
+      ...((total?.costUsd !== undefined || usage.costUsd !== undefined)
+        ? { costUsd: (total?.costUsd ?? 0) + (usage.costUsd ?? 0) }
+        : {})
+    };
+  }
+  return total;
+}
+
+function benchmarkCostRates(options: {
+  agent: BenchmarkAgent;
+  model?: string;
+  cliInputCost?: number;
+  cliCachedInputCost?: number;
+  cliOutputCost?: number;
+  profileCost?: {
+    inputCostPerMillionTokens?: number;
+    outputCostPerMillionTokens?: number;
+  };
+}): BenchmarkCostRates | undefined {
+  const modelRates = options.agent === "codex" ? defaultModelCostRates(options.model) : undefined;
+  const rates = {
+    inputCostPerMillionTokens:
+      options.cliInputCost ?? options.profileCost?.inputCostPerMillionTokens ?? modelRates?.inputCostPerMillionTokens,
+    cachedInputCostPerMillionTokens: options.cliCachedInputCost ?? modelRates?.cachedInputCostPerMillionTokens,
+    outputCostPerMillionTokens:
+      options.cliOutputCost ?? options.profileCost?.outputCostPerMillionTokens ?? modelRates?.outputCostPerMillionTokens
+  };
+  return rates.inputCostPerMillionTokens === undefined &&
+    rates.cachedInputCostPerMillionTokens === undefined &&
+    rates.outputCostPerMillionTokens === undefined
+    ? undefined
+    : rates;
+}
+
+function defaultModelCostRates(model: string | undefined): BenchmarkCostRates | undefined {
+  if (model === "gpt-5.4-mini" || model === "gpt5.4-mini") {
+    return {
+      inputCostPerMillionTokens: 0.75,
+      cachedInputCostPerMillionTokens: 0.075,
+      outputCostPerMillionTokens: 4.5
+    };
+  }
+  return undefined;
 }
 
 function formatDoctor(report: {
@@ -353,4 +489,8 @@ function packageVersion(): string {
   const packagePath = join(here, "../../package.json");
   const packageJson = JSON.parse(readFileSync(packagePath, "utf8")) as { version?: string };
   return packageJson.version ?? "0.0.0";
+}
+
+function shellQuoteForLog(value: string): string {
+  return /^[A-Za-z0-9_./:=@-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
 }

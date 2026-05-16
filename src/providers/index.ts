@@ -1,6 +1,7 @@
 import type { ProfileConfig } from "../config.js";
 import { resolveApiKey } from "../config.js";
 import { anthropicMessagesAdapter } from "./anthropic-messages.js";
+import { chatGptCodexAdapter } from "./chatgpt-codex.js";
 import { geminiAdapter } from "./gemini.js";
 import { openAiChatAdapter } from "./openai-chat.js";
 import { openAiResponsesAdapter } from "./openai-responses.js";
@@ -10,6 +11,7 @@ import type { ProviderAdapter, ProviderDebugLog, ProviderFetch, SmithModelReques
 const adapters: Record<ProfileConfig["adapter"], ProviderAdapter> = {
   "openai-chat": openAiChatAdapter,
   "openai-responses": openAiResponsesAdapter,
+  "chatgpt-codex": chatGptCodexAdapter,
   gemini: geminiAdapter,
   "anthropic-messages": anthropicMessagesAdapter
 };

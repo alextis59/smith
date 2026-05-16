@@ -116,6 +116,8 @@ timeout_ms = 20
       "--provider-retries",
       "3",
       "--provider-debug",
+      "--log-dir",
+      "/tmp/smith",
       "--danger-review",
       "deterministic",
       "task"
@@ -139,6 +141,7 @@ timeout_ms = 20
       readOnly: true,
       providerRetries: 3,
       providerDebug: true,
+      logDir: "/tmp/smith",
       dangerReview: "deterministic"
     });
     expect(parsed.rest).toEqual(["task"]);
@@ -167,6 +170,25 @@ output_cost_per_million_tokens = 10
     expect(profile.outputCostPerMillionTokens).toBe(10);
   });
 
+  it("loads ChatGPT Codex auth profile fields", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `[profiles.codex-chatgpt]
+adapter = "chatgpt-codex"
+base_url = "https://chatgpt.com/backend-api/codex"
+model = "gpt-5.4-mini"
+codex_auth_path = "/tmp/codex-auth.json"
+`,
+      "utf8"
+    );
+
+    const profile = resolveProfile(loadConfig({ homeDir: tempDir(), cwd }), "codex-chatgpt");
+    expect(profile.adapter).toBe("chatgpt-codex");
+    expect(profile.codexAuthPath).toBe("/tmp/codex-auth.json");
+  });
+
   it("loads per-project default benchmark profile", () => {
     const cwd = tempDir();
     mkdirSync(join(cwd, ".smith"), { recursive: true });
@@ -184,6 +206,26 @@ model = "bench-model"
     );
 
     expect(loadConfig({ homeDir: tempDir(), cwd }).benchmark.defaultProfile).toBe("bench");
+  });
+
+  it("loads log directory from config, CLI, and environment", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `[runtime]
+log_dir = "/tmp/project-smith"
+`,
+      "utf8"
+    );
+
+    expect(loadConfig({ homeDir: tempDir(), cwd }).runtime.logDir).toBe("/tmp/project-smith");
+    expect(loadConfig({ homeDir: tempDir(), cwd, cli: { logDir: "/tmp/cli-smith" } }).runtime.logDir).toBe(
+      "/tmp/cli-smith"
+    );
+    expect(loadConfig({ homeDir: tempDir(), cwd: tempDir(), env: { SMITH_LOG_DIR: "/tmp/env-smith" } }).runtime.logDir).toBe(
+      "/tmp/env-smith"
+    );
   });
 
   it("rejects invalid merged config values", () => {

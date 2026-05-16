@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ProfileConfig } from "../src/config.js";
 import { completeWithProfile, ProviderError } from "../src/providers/index.js";
+import { parseResponsesSse } from "../src/providers/chatgpt-codex.js";
 import {
   extractAnthropicMessagesText
 } from "../src/providers/anthropic-messages.js";
@@ -45,6 +49,54 @@ describe("provider adapters", () => {
     expect(calls.first.body.input).toContain("user: task");
     expect(calls.first.body.max_output_tokens).toBe(64);
     expect(calls.first.body.reasoning).toEqual({ effort: "low" });
+  });
+
+  it("maps chatgpt-codex requests using Codex auth storage", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "smith-codex-auth-"));
+    const authPath = join(dir, "auth.json");
+    writeFileSync(
+      authPath,
+      JSON.stringify({
+        auth_mode: "chatgpt",
+        tokens: {
+          access_token: fakeJwt({ exp: Math.floor(Date.now() / 1000) + 3600 }),
+          refresh_token: "refresh-token",
+          account_id: "account-id"
+        },
+        last_refresh: new Date().toISOString()
+      }),
+      "utf8"
+    );
+    const calls = captureFetch(
+      [
+        'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"done"}',
+        'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":6,"total_tokens":11}}}'
+      ].join("\n\n"),
+      "text/event-stream"
+    );
+    const chatgptProfile = { ...profile("chatgpt-codex", "https://chatgpt.example/backend-api/codex"), codexAuthPath: authPath };
+
+    const response = await completeWithProfile(baseRequest(), chatgptProfile, { fetch: calls.fetch });
+
+    expect(calls.first.url).toBe("https://chatgpt.example/backend-api/codex/responses");
+    expect(calls.first.headers.Authorization).toMatch(/^Bearer /);
+    expect(calls.first.headers["ChatGPT-Account-ID"]).toBe("account-id");
+    expect(calls.first.body).toMatchObject({
+      model: "test-model",
+      stream: true,
+      store: false,
+      reasoning: { effort: "low" },
+      gateway_extra: true
+    });
+    expect(calls.first.body.tools).toEqual([
+      expect.objectContaining({
+        type: "function",
+        name: "shell_command"
+      })
+    ]);
+    expect(calls.first.body).not.toHaveProperty("max_output_tokens");
+    expect(response.text).toBe("done");
+    expect(response.usage).toEqual({ inputTokens: 5, outputTokens: 6, totalTokens: 11 });
   });
 
   it("maps anthropic messages requests", async () => {
@@ -100,6 +152,29 @@ describe("provider adapters", () => {
     expect(extractGeminiText({ candidates: [{ content: { parts: [{ text: "a" }, { text: "b" }] } }] })).toBe(
       "ab"
     );
+    expect(parseResponsesSse('event: response.output_text.done\ndata: {"type":"response.output_text.done","text":"codex"}')).toMatchObject({
+      text: "codex"
+    });
+    expect(
+      parseResponsesSse(
+        [
+          'event: response.output_text.done\ndata: {"type":"response.output_text.done","text":""}',
+          'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"pwd"}',
+          'event: response.output_text.done\ndata: {"type":"response.output_text.done","text":"pwd"}',
+          'event: response.output_text.done\ndata: {"type":"response.output_text.done","text":""}'
+        ].join("\n\n")
+      )
+    ).toMatchObject({ text: "pwd" });
+    expect(
+      parseResponsesSse(
+        [
+          'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"id":"fc_1","type":"function_call","name":"shell_command","arguments":""}}',
+          'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","item_id":"fc_1","delta":"{\\"command\\":\\"npm"}',
+          'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","item_id":"fc_1","delta":" test\\"}"}',
+          'event: response.function_call_arguments.done\ndata: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"npm test\\"}"}'
+        ].join("\n\n")
+      )
+    ).toMatchObject({ text: "npm test" });
   });
 
   it("normalizes malformed provider responses", async () => {
@@ -180,7 +255,7 @@ function profile(adapter: ProfileConfig["adapter"], baseUrl = "https://gateway.e
   };
 }
 
-function captureFetch(raw: unknown): {
+function captureFetch(raw: unknown, contentType = "application/json"): {
   fetch: ProviderFetch;
   first: { url: string; headers: Record<string, string>; body: Record<string, unknown> };
 } {
@@ -192,9 +267,9 @@ function captureFetch(raw: unknown): {
       headers,
       body: JSON.parse(String(init?.body)) as Record<string, unknown>
     });
-    return new Response(JSON.stringify(raw), {
+    return new Response(contentType === "application/json" ? JSON.stringify(raw) : String(raw), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": contentType }
     });
   };
 
@@ -206,4 +281,9 @@ function captureFetch(raw: unknown): {
       return first;
     }
   };
+}
+
+function fakeJwt(payload: Record<string, unknown>): string {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "none" })}.${encode(payload)}.signature`;
 }

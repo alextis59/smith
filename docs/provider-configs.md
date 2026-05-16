@@ -26,6 +26,21 @@ model = "gpt-5.4"
 reasoning_effort = "medium"
 ```
 
+## ChatGPT Subscription via Codex Auth
+
+Run `codex login` and choose ChatGPT sign-in first. Smith reads the same Codex auth file, uses `https://chatgpt.com/backend-api/codex/responses`, and refreshes the OAuth token when it is near expiry.
+
+```toml
+[profiles.codex-chatgpt]
+adapter = "chatgpt-codex"
+base_url = "https://chatgpt.com/backend-api/codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "high"
+
+# Optional; defaults to $CODEX_HOME/auth.json or ~/.codex/auth.json.
+# codex_auth_path = "/home/alice/.codex/auth.json"
+```
+
 ## Gemini Native
 
 ```toml
@@ -86,9 +101,10 @@ provider_retry_delay_ms = 250
 provider_debug = false
 danger_review = "deterministic"
 read_only = false
+log_dir = "/tmp/smith"
 
 [benchmark]
 default_profile = "local"
 ```
 
-Use `smith config doctor --profile <name>` to confirm which files loaded, which profile is active, and whether the configured API key environment variable is present.
+Use `smith config doctor --profile <name>` to confirm which files loaded, which profile is active, and whether the configured API key environment variable is present. `log_dir` can also be set per run with `--log-dir` or `SMITH_LOG_DIR`.

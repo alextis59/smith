@@ -13,6 +13,7 @@ export type ShellRunResult = {
   timedOut: boolean;
   elapsedMs: number;
   lastOutput: string;
+  exitCode?: number;
 };
 
 export type ShellRunnerOptions = {
@@ -23,6 +24,9 @@ export type ShellRunnerOptions = {
 };
 
 const PROMPT = "__SMITH_PROMPT__ ";
+const EXIT_STATUS_START = "__SMITH_EXIT_STATUS_START__";
+const EXIT_STATUS_END = "__SMITH_EXIT_STATUS_END__";
+const EXIT_STATUS_COMMAND = `printf '\\n${EXIT_STATUS_START}%s${EXIT_STATUS_END}\\n' "$?"`;
 
 export class PtyShellRunner {
   private readonly terminal: pty.IPty;
@@ -71,16 +75,21 @@ export class PtyShellRunner {
     if (wait === "timeout" && !this.closed) {
       this.terminal.write("\x03");
       await this.waitForPrompt(1000);
+    } else if (wait === "prompt") {
+      this.terminal.write(`${EXIT_STATUS_COMMAND}\r`);
+      await this.waitFor(() => this.buffer.includes(EXIT_STATUS_END) && this.buffer.includes(PROMPT), 1000);
     }
     const parsed = parseChatOutSentinel(this.buffer);
-    const output = normalizePtyOutput(parsed.output);
+    const status = parseExitStatusSentinel(parsed.output);
+    const output = stripEchoedCommand(normalizePtyOutput(status.output), cleaned);
     return {
       command: cleaned,
       output,
       chatOut: parsed.chatOut,
       timedOut: wait === "timeout",
       elapsedMs: Date.now() - started,
-      lastOutput: tail(output, 1200)
+      lastOutput: tail(output, 1200),
+      ...(status.exitCode !== undefined ? { exitCode: status.exitCode } : {})
     };
   }
 
@@ -154,7 +163,33 @@ function writeExecutable(path: string, content: string): void {
 }
 
 function normalizePtyOutput(output: string): string {
-  return output.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replaceAll(PROMPT, "").trim();
+  return output
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")
+    .replaceAll(PROMPT, "")
+    .trim();
+}
+
+function parseExitStatusSentinel(output: string): { output: string; exitCode?: number } {
+  const start = output.lastIndexOf(EXIT_STATUS_START);
+  const end = start === -1 ? -1 : output.indexOf(EXIT_STATUS_END, start + EXIT_STATUS_START.length);
+  if (start === -1 || end === -1) return { output };
+  const rawStatus = output.slice(start + EXIT_STATUS_START.length, end).trim();
+  const exitCode = Number.parseInt(rawStatus, 10);
+  const withoutStatus = `${output.slice(0, start)}${output.slice(end + EXIT_STATUS_END.length)}`.replace(
+    EXIT_STATUS_COMMAND,
+    ""
+  );
+  return {
+    output: withoutStatus,
+    ...(Number.isInteger(exitCode) ? { exitCode } : {})
+  };
+}
+
+function stripEchoedCommand(output: string, command: string): string {
+  if (output === command) return "";
+  return output.startsWith(`${command}\n`) ? output.slice(command.length + 1).trim() : output;
 }
 
 function tail(value: string, maxChars: number): string {

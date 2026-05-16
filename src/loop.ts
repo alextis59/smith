@@ -3,6 +3,7 @@ import { addUsageCost, formatUsageCost, summarizeUsage, type TokenUsageCost } fr
 import { reviewDangerousCommand } from "./danger-review.js";
 import { completeWithProfile, type ProviderFetch } from "./providers/index.js";
 import { PtyShellRunner } from "./pty.js";
+import { summarizeProviderEvents } from "./session-log.js";
 import { appendChatIn, appendTerminalTurn, compactTranscript, transcriptToMessages } from "./transcript.js";
 import type { TraceLogger } from "./trace.js";
 
@@ -67,6 +68,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       totalUsage = addUsageCost(totalUsage, responseUsage);
       if (responseUsage) options.trace?.write("model usage", formatUsageCost(responseUsage));
       options.trace?.write("model output", response.text);
+      const parsedEvents = summarizeProviderEvents(response.raw);
+      if (parsedEvents.length > 0) options.trace?.write("parsed events", JSON.stringify(parsedEvents, null, 2));
       options.onModelOutput?.(response.text);
       const review = await reviewDangerousCommand({
         command: response.text,
@@ -88,9 +91,10 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       }
 
       const result = await shell.run(response.text, options.runtime.timeoutMs);
-      transcript = appendTerminalTurn(transcript, result.command, result.output);
-      options.trace?.write("terminal output", result.output);
-      if (result.output) options.onTerminalOutput?.(result.output);
+      const terminalOutput = formatTerminalOutput(result.output, result.exitCode);
+      transcript = appendTerminalTurn(transcript, result.command, terminalOutput);
+      options.trace?.write("terminal output", terminalOutput);
+      if (terminalOutput) options.onTerminalOutput?.(terminalOutput);
       if (result.chatOut !== undefined) {
         options.trace?.write("chat_out", result.chatOut);
         if (totalUsage) options.trace?.write("run usage", formatUsageCost(totalUsage));
@@ -122,4 +126,10 @@ function formatTimeoutOutput(command: string, elapsedMs: number, lastOutput: str
     `Command running: ${command}`,
     lastOutput ? `Last terminal output:\n${lastOutput}` : "Last terminal output: (none)"
   ].join("\n");
+}
+
+function formatTerminalOutput(output: string, exitCode: number | undefined): string {
+  if (exitCode === undefined) return output;
+  const status = `exit_status: ${exitCode}`;
+  return output.trim().length > 0 ? `${output.trimEnd()}\n${status}` : status;
 }

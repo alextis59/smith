@@ -87,9 +87,11 @@ max_turns = 20
 provider_retries = 2
 provider_retry_delay_ms = 250
 read_only = false
+# Optional session log directory; also settable with SMITH_LOG_DIR or --log-dir.
+# log_dir = "/tmp/smith"
 ```
 
-Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--danger-review`, and `--read-only`.
+Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--codex-auth-path`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--danger-review`, `--read-only`, and `--log-dir`.
 
 When a provider response includes token usage, Smith records per-turn and total usage in the run trace. If `input_cost_per_million_tokens` and/or `output_cost_per_million_tokens` are set on the active profile, traces also include estimated USD cost.
 
@@ -106,10 +108,25 @@ Smith implements API wire-format adapters:
 
 - `openai-chat`: POST `{base_url}/chat/completions`
 - `openai-responses`: POST `{base_url}/responses`
+- `chatgpt-codex`: POST `{base_url}/responses` using Codex ChatGPT auth from `~/.codex/auth.json`
 - `gemini`: POST `{base_url}/v1beta/models/{model}:generateContent`
 - `anthropic-messages`: POST `{base_url}/v1/messages`
 
 Each adapter supports custom base URLs, custom headers, custom body extras, configurable API key environment variables, and best-effort normalized options: `temperature`, `max_output_tokens`, `reasoning_effort`, and `stop`.
+
+For ChatGPT subscription-backed Codex usage:
+
+```toml
+[profiles.codex-chatgpt]
+adapter = "chatgpt-codex"
+base_url = "https://chatgpt.com/backend-api/codex"
+model = "gpt-5.4-mini"
+reasoning_effort = "high"
+# Optional; defaults to $CODEX_HOME/auth.json or ~/.codex/auth.json.
+# codex_auth_path = "/home/alice/.codex/auth.json"
+```
+
+Run `codex login` first and choose ChatGPT sign-in. Smith reuses that local Codex auth file and refreshes the OAuth token when needed.
 
 ## chat_out
 
@@ -198,6 +215,8 @@ Each run writes a plain text trace under:
 
 Traces include run metadata, model outputs, terminal outputs, and the final `chat_out`.
 
+Set `SMITH_LOG_DIR=/tmp/smith`, `runtime.log_dir = "/tmp/smith"`, or pass `--log-dir /tmp/smith` to write a redacted JSON session log. Benchmark logs include task id, command, stdout/stderr, trace path, sandbox path, usage, verifier result, model output, terminal output, and parsed provider event summaries.
+
 ## Benchmarks
 
 Benchmark tasks use:
@@ -213,11 +232,14 @@ Run one task or a directory of task folders:
 ```sh
 smith benchmark run ./benchmarks/basic-edit
 smith benchmark run ./benchmarks --profile fast
-smith benchmark run ./benchmarks --timeout-ms 120000 --image node:22-bookworm --json
+smith benchmark run ./benchmarks --agent codex --model gpt-5.4-mini --reasoning-effort high
+smith benchmark run ./benchmarks --timeout-ms 120000 --image node:22-bookworm --log-dir /tmp/smith --json
 smith benchmark validate ./benchmarks
 ```
 
-The runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. Successful sandboxes are removed automatically; pass `--keep-sandbox` to preserve them for debugging.
+The default runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. With `--agent codex`, the runner executes `codex exec` on the copied workspace on the host, then runs the same verifier. Successful sandboxes are removed automatically; pass `--keep-sandbox` to preserve them for debugging.
+
+Benchmark output includes per-task and summary token/cost data when the agent reports usage and pricing is available. Smith uses the active profile's `input_cost_per_million_tokens` and `output_cost_per_million_tokens`; Codex includes built-in pricing for `gpt-5.4-mini`, and can be overridden with `--input-cost-per-million-tokens`, `--cached-input-cost-per-million-tokens`, and `--output-cost-per-million-tokens`.
 
 See [docs/benchmarks.md](docs/benchmarks.md) for the task taxonomy, authoring examples, maintenance workflow, and validation commands. See also [docs/architecture.md](docs/architecture.md), [docs/provider-configs.md](docs/provider-configs.md), and [docs/troubleshooting.md](docs/troubleshooting.md).
 
