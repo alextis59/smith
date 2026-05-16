@@ -1,0 +1,5 @@
+jobs:
+  test:
+    strategy:
+      matrix:
+        node: [20]

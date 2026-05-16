@@ -1,0 +1,4 @@
+default_profile = "dev"
+
+[profiles.dev]
+model = "gpt-5.4-mini"

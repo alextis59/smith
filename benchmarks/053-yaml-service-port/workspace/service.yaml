@@ -1,0 +1,3 @@
+service:
+  name: smith-api
+  port: 3000
