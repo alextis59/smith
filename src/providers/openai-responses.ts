@@ -1,5 +1,5 @@
 import type { ProviderAdapter, SmithModelRequest } from "./types.js";
-import { authHeaders, isRecord, joinUrl, mergeBody, postJson, textValue, usageFromOpenAi } from "./types.js";
+import { authHeaders, isRecord, joinUrl, mergeBody, postJson, requireText, textValue, usageFromOpenAi } from "./types.js";
 
 export const openAiResponsesAdapter: ProviderAdapter = {
   name: "openai-responses",
@@ -9,9 +9,10 @@ export const openAiResponsesAdapter: ProviderAdapter = {
       joinUrl(profile.baseUrl, "responses"),
       authHeaders(profile, options.apiKey),
       body,
-      options.fetch
+      options.fetch,
+      options.debugLog
     );
-    return { text: extractOpenAiResponsesText(raw), raw, usage: isRecord(raw) ? usageFromOpenAi(raw) : undefined };
+    return { text: requireText("openai-responses", extractOpenAiResponsesText(raw)), raw, usage: isRecord(raw) ? usageFromOpenAi(raw) : undefined };
   }
 };
 

@@ -5,7 +5,7 @@ import { parse as parseToml } from "smol-toml";
 
 export type AdapterName = "openai-chat" | "openai-responses" | "gemini" | "anthropic-messages";
 export type ReasoningEffort = "low" | "medium" | "high";
-export type DangerReviewMode = "off" | "ask" | "llm";
+export type DangerReviewMode = "off" | "ask" | "deterministic" | "llm";
 
 export type ProfileConfig = {
   adapter: AdapterName;
@@ -16,6 +16,8 @@ export type ProfileConfig = {
   maxOutputTokens?: number;
   reasoningEffort?: ReasoningEffort;
   stop?: string[];
+  inputCostPerMillionTokens?: number;
+  outputCostPerMillionTokens?: number;
   headers: Record<string, string>;
   body: Record<string, unknown>;
   strictProviderOptions: boolean;
@@ -26,13 +28,23 @@ export type RuntimeConfig = {
   timeoutMs: number;
   transcriptTurns: number;
   maxContextChars: number;
+  maxTurns: number;
+  transcriptCompactionChars: number;
   dangerReview: DangerReviewMode;
   dangerReviewProfile: string;
   traceRaw: boolean;
+  readOnly: boolean;
+  providerRetries: number;
+  providerRetryDelayMs: number;
+  providerDebug: boolean;
+  remoteSessionTtlDays: number;
 };
 
 export type SmithConfig = {
   defaultProfile: string;
+  benchmark: {
+    defaultProfile?: string;
+  };
   profiles: Record<string, ProfileConfig>;
   runtime: RuntimeConfig;
   files: string[];
@@ -56,19 +68,29 @@ export type CliConfigOverrides = {
   maxOutputTokens?: number;
   reasoningEffort?: ReasoningEffort;
   stop?: string[];
+  inputCostPerMillionTokens?: number;
+  outputCostPerMillionTokens?: number;
   shell?: string;
   timeoutMs?: number;
   transcriptTurns?: number;
   maxContextChars?: number;
+  maxTurns?: number;
+  transcriptCompactionChars?: number;
   dangerReview?: DangerReviewMode;
   dangerReviewProfile?: string;
   traceRaw?: boolean;
+  readOnly?: boolean;
+  providerRetries?: number;
+  providerRetryDelayMs?: number;
+  providerDebug?: boolean;
+  remoteSessionTtlDays?: number;
 };
 
 type RawConfig = Record<string, unknown>;
 
 const DEFAULT_CONFIG: SmithConfig = {
   defaultProfile: "default",
+  benchmark: {},
   profiles: {
     default: {
       adapter: "openai-chat",
@@ -98,9 +120,16 @@ const DEFAULT_CONFIG: SmithConfig = {
     timeoutMs: 120_000,
     transcriptTurns: 20,
     maxContextChars: 120_000,
+    maxTurns: 20,
+    transcriptCompactionChars: 8_000,
     dangerReview: "llm",
     dangerReviewProfile: "reviewer",
-    traceRaw: false
+    traceRaw: false,
+    readOnly: false,
+    providerRetries: 2,
+    providerRetryDelayMs: 250,
+    providerDebug: false,
+    remoteSessionTtlDays: 30
   },
   files: []
 };
@@ -134,6 +163,7 @@ export function loadConfig(options: ConfigLoadOptions = {}): SmithConfig {
   }
 
   config.files = files;
+  validateConfig(config);
   return config;
 }
 
@@ -148,7 +178,8 @@ export function initConfig(file = userConfigPath()): string {
 export function resolveProfile(config: SmithConfig, name = config.defaultProfile): ProfileConfig {
   const profile = config.profiles[name];
   if (!profile) {
-    throw new Error(`unknown profile '${name}'`);
+    const available = Object.keys(config.profiles).sort().join(", ");
+    throw new Error(`unknown profile '${name}'. Available profiles: ${available || "(none)"}`);
   }
   return profile;
 }
@@ -203,6 +234,12 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--stop":
         overrides.stop = [...(overrides.stop ?? []), readValue()];
         break;
+      case "--input-cost-per-million-tokens":
+        overrides.inputCostPerMillionTokens = Number(readValue());
+        break;
+      case "--output-cost-per-million-tokens":
+        overrides.outputCostPerMillionTokens = Number(readValue());
+        break;
       case "--shell":
         overrides.shell = readValue();
         break;
@@ -215,6 +252,12 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--max-context-chars":
         overrides.maxContextChars = Number.parseInt(readValue(), 10);
         break;
+      case "--max-turns":
+        overrides.maxTurns = Number.parseInt(readValue(), 10);
+        break;
+      case "--transcript-compaction-chars":
+        overrides.transcriptCompactionChars = Number.parseInt(readValue(), 10);
+        break;
       case "--danger-review":
         overrides.dangerReview = parseDangerReview(readValue());
         break;
@@ -223,6 +266,21 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
         break;
       case "--trace-raw":
         overrides.traceRaw = true;
+        break;
+      case "--read-only":
+        overrides.readOnly = true;
+        break;
+      case "--provider-retries":
+        overrides.providerRetries = Number.parseInt(readValue(), 10);
+        break;
+      case "--provider-retry-delay-ms":
+        overrides.providerRetryDelayMs = Number.parseInt(readValue(), 10);
+        break;
+      case "--provider-debug":
+        overrides.providerDebug = true;
+        break;
+      case "--remote-session-ttl-days":
+        overrides.remoteSessionTtlDays = Number.parseInt(readValue(), 10);
         break;
       default:
         rest.push(arg);
@@ -243,6 +301,9 @@ model = "gpt-5.4"
 temperature = 0.2
 max_output_tokens = 4096
 reasoning_effort = "medium"
+# Optional estimated pricing in USD per 1,000,000 tokens.
+# input_cost_per_million_tokens = 1.25
+# output_cost_per_million_tokens = 10
 
 [profiles.reviewer]
 adapter = "openai-chat"
@@ -256,8 +317,13 @@ shell = "bash"
 timeout_ms = 120000
 transcript_turns = 20
 max_context_chars = 120000
+max_turns = 20
+transcript_compaction_chars = 8000
 danger_review = "llm"
 danger_review_profile = "reviewer"
+provider_retries = 2
+provider_retry_delay_ms = 250
+remote_session_ttl_days = 30
 `;
 }
 
@@ -291,6 +357,15 @@ function mergeRawConfig(config: SmithConfig, raw: RawConfig): SmithConfig {
     next.runtime = mergeRuntime(next.runtime, raw.runtime);
   }
 
+  if (isObject(raw.benchmark)) {
+    next.benchmark = {
+      ...next.benchmark,
+      ...(typeof raw.benchmark.default_profile === "string"
+        ? { defaultProfile: raw.benchmark.default_profile }
+        : {})
+    };
+  }
+
   return next;
 }
 
@@ -309,7 +384,13 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.temperature !== undefined ? { temperature: cli.temperature } : {}),
     ...(cli.maxOutputTokens !== undefined ? { maxOutputTokens: cli.maxOutputTokens } : {}),
     ...(cli.reasoningEffort ? { reasoningEffort: cli.reasoningEffort } : {}),
-    ...(cli.stop ? { stop: cli.stop } : {})
+    ...(cli.stop ? { stop: cli.stop } : {}),
+    ...(cli.inputCostPerMillionTokens !== undefined
+      ? { inputCostPerMillionTokens: cli.inputCostPerMillionTokens }
+      : {}),
+    ...(cli.outputCostPerMillionTokens !== undefined
+      ? { outputCostPerMillionTokens: cli.outputCostPerMillionTokens }
+      : {})
   };
 
   next.runtime = {
@@ -318,9 +399,18 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.timeoutMs !== undefined ? { timeoutMs: cli.timeoutMs } : {}),
     ...(cli.transcriptTurns !== undefined ? { transcriptTurns: cli.transcriptTurns } : {}),
     ...(cli.maxContextChars !== undefined ? { maxContextChars: cli.maxContextChars } : {}),
+    ...(cli.maxTurns !== undefined ? { maxTurns: cli.maxTurns } : {}),
+    ...(cli.transcriptCompactionChars !== undefined
+      ? { transcriptCompactionChars: cli.transcriptCompactionChars }
+      : {}),
     ...(cli.dangerReview ? { dangerReview: cli.dangerReview } : {}),
     ...(cli.dangerReviewProfile ? { dangerReviewProfile: cli.dangerReviewProfile } : {}),
-    ...(cli.traceRaw !== undefined ? { traceRaw: cli.traceRaw } : {})
+    ...(cli.traceRaw !== undefined ? { traceRaw: cli.traceRaw } : {}),
+    ...(cli.readOnly !== undefined ? { readOnly: cli.readOnly } : {}),
+    ...(cli.providerRetries !== undefined ? { providerRetries: cli.providerRetries } : {}),
+    ...(cli.providerRetryDelayMs !== undefined ? { providerRetryDelayMs: cli.providerRetryDelayMs } : {}),
+    ...(cli.providerDebug !== undefined ? { providerDebug: cli.providerDebug } : {}),
+    ...(cli.remoteSessionTtlDays !== undefined ? { remoteSessionTtlDays: cli.remoteSessionTtlDays } : {})
   };
 
   return next;
@@ -339,6 +429,12 @@ function mergeProfile(previous: ProfileConfig, raw: RawConfig): ProfileConfig {
       ? { reasoningEffort: parseReasoningEffort(raw.reasoning_effort) }
       : {}),
     ...(Array.isArray(raw.stop) ? { stop: raw.stop.map(String) } : {}),
+    ...(typeof raw.input_cost_per_million_tokens === "number"
+      ? { inputCostPerMillionTokens: raw.input_cost_per_million_tokens }
+      : {}),
+    ...(typeof raw.output_cost_per_million_tokens === "number"
+      ? { outputCostPerMillionTokens: raw.output_cost_per_million_tokens }
+      : {}),
     ...(isObject(raw.headers) ? { headers: stringifyRecord(raw.headers) } : {}),
     ...(isObject(raw.body) ? { body: raw.body } : {}),
     ...(typeof raw.strict_provider_options === "boolean"
@@ -354,9 +450,18 @@ function mergeRuntime(previous: RuntimeConfig, raw: RawConfig): RuntimeConfig {
     ...(typeof raw.timeout_ms === "number" ? { timeoutMs: raw.timeout_ms } : {}),
     ...(typeof raw.transcript_turns === "number" ? { transcriptTurns: raw.transcript_turns } : {}),
     ...(typeof raw.max_context_chars === "number" ? { maxContextChars: raw.max_context_chars } : {}),
+    ...(typeof raw.max_turns === "number" ? { maxTurns: raw.max_turns } : {}),
+    ...(typeof raw.transcript_compaction_chars === "number"
+      ? { transcriptCompactionChars: raw.transcript_compaction_chars }
+      : {}),
     ...(typeof raw.danger_review === "string" ? { dangerReview: parseDangerReview(raw.danger_review) } : {}),
     ...(typeof raw.danger_review_profile === "string" ? { dangerReviewProfile: raw.danger_review_profile } : {}),
-    ...(typeof raw.trace_raw === "boolean" ? { traceRaw: raw.trace_raw } : {})
+    ...(typeof raw.trace_raw === "boolean" ? { traceRaw: raw.trace_raw } : {}),
+    ...(typeof raw.read_only === "boolean" ? { readOnly: raw.read_only } : {}),
+    ...(typeof raw.provider_retries === "number" ? { providerRetries: raw.provider_retries } : {}),
+    ...(typeof raw.provider_retry_delay_ms === "number" ? { providerRetryDelayMs: raw.provider_retry_delay_ms } : {}),
+    ...(typeof raw.provider_debug === "boolean" ? { providerDebug: raw.provider_debug } : {}),
+    ...(typeof raw.remote_session_ttl_days === "number" ? { remoteSessionTtlDays: raw.remote_session_ttl_days } : {})
   };
 }
 
@@ -383,7 +488,7 @@ function parseReasoningEffort(value: string): ReasoningEffort {
 }
 
 function parseDangerReview(value: string): DangerReviewMode {
-  if (value === "off" || value === "ask" || value === "llm") return value;
+  if (value === "off" || value === "ask" || value === "deterministic" || value === "llm") return value;
   throw new Error(`unknown danger review mode '${value}'`);
 }
 
@@ -398,6 +503,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function cloneConfig(config: SmithConfig): SmithConfig {
   return {
     defaultProfile: config.defaultProfile,
+    benchmark: { ...config.benchmark },
     profiles: Object.fromEntries(
       Object.entries(config.profiles).map(([name, profile]) => [
         name,
@@ -412,6 +518,65 @@ function cloneConfig(config: SmithConfig): SmithConfig {
     runtime: { ...config.runtime },
     files: [...config.files]
   };
+}
+
+export function validateConfig(config: SmithConfig): void {
+  if (!config.defaultProfile.trim()) throw new Error("default_profile must not be empty");
+  if (Object.keys(config.profiles).length === 0) throw new Error("at least one profile is required");
+  for (const [name, profile] of Object.entries(config.profiles)) {
+    const prefix = `profiles.${name}`;
+    if (!profile.model.trim()) throw new Error(`${prefix}.model must not be empty`);
+    validateUrl(`${prefix}.base_url`, profile.baseUrl);
+    validateRange(`${prefix}.temperature`, profile.temperature, 0, 2);
+    validateInteger(`${prefix}.max_output_tokens`, profile.maxOutputTokens, 1, Number.MAX_SAFE_INTEGER);
+    validateRange(`${prefix}.input_cost_per_million_tokens`, profile.inputCostPerMillionTokens, 0, Number.MAX_SAFE_INTEGER);
+    validateRange(`${prefix}.output_cost_per_million_tokens`, profile.outputCostPerMillionTokens, 0, Number.MAX_SAFE_INTEGER);
+    if (profile.apiKeyEnv !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(profile.apiKeyEnv)) {
+      throw new Error(`${prefix}.api_key_env must be an environment variable name`);
+    }
+    if (profile.stop?.some((value) => !value)) throw new Error(`${prefix}.stop must not contain empty values`);
+  }
+  validateInteger("runtime.timeout_ms", config.runtime.timeoutMs, 1, Number.MAX_SAFE_INTEGER);
+  validateInteger("runtime.transcript_turns", config.runtime.transcriptTurns, 1, Number.MAX_SAFE_INTEGER);
+  validateInteger("runtime.max_context_chars", config.runtime.maxContextChars, 1, Number.MAX_SAFE_INTEGER);
+  validateInteger("runtime.max_turns", config.runtime.maxTurns, 1, Number.MAX_SAFE_INTEGER);
+  validateInteger("runtime.transcript_compaction_chars", config.runtime.transcriptCompactionChars, 0, Number.MAX_SAFE_INTEGER);
+  validateInteger("runtime.provider_retries", config.runtime.providerRetries, 0, 10);
+  validateInteger("runtime.provider_retry_delay_ms", config.runtime.providerRetryDelayMs, 0, 60_000);
+  validateInteger("runtime.remote_session_ttl_days", config.runtime.remoteSessionTtlDays, 1, 3650);
+  if (!config.runtime.shell.trim()) throw new Error("runtime.shell must not be empty");
+  if (!config.profiles[config.defaultProfile]) {
+    throw new Error(`default_profile '${config.defaultProfile}' does not match a configured profile`);
+  }
+  if (!config.profiles[config.runtime.dangerReviewProfile]) {
+    throw new Error(`runtime.danger_review_profile '${config.runtime.dangerReviewProfile}' does not match a configured profile`);
+  }
+  if (config.benchmark.defaultProfile && !config.profiles[config.benchmark.defaultProfile]) {
+    throw new Error(`benchmark.default_profile '${config.benchmark.defaultProfile}' does not match a configured profile`);
+  }
+}
+
+function validateUrl(name: string, value: string): void {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("bad protocol");
+  } catch {
+    throw new Error(`${name} must be an http or https URL`);
+  }
+}
+
+function validateInteger(name: string, value: number | undefined, min: number, max: number): void {
+  if (value === undefined) return;
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}`);
+  }
+}
+
+function validateRange(name: string, value: number | undefined, min: number, max: number): void {
+  if (value === undefined) return;
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new Error(`${name} must be a number between ${min} and ${max}`);
+  }
 }
 
 export function nearestProjectRoot(start: string): string {

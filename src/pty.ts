@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -11,6 +11,8 @@ export type ShellRunResult = {
   output: string;
   chatOut?: string;
   timedOut: boolean;
+  elapsedMs: number;
+  lastOutput: string;
 };
 
 export type ShellRunnerOptions = {
@@ -63,19 +65,28 @@ export class PtyShellRunner {
     if (this.closed) throw new Error("shell is closed");
     const cleaned = stripShellFence(command).trimEnd();
     this.buffer = "";
+    const started = Date.now();
     this.terminal.write(`${cleaned}\r`);
     const wait = await this.waitForPromptOrChatOut(timeoutMs);
+    if (wait === "timeout" && !this.closed) {
+      this.terminal.write("\x03");
+      await this.waitForPrompt(1000);
+    }
     const parsed = parseChatOutSentinel(this.buffer);
+    const output = normalizePtyOutput(parsed.output);
     return {
       command: cleaned,
-      output: normalizePtyOutput(parsed.output),
+      output,
       chatOut: parsed.chatOut,
-      timedOut: wait === "timeout"
+      timedOut: wait === "timeout",
+      elapsedMs: Date.now() - started,
+      lastOutput: tail(output, 1200)
     };
   }
 
   kill(): void {
     this.terminal.kill();
+    rmSync(this.helperDir, { recursive: true, force: true });
   }
 
   get helpersPath(): string {
@@ -144,4 +155,8 @@ function writeExecutable(path: string, content: string): void {
 
 function normalizePtyOutput(output: string): string {
   return output.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replaceAll(PROMPT, "").trim();
+}
+
+function tail(value: string, maxChars: number): string {
+  return value.length <= maxChars ? value : value.slice(value.length - maxChars);
 }

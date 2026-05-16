@@ -54,3 +54,19 @@ export function appendTerminalTurn(transcript: string, command: string, output: 
   const entry = `smith$ ${command.trimEnd()}\n${output.trimEnd()}`;
   return transcript ? `${transcript}\n${entry}` : entry;
 }
+
+export function compactTranscript(transcript: string, options: { keepTurns: number; maxSummaryChars: number }): string {
+  const parts = transcript.split(/\n(?=smith\$ )/);
+  if (parts.length <= options.keepTurns + 1) return transcript;
+  const removed = parts.slice(0, Math.max(0, parts.length - options.keepTurns));
+  const kept = parts.slice(parts.length - options.keepTurns);
+  const summaryText = removed.join("\n").slice(-options.maxSummaryChars);
+  const summary = [
+    "smith$ # transcript compacted",
+    `Earlier transcript compacted: ${removed.length} entries omitted.`,
+    summaryText ? `Recent omitted tail:\n${summaryText}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return `${summary}\n${kept.join("\n")}`;
+}

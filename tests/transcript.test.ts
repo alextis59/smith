@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendChatIn,
   appendTerminalTurn,
+  compactTranscript,
   parseChatOutSentinel,
   stripShellFence,
   transcriptToMessages
@@ -29,5 +30,13 @@ describe("transcript helpers", () => {
     const messages = transcriptToMessages("system", "a".repeat(20), 10);
     expect(messages[0]).toEqual({ role: "system", content: "system" });
     expect(messages[1].content).toBe("aaaa");
+  });
+
+  it("compacts old terminal turns deterministically", () => {
+    const transcript = ["smith$ one\n1", "smith$ two\n2", "smith$ three\n3"].join("\n");
+    const compacted = compactTranscript(transcript, { keepTurns: 1, maxSummaryChars: 20 });
+    expect(compacted).toContain("Earlier transcript compacted: 2 entries omitted.");
+    expect(compacted).toContain("smith$ three");
+    expect(compacted).not.toContain("smith$ one");
   });
 });

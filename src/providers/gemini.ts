@@ -1,5 +1,5 @@
 import type { ProviderAdapter, SmithModelRequest } from "./types.js";
-import { isRecord, joinUrl, mergeBody, numberValue, postJson, textValue } from "./types.js";
+import { isRecord, joinUrl, mergeBody, numberValue, postJson, requireText, textValue } from "./types.js";
 
 export const geminiAdapter: ProviderAdapter = {
   name: "gemini",
@@ -13,9 +13,10 @@ export const geminiAdapter: ProviderAdapter = {
       joinUrl(profile.baseUrl, `v1beta/models/${encodeURIComponent(request.model)}:generateContent`),
       headers,
       body,
-      options.fetch
+      options.fetch,
+      options.debugLog
     );
-    return { text: extractGeminiText(raw), raw, usage: extractUsage(raw) };
+    return { text: requireText("gemini", extractGeminiText(raw)), raw, usage: extractUsage(raw) };
   }
 };
 

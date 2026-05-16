@@ -51,8 +51,15 @@ function runtime(): RuntimeConfig {
     timeoutMs: 5000,
     transcriptTurns: 20,
     maxContextChars: 10000,
+    maxTurns: 20,
+    transcriptCompactionChars: 1000,
     dangerReview: "off",
     dangerReviewProfile: "reviewer",
-    traceRaw: false
+    traceRaw: false,
+    readOnly: false,
+    providerRetries: 2,
+    providerRetryDelayMs: 1,
+    providerDebug: false,
+    remoteSessionTtlDays: 30
   };
 }

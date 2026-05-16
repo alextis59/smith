@@ -1,5 +1,5 @@
 import type { ProviderAdapter, SmithMessage, SmithModelRequest } from "./types.js";
-import { isRecord, joinUrl, mergeBody, numberValue, postJson, textValue } from "./types.js";
+import { isRecord, joinUrl, mergeBody, numberValue, postJson, requireText, textValue } from "./types.js";
 
 export const anthropicMessagesAdapter: ProviderAdapter = {
   name: "anthropic-messages",
@@ -10,8 +10,8 @@ export const anthropicMessagesAdapter: ProviderAdapter = {
       "anthropic-version": "2023-06-01",
       ...profile.headers
     };
-    const raw = await postJson(joinUrl(profile.baseUrl, "v1/messages"), headers, body, options.fetch);
-    return { text: extractAnthropicMessagesText(raw), raw, usage: extractUsage(raw) };
+    const raw = await postJson(joinUrl(profile.baseUrl, "v1/messages"), headers, body, options.fetch, options.debugLog);
+    return { text: requireText("anthropic-messages", extractAnthropicMessagesText(raw)), raw, usage: extractUsage(raw) };
   }
 };
 

@@ -106,8 +106,18 @@ timeout_ms = 20
       "low",
       "--stop",
       "STOP",
+      "--input-cost-per-million-tokens",
+      "1.25",
+      "--output-cost-per-million-tokens=10",
+      "--max-turns",
+      "7",
+      "--transcript-compaction-chars=500",
+      "--read-only",
+      "--provider-retries",
+      "3",
+      "--provider-debug",
       "--danger-review",
-      "off",
+      "deterministic",
       "task"
     ]);
 
@@ -122,7 +132,14 @@ timeout_ms = 20
       maxOutputTokens: 64,
       reasoningEffort: "low",
       stop: ["STOP"],
-      dangerReview: "off"
+      inputCostPerMillionTokens: 1.25,
+      outputCostPerMillionTokens: 10,
+      maxTurns: 7,
+      transcriptCompactionChars: 500,
+      readOnly: true,
+      providerRetries: 3,
+      providerDebug: true,
+      dangerReview: "deterministic"
     });
     expect(parsed.rest).toEqual(["task"]);
   });
@@ -131,6 +148,56 @@ timeout_ms = 20
     const file = join(tempDir(), ".smith", "config.toml");
     expect(initConfig(file)).toBe(file);
     expect(readFileSync(file, "utf8")).toBe(defaultConfigToml());
+  });
+
+  it("loads per-profile token pricing", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `[profiles.default]
+input_cost_per_million_tokens = 1.25
+output_cost_per_million_tokens = 10
+`,
+      "utf8"
+    );
+
+    const profile = resolveProfile(loadConfig({ homeDir: tempDir(), cwd }));
+    expect(profile.inputCostPerMillionTokens).toBe(1.25);
+    expect(profile.outputCostPerMillionTokens).toBe(10);
+  });
+
+  it("loads per-project default benchmark profile", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `[benchmark]
+default_profile = "bench"
+
+[profiles.bench]
+adapter = "openai-chat"
+base_url = "https://bench.example/v1"
+model = "bench-model"
+`,
+      "utf8"
+    );
+
+    expect(loadConfig({ homeDir: tempDir(), cwd }).benchmark.defaultProfile).toBe("bench");
+  });
+
+  it("rejects invalid merged config values", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `[profiles.default]
+base_url = "not-a-url"
+`,
+      "utf8"
+    );
+
+    expect(() => loadConfig({ homeDir: tempDir(), cwd })).toThrow("profiles.default.base_url");
   });
 });
 

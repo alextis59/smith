@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProfileConfig } from "../src/config.js";
-import { completeWithProfile } from "../src/providers/index.js";
+import { completeWithProfile, ProviderError } from "../src/providers/index.js";
 import {
   extractAnthropicMessagesText
 } from "../src/providers/anthropic-messages.js";
@@ -100,6 +100,56 @@ describe("provider adapters", () => {
     expect(extractGeminiText({ candidates: [{ content: { parts: [{ text: "a" }, { text: "b" }] } }] })).toBe(
       "ab"
     );
+  });
+
+  it("normalizes malformed provider responses", async () => {
+    const calls = captureFetch({ choices: [] });
+    await expect(completeWithProfile(baseRequest(), profile("openai-chat"), { fetch: calls.fetch })).rejects.toThrow(
+      "openai-chat response did not contain assistant text"
+    );
+  });
+
+  it("retries transient provider errors and logs debug requests", async () => {
+    const debug: string[] = [];
+    let count = 0;
+    const fetchImpl: ProviderFetch = async () => {
+      count += 1;
+      if (count === 1) {
+        return new Response(JSON.stringify({ error: { message: "rate limited" } }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    };
+
+    const response = await completeWithProfile(baseRequest(), profile("openai-chat"), {
+      env: { TEST_KEY: "secret" },
+      fetch: fetchImpl,
+      retries: 1,
+      retryDelayMs: 1,
+      debugLog: (_section, content) => debug.push(content)
+    });
+
+    expect(response.text).toBe("ok");
+    expect(count).toBe(2);
+    expect(debug.join("\n")).toContain("[redacted]");
+  });
+
+  it("marks normalized 5xx provider errors as transient", async () => {
+    const fetchImpl: ProviderFetch = async () =>
+      new Response(JSON.stringify({ error: { message: "temporarily unavailable" } }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" }
+      });
+
+    await expect(completeWithProfile(baseRequest(), profile("openai-chat"), { fetch: fetchImpl })).rejects.toMatchObject({
+      name: "ProviderError",
+      transient: true
+    } satisfies Partial<ProviderError>);
   });
 });
 
