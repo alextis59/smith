@@ -34,7 +34,9 @@ export async function runBenchmarkTask(taskPath: string, options: BenchmarkRunOp
   const task = resolve(taskPath);
   validateTask(task);
   const repoRoot = findRepoRoot();
-  const sandbox = mkdtempSync(join(repoRoot, ".smith-bench-"));
+  const sandboxRoot = join(repoRoot, ".smith-bench");
+  mkdirSync(sandboxRoot, { recursive: true });
+  const sandbox = mkdtempSync(join(sandboxRoot, "run-"));
   const taskCopy = join(sandbox, "task");
   const workspace = join(sandbox, "workspace");
   const home = join(sandbox, "home");
