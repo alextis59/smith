@@ -49,3 +49,23 @@ node bin/smith.js benchmark run benchmarks/012-slugify-edge-cases --adapter chat
 ```
 
 Rerun result: passed in 13.4s, 5 turns, 5,652 total tokens. Log: `/tmp/smith/2026-05-16T16-02-41-201Z-smith-012-slugify-edge-cases.json`. The verifier command ran once and its terminal output was `exit_status: 0`.
+
+## 2026-05-16: Reporting Task Exactness
+
+Command:
+
+```sh
+node bin/smith.js benchmark run benchmarks/001-release-note-summary --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result: passed, but logs showed avoidable verifier failures. Smith paraphrased or formatted expected literals (`payments retry fix`, `rollback flag receipt_v2`) as capitalized prose or with backticks, then needed extra turns to converge. This is a prompt misunderstanding / verifier-use issue, not task-specific logic.
+
+General improvement: the system prompt now tells Smith to preserve exact identifiers, flags, filenames, and expected literal strings from source files and verifier errors in generated code, docs, and reports.
+
+The same run also exposed remaining status-probe echo text after heredoc-plus-verifier commands. The PTY status probe now prints sentinel values via shell variables and strips the probe command after normalized output.
+
+Rerun result after the first prompt change: passed, but still failed once because Smith invented `Release Note Summary` instead of carrying over the source version label `Release 2.4`. The prompt now specifically tells Smith to prefer source headings/version labels for generated report headings and to copy factual bullet phrases exactly before adding explanatory prose.
+
+Rerun result after the heading guidance: passed, but still failed once because Markdown backticks around `receipt_v2` broke the exact phrase `rollback flag receipt_v2`. The prompt now explicitly says not to add Markdown backticks, quotes, capitalization changes, or punctuation inside text that must be preserved exactly.
+
+Rerun result after the no-backticks rule: passed in 26.7s, 8 turns, 14,747 total tokens. Log: `/tmp/smith/2026-05-16T16-11-27-987Z-smith-001-release-note-summary.json`. No exact-literal verifier failure occurred. Remaining turn overhead came from optional self-check commands (`git diff` in a non-git sandbox and a brittle `printf` label), so the next general improvement should target shell command robustness rather than report exactness.

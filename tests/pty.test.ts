@@ -25,6 +25,13 @@ describe("PTY shell runner", () => {
 
       const failed = await runner.run("false", 2000);
       expect(failed.exitCode).toBe(1);
+      expect(failed.output).not.toContain("SMITH_EXIT_STATUS");
+      expect(failed.output).not.toContain("printf");
+
+      const heredocFailed = await runner.run("cat > sample.txt <<'EOF'\nhello\nEOF\nfalse", 2000);
+      expect(heredocFailed.exitCode).toBe(1);
+      expect(heredocFailed.output).not.toContain("SMITH_EXIT_STATUS");
+      expect(heredocFailed.output).not.toContain("printf");
 
       const result = await runner.run("chat_out done", 2000);
       expect(result.chatOut).toBe("done");

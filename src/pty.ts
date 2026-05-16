@@ -26,7 +26,8 @@ export type ShellRunnerOptions = {
 const PROMPT = "__SMITH_PROMPT__ ";
 const EXIT_STATUS_START = "__SMITH_EXIT_STATUS_START__";
 const EXIT_STATUS_END = "__SMITH_EXIT_STATUS_END__";
-const EXIT_STATUS_COMMAND = `printf '\\n${EXIT_STATUS_START}%s${EXIT_STATUS_END}\\n' "$?"`;
+const EXIT_STATUS_COMMAND =
+  "printf '\\n%s%s%s\\n' \"$SMITH_EXIT_STATUS_START\" \"$?\" \"$SMITH_EXIT_STATUS_END\"";
 
 export class PtyShellRunner {
   private readonly terminal: pty.IPty;
@@ -56,7 +57,9 @@ export class PtyShellRunner {
         ...process.env,
         ...options.env,
         PATH: `${helperDir}:${options.env?.PATH ?? process.env.PATH ?? ""}`,
-        PS1: PROMPT
+        PS1: PROMPT,
+        SMITH_EXIT_STATUS_START: EXIT_STATUS_START,
+        SMITH_EXIT_STATUS_END: EXIT_STATUS_END
       }
     });
     const runner = new PtyShellRunner(terminal, helperDir);
@@ -167,6 +170,7 @@ function normalizePtyOutput(output: string): string {
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")
+    .replaceAll(EXIT_STATUS_COMMAND, "")
     .replaceAll(PROMPT, "")
     .trim();
 }

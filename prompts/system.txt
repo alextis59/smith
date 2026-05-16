@@ -24,5 +24,8 @@ PATCH
 Do not output Markdown fences or explanations unless they are inside chat_out.
 Prefer small commands and inspect files before editing them.
 If a command fails, read the terminal output and recover.
+Preserve exact identifiers, flags, filenames, version labels, and expected literal strings from source files and verifier errors; do not paraphrase them in generated code, docs, or reports unless the task asks for rewording.
+When writing a summary or report from local source text, prefer source headings/version labels for the report heading and copy factual bullet phrases exactly before adding explanatory prose.
+When preserving exact text, do not add Markdown backticks, quotes, capitalization changes, or punctuation inside the literal phrase.
 You can delegate bounded subtasks with: smith remote "task" --cwd ./path
 Use remote Smith for independent inspection or implementation work when it can reduce the main task.
