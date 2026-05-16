@@ -15,6 +15,15 @@ describe("prompt and trace", () => {
     expect(prompt).toContain("Use npm test.");
   });
 
+  it("includes benchmark-hardened shell guidance", () => {
+    const prompt = loadSystemPrompt("/");
+
+    expect(prompt).toContain("do not repeat the same inspection command");
+    expect(prompt).toContain("Do not run git status, git diff, or .git probes as default self-checks");
+    expect(prompt).toContain("printf '%s\\n' '--- label ---'");
+    expect(prompt).toContain("source top-level Markdown heading or version label verbatim");
+  });
+
   it("writes trace files under ~/.smith/runs", () => {
     const home = mkdtempSync(join(tmpdir(), "smith-trace-home-"));
     const logger = createTraceLogger({

@@ -60,6 +60,15 @@ export type BenchmarkCostRates = {
   outputCostPerMillionTokens?: number;
 };
 
+export const BENCHMARK_TASK_INSTRUCTIONS = [
+  "Complete this benchmark task in the current workspace.",
+  "Make only the file changes needed for the task. Do not modify files outside the workspace.",
+  "Inspect and edit files with shell commands. Do not call chat_out until the requested change is actually implemented and, when practical, checked.",
+  "The benchmark verifier is available at /task/verify.sh; run bash /task/verify.sh before chat_out unless blocked.",
+  "After a focused edit, run the verifier directly; avoid optional status, diff, or .git self-checks unless diagnosing a concrete failure.",
+  "If files need to change, a response that only calls chat_out is a failed benchmark attempt."
+];
+
 export async function runBenchmarkPath(path: string, options: BenchmarkRunOptions = {}): Promise<BenchmarkTaskResult[]> {
   const taskPaths = discoverTasks(path);
   const results: BenchmarkTaskResult[] = [];
@@ -112,7 +121,7 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
     "mkdir -p /home/smith",
     "RESULT_DIR=/home/smith/benchmark-results",
     "mkdir -p \"$RESULT_DIR\"",
-    "TASK=$(printf '%s\\n\\n' 'Complete this benchmark task in the current workspace.' 'Make only the file changes needed for the task. Do not modify files outside the workspace.' 'Inspect and edit files with shell commands. Do not call chat_out until the requested change is actually implemented and, when practical, checked.' 'The benchmark verifier is available at /task/verify.sh; run bash /task/verify.sh before chat_out unless blocked.' 'If files need to change, a response that only calls chat_out is a failed benchmark attempt.'; cat /task/Task.md)",
+    `TASK=$(printf '%s\\n\\n' ${BENCHMARK_TASK_INSTRUCTIONS.map(shellQuote).join(" ")}; cat /task/Task.md)`,
     "set +e",
     `${command} > "$RESULT_DIR/smith.stdout" 2> "$RESULT_DIR/smith.stderr"`,
     "smith_status=$?",
@@ -360,11 +369,7 @@ async function runCodexBenchmarkTask(context: BenchmarkTaskContext): Promise<Ben
 
 function benchmarkPrompt(taskPrompt: string): string {
   return [
-    "Complete this benchmark task in the current workspace.",
-    "Make only the file changes needed for the task. Do not modify files outside the workspace.",
-    "Inspect and edit files with shell commands. Do not call chat_out until the requested change is actually implemented and, when practical, checked.",
-    "The benchmark verifier is available at /task/verify.sh; run bash /task/verify.sh before chat_out unless blocked.",
-    "If files need to change, a response that only calls chat_out is a failed benchmark attempt.",
+    ...BENCHMARK_TASK_INSTRUCTIONS,
     "",
     taskPrompt
   ].join("\n");

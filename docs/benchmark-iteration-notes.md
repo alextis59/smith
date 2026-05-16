@@ -79,3 +79,35 @@ node bin/smith.js benchmark run benchmarks/041-safe-clean-script --adapter chatg
 ```
 
 Result: passed in 20.8s, 6 turns, 7,374 total tokens. Log: `/tmp/smith/2026-05-16T16-13-16-200Z-smith-041-safe-clean-script.json`. Smith inspected the script and verifier, applied a focused `smith_patch`, and verified once. No new failure class appeared.
+
+## 2026-05-16: Config Inventory Shell Robustness
+
+Command:
+
+```sh
+node bin/smith.js benchmark run benchmarks/002-config-inventory --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Baseline result: passed in 20.8s, 6 turns, 8,303 total tokens. Log: `/tmp/smith/2026-05-16T19-58-21-224Z-smith-002-config-inventory.json`. Trace: `.smith-bench/run-l07HEC/home/.smith/runs/2026-05-16T19-58-00-593Z.trace`.
+
+Observed inefficiencies and classifications:
+
+- The run still used separator labels that had previously failed when written as `printf '--- label ---\n'`. Classification: shell/PTY issue.
+- The run repeated source inspection in adjacent turns on a small unchanged workspace. Classification: weak inspection / context pollution.
+- A follow-up rerun after only shell guidance avoided brittle labels and guarded `git`, but missed the source heading literal `Runtime Config` and needed verifier recovery. Classification: prompt misunderstanding / verifier use.
+- Later reruns showed optional `.git` probing and status checks after edits. Classification: weak inspection / shell self-check inefficiency.
+
+General improvements:
+
+- The system prompt now tells Smith to reuse existing terminal output, avoid `git status`, `git diff`, and `.git` probes as default self-checks in scratch/benchmark workspaces, and use `printf '%s\n' '--- label ---'` for dash-prefixed labels.
+- Report guidance now requires source top-level Markdown headings or version labels to appear verbatim in the generated report heading or first bullet.
+- Benchmark task instructions are shared through `BENCHMARK_TASK_INSTRUCTIONS` and now tell agents to run the verifier directly after focused edits, avoiding optional status, diff, or `.git` self-checks unless diagnosing a concrete failure.
+
+Rerun progression:
+
+- After initial shell guidance: passed in 29.3s, 9 turns, 15,068 tokens. Log: `/tmp/smith/2026-05-16T20-03-07-866Z-smith-002-config-inventory.json`. Trace: `.smith-bench/run-CCznb3/home/.smith/runs/2026-05-16T20-02-38-859Z.trace`. It avoided brittle `printf` but failed once on missing `Runtime Config`.
+- After explicit source-heading guidance: passed in 17.2s, 7 turns, 10,101 tokens. Log: `/tmp/smith/2026-05-16T20-04-41-135Z-smith-002-config-inventory.json`. Trace: `.smith-bench/run-ZIOcyi/home/.smith/runs/2026-05-16T20-04-24-160Z.trace`. No verifier failure, no `git` command, but still some optional checking.
+- After shared benchmark self-check guidance: passed in 17.7s, 7 turns, 9,787 tokens. Log: `/tmp/smith/2026-05-16T20-06-15-732Z-smith-002-config-inventory.json`. Trace: `.smith-bench/run-EU37qH/home/.smith/runs/2026-05-16T20-05-58-255Z.trace`. No brittle labels, but it still probed `.git`.
+- After stronger no-git-probe guidance: passed in 25.6s, 7 turns, 10,790 tokens. Log: `/tmp/smith/2026-05-16T20-07-24-204Z-smith-002-config-inventory.json`. Trace: `.smith-bench/run-yLEFui/home/.smith/runs/2026-05-16T20-06-58-859Z.trace`. No `git` or `.git` probe appeared, labels used `printf '%s\n'`, and the verifier passed on the first run.
+
+Decision: stop this task because the representative failure classes are improved: no brittle printf label, no git/diff sandbox noise, no missing source heading verifier failure, and verifier success on the first attempt. Remaining overhead is general cautious inspection, not a clear failure.

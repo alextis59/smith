@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
-import { runBenchmarkTask, validateBenchmarkPath } from "../src/benchmark/runner.js";
+import { BENCHMARK_TASK_INSTRUCTIONS, runBenchmarkTask, validateBenchmarkPath } from "../src/benchmark/runner.js";
 
 const hasDocker = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
 
@@ -53,6 +53,12 @@ timeout_ms = 5000
     expect(result.valid).toBe(false);
     expect(result.errors).toContain("missing workspace");
     expect(result.errors).toContain("missing verify.sh");
+  });
+
+  it("nudges agents away from optional status self-checks", () => {
+    expect(BENCHMARK_TASK_INSTRUCTIONS).toContain(
+      "After a focused edit, run the verifier directly; avoid optional status, diff, or .git self-checks unless diagnosing a concrete failure."
+    );
   });
 });
 
