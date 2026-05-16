@@ -1,0 +1,12 @@
+set -euo pipefail
+test -f 'docs/cli.md'
+node <<'NODE'
+const fs = require("node:fs");
+const text = fs.readFileSync("docs/cli.md", "utf8");
+for (const expected of ["smith benchmark run <task-or-directory>"]) {
+  if (!text.includes(expected)) throw new Error(`missing expected content: ${expected}`);
+}
+for (const path of []) {
+  if (!fs.existsSync(path)) throw new Error(`missing source file: ${path}`);
+}
+NODE
