@@ -69,3 +69,13 @@ Rerun result after the first prompt change: passed, but still failed once becaus
 Rerun result after the heading guidance: passed, but still failed once because Markdown backticks around `receipt_v2` broke the exact phrase `rollback flag receipt_v2`. The prompt now explicitly says not to add Markdown backticks, quotes, capitalization changes, or punctuation inside text that must be preserved exactly.
 
 Rerun result after the no-backticks rule: passed in 26.7s, 8 turns, 14,747 total tokens. Log: `/tmp/smith/2026-05-16T16-11-27-987Z-smith-001-release-note-summary.json`. No exact-literal verifier failure occurred. Remaining turn overhead came from optional self-check commands (`git diff` in a non-git sandbox and a brittle `printf` label), so the next general improvement should target shell command robustness rather than report exactness.
+
+## 2026-05-16: Shell Script Task
+
+Command:
+
+```sh
+node bin/smith.js benchmark run benchmarks/041-safe-clean-script --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result: passed in 20.8s, 6 turns, 7,374 total tokens. Log: `/tmp/smith/2026-05-16T16-13-16-200Z-smith-041-safe-clean-script.json`. Smith inspected the script and verifier, applied a focused `smith_patch`, and verified once. No new failure class appeared.
