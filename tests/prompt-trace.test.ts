@@ -22,6 +22,8 @@ describe("prompt and trace", () => {
     expect(prompt).toContain("Do not run git status, git diff, or .git probes as default self-checks");
     expect(prompt).toContain("printf '%s\\n' '--- label ---'");
     expect(prompt).toContain("source top-level Markdown heading or version label verbatim");
+    expect(prompt).toContain("copy factual bullets or labeled facts");
+    expect(prompt).toContain("original source bullet text verbatim");
   });
 
   it("writes trace files under ~/.smith/runs", () => {

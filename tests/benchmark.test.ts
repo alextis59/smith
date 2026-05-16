@@ -59,6 +59,9 @@ timeout_ms = 5000
     expect(BENCHMARK_TASK_INSTRUCTIONS).toContain(
       "After a focused edit, run the verifier directly; avoid optional status, diff, or .git self-checks unless diagnosing a concrete failure."
     );
+    expect(BENCHMARK_TASK_INSTRUCTIONS).toContain(
+      "Do not read /task/verify.sh before the first verifier run; inspect it only after a verifier failure or when you are blocked."
+    );
   });
 });
 

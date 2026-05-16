@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,8 +6,9 @@ import { PtyShellRunner } from "../src/pty.js";
 
 describe("PTY shell runner", () => {
   it("runs shell commands and captures chat_out", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-pty-"));
     const runner = await PtyShellRunner.start({
-      cwd: mkdtempSync(join(tmpdir(), "smith-pty-")),
+      cwd,
       shell: "bash",
       timeoutMs: 2000
     });
@@ -32,6 +33,36 @@ describe("PTY shell runner", () => {
       expect(heredocFailed.exitCode).toBe(1);
       expect(heredocFailed.output).not.toContain("SMITH_EXIT_STATUS");
       expect(heredocFailed.output).not.toContain("printf");
+
+      const heredocSucceeded = await runner.run("cat > sample.txt <<'EOF'\nhello\nEOF\ntest -f sample.txt", 2000);
+      expect(heredocSucceeded.exitCode).toBe(0);
+      expect(heredocSucceeded.output).not.toContain("cat > sample.txt");
+      expect(heredocSucceeded.output).not.toContain("SMITH_EXIT_STATUS");
+      expect(heredocSucceeded.output).not.toContain("printf");
+
+      writeFileSync(
+        join(cwd, "verify.sh"),
+        `set -euo pipefail
+test -f sample.txt
+node <<'NODE'
+const fs = require("node:fs");
+if (fs.readFileSync("sample.txt", "utf8").trim() !== "hello") process.exit(1);
+NODE
+`,
+        "utf8"
+      );
+      const nestedHeredocSucceeded = await runner.run(
+        "cat > sample.txt <<'EOF'\nhello\nEOF\nbash verify.sh",
+        2000
+      );
+      expect(nestedHeredocSucceeded.exitCode).toBe(0);
+      expect(nestedHeredocSucceeded.output).not.toContain("cat > sample.txt");
+      expect(nestedHeredocSucceeded.output).not.toContain("SMITH_EXIT_STATUS");
+      expect(nestedHeredocSucceeded.output).not.toContain("printf");
+
+      const multilineOutput = await runner.run("printf '%s\\n' hello\nprintf '%s\\n' world", 2000);
+      expect(multilineOutput.exitCode).toBe(0);
+      expect(multilineOutput.output).toBe("hello\nworld");
 
       const result = await runner.run("chat_out done", 2000);
       expect(result.chatOut).toBe("done");

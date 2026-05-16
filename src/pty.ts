@@ -72,8 +72,11 @@ export class PtyShellRunner {
     if (this.closed) throw new Error("shell is closed");
     const cleaned = stripShellFence(command).trimEnd();
     this.buffer = "";
+    await sleep(25);
+    this.buffer = "";
     const started = Date.now();
-    this.terminal.write(`${cleaned}\r`);
+    const sent = wrapMultilineCommand(cleaned);
+    this.terminal.write(`${sent}\r`);
     const wait = await this.waitForPromptOrChatOut(timeoutMs);
     if (wait === "timeout" && !this.closed) {
       this.terminal.write("\x03");
@@ -84,7 +87,7 @@ export class PtyShellRunner {
     }
     const parsed = parseChatOutSentinel(this.buffer);
     const status = parseExitStatusSentinel(parsed.output);
-    const output = stripEchoedCommand(normalizePtyOutput(status.output), cleaned);
+    const output = stripEchoedCommand(normalizePtyOutput(status.output), sent);
     return {
       command: cleaned,
       output,
@@ -134,6 +137,14 @@ export class PtyShellRunner {
       }, 10);
     });
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function wrapMultilineCommand(command: string): string {
+  return command.includes("\n") ? `{\n${command}\n}` : command;
 }
 
 function createHelperDir(): string {
@@ -192,8 +203,32 @@ function parseExitStatusSentinel(output: string): { output: string; exitCode?: n
 }
 
 function stripEchoedCommand(output: string, command: string): string {
+  const strippedMultiline = stripEchoedMultilineCommand(output, command);
+  if (strippedMultiline !== undefined) return strippedMultiline;
   if (output === command) return "";
   return output.startsWith(`${command}\n`) ? output.slice(command.length + 1).trim() : output;
+}
+
+function stripEchoedMultilineCommand(output: string, command: string): string | undefined {
+  const expected = command.split("\n");
+  if (expected.length <= 1) return undefined;
+  const lines = output.split("\n");
+  let outputIndex = 0;
+  let expectedIndex = 0;
+  while (outputIndex < lines.length && expectedIndex < expected.length) {
+    const line = lines[outputIndex].trimEnd();
+    if (line.trim() === "") {
+      outputIndex += 1;
+      continue;
+    }
+    const withoutContinuationPrompt = line.startsWith("> ") ? line.slice(2) : line;
+    if (withoutContinuationPrompt !== expected[expectedIndex]) return undefined;
+    outputIndex += 1;
+    expectedIndex += 1;
+  }
+  if (expectedIndex !== expected.length) return undefined;
+  while (outputIndex < lines.length && lines[outputIndex].trim() === "") outputIndex += 1;
+  return lines.slice(outputIndex).join("\n").trim();
 }
 
 function tail(value: string, maxChars: number): string {

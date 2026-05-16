@@ -66,6 +66,7 @@ export const BENCHMARK_TASK_INSTRUCTIONS = [
   "Inspect and edit files with shell commands. Do not call chat_out until the requested change is actually implemented and, when practical, checked.",
   "The benchmark verifier is available at /task/verify.sh; run bash /task/verify.sh before chat_out unless blocked.",
   "After a focused edit, run the verifier directly; avoid optional status, diff, or .git self-checks unless diagnosing a concrete failure.",
+  "Do not read /task/verify.sh before the first verifier run; inspect it only after a verifier failure or when you are blocked.",
   "If files need to change, a response that only calls chat_out is a failed benchmark attempt."
 ];
 

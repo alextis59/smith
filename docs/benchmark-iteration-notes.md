@@ -111,3 +111,66 @@ Rerun progression:
 - After stronger no-git-probe guidance: passed in 25.6s, 7 turns, 10,790 tokens. Log: `/tmp/smith/2026-05-16T20-07-24-204Z-smith-002-config-inventory.json`. Trace: `.smith-bench/run-yLEFui/home/.smith/runs/2026-05-16T20-06-58-859Z.trace`. No `git` or `.git` probe appeared, labels used `printf '%s\n'`, and the verifier passed on the first run.
 
 Decision: stop this task because the representative failure classes are improved: no brittle printf label, no git/diff sandbox noise, no missing source heading verifier failure, and verifier success on the first attempt. Remaining overhead is general cautious inspection, not a clear failure.
+
+## 2026-05-17: Incident Timeline Report and PTY Multiline Status
+
+Command:
+
+```sh
+node bin/smith.js benchmark run benchmarks/003-incident-timeline --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Baseline result: passed in 19.8s, 8 turns, 12,113 tokens. Log: `/tmp/smith/2026-05-16T23-11-35-800Z-smith-003-incident-timeline.json`. Trace: `.smith-bench/run-7K67nd/home/.smith/runs/2026-05-16T23-11-16-447Z.trace`. Sandbox: `.smith-bench/run-7K67nd`.
+
+Observed failure and inefficiency:
+
+- Smith rewrote `root cause: missing index` as prose and needed a verifier failure to recover. Classification: prompt misunderstanding / verifier misuse.
+- A later rerun still rewrote timestamp bullets into sentences and inspected `/task/verify.sh` after a silent verifier success was not surfaced from a multiline heredoc-plus-verifier command. Classification: shell/PTY issue, with secondary transcript formatting risk.
+
+General improvements:
+
+- Report guidance now says requested bullet-list reports should preserve original source bullet text verbatim instead of rewriting short bullets into prose.
+- Benchmark task instructions now tell agents not to read `/task/verify.sh` before the first verifier run unless blocked or recovering from verifier failure.
+- The PTY runner now wraps multiline commands in a single shell group so a prompt between pasted lines cannot end the turn before following commands run, and strips the wrapper echo from transcript output. Regression coverage checks silent success status for heredoc commands and nested verifier-style heredocs.
+
+Rerun progression:
+
+- After initial factual-fragment prompt guidance: passed in 48.5s, 9 turns, 14,126 tokens, but still failed once on rewritten timestamp/root-cause text. Log: `/tmp/smith/2026-05-16T23-13-24-745Z-smith-003-incident-timeline.json`. Trace: `.smith-bench/run-50LaaK/home/.smith/runs/2026-05-16T23-12-36-503Z.trace`.
+- After stronger bullet guidance: passed in 30.2s, 9 turns, 17,022 tokens, with no verifier content failure, but inspected `/task/verify.sh` before running the verifier. Log: `/tmp/smith/2026-05-16T23-15-06-710Z-smith-003-incident-timeline.json`. Trace: `.smith-bench/run-w703tM/home/.smith/runs/2026-05-16T23-14-36-747Z.trace`.
+- After verifier-read instruction: passed in 16.9s, 7 turns, 11,572 tokens, but exposed missing `exit_status` after a heredoc plus silent verifier success. Log: `/tmp/smith/2026-05-16T23-16-03-300Z-smith-003-incident-timeline.json`. Trace: `.smith-bench/run-iDkNC7/home/.smith/runs/2026-05-16T23-15-46-680Z.trace`.
+- After PTY grouping/status fix and transcript cleanup: passed in 11.9s, 5 turns, 6,977 tokens. Log: `/tmp/smith/2026-05-16T23-23-19-722Z-smith-003-incident-timeline.json`. Trace: `.smith-bench/run-r4x40F/home/.smith/runs/2026-05-16T23-23-08-264Z.trace`. Sandbox: `.smith-bench/run-r4x40F`.
+
+Decision: stop this task. The exact-report failure and the multiline PTY status issue are both improved, and the final run verifies directly after the focused edit without reading the verifier script.
+
+## 2026-05-17: Manifest Checksum Shell Repair
+
+Command:
+
+```sh
+node bin/smith.js benchmark run benchmarks/046-manifest-checksum --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result: passed in 72.0s, 10 turns, 18,573 tokens. Log: `/tmp/smith/2026-05-16T23-25-25-814Z-smith-046-manifest-checksum.json`. Trace: `.smith-bench/run-S4LDrF/home/.smith/runs/2026-05-16T23-24-14-057Z.trace`. Sandbox: `.smith-bench/run-S4LDrF`.
+
+Observed behavior and classification:
+
+- Smith inspected the small workspace, made an overcomplicated first patch around locating `manifest.txt`, and the silent verifier failed. Classification: weak inspection / prompt misunderstanding.
+- After the verifier failure, Smith inspected `/task/verify.sh`, learned the expected CLI shape, simplified the script to accept an optional filename argument and print only the checksum, then passed. Classification after recovery: verifier use was appropriate.
+
+Decision: no Smith change from this task. The first patch was inefficient, but the evidence points to task reasoning rather than a clear reusable runner, prompt, transcript, or tool/schema defect. The new "do not read verifier before first run" instruction still behaved as intended: it avoided verifier overfitting up front while allowing verifier inspection after a concrete failure.
+
+## 2026-05-17: CSV to JSON Report
+
+Command:
+
+```sh
+node bin/smith.js benchmark run benchmarks/061-csv-to-json-report --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result: passed in 10.5s, 6 turns, 8,192 tokens. Log: `/tmp/smith/2026-05-16T23-26-21-370Z-smith-061-csv-to-json-report.json`. Trace: `.smith-bench/run-s2wHnG/home/.smith/runs/2026-05-16T23-26-11-049Z.trace`. Sandbox: `.smith-bench/run-s2wHnG`.
+
+Observed behavior and classification:
+
+- Smith generated semantically correct pretty-printed JSON, but the verifier required exact compact formatting. It recovered immediately from the assertion diff by copying the expected format. Classification: verifier misuse / transcript formatting exactness.
+
+Decision: no Smith change from this task. Existing guidance already tells Smith to preserve exact literals from verifier errors, and the recovery path was short. A broader prompt change to guess compact JSON before seeing verifier evidence would be speculative.
