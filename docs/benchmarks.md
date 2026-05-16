@@ -47,7 +47,23 @@ Run every task:
 smith benchmark run ./benchmarks --profile fast
 ```
 
-The benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace.
+Use runner controls:
+
+```sh
+smith benchmark run ./benchmarks --timeout-ms 120000 --image node:22-bookworm
+smith benchmark run ./benchmarks --json
+smith benchmark run ./benchmarks/011-parse-port-default --keep-sandbox
+smith benchmark validate ./benchmarks
+```
+
+The benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. Tasks run in stable sorted order. Successful sandboxes are removed automatically; failed sandboxes are retained for inspection.
+
+Projects can set a default benchmark profile:
+
+```toml
+[benchmark]
+default_profile = "fast"
+```
 
 ## Local Maintenance Checks
 
@@ -87,6 +103,24 @@ find benchmarks -mindepth 1 -maxdepth 1 -type d -name '[0-9][0-9][0-9]-*' | wc -
 ## Adding Future Tasks
 
 Add tasks by extending `scripts/generate-benchmarks.mjs`, regenerating the suite, and running `node scripts/validate-benchmarks.mjs`. New tasks should add meaningfully different work, not only new wording around an existing verifier pattern. Prefer local Node.js, shell, and plain text files already present in the workspace.
+
+Good verifiers assert final behavior directly:
+
+```sh
+#!/usr/bin/env bash
+set -euo pipefail
+npm test
+test "$(node -e 'import("./src/parse-port.js").then(m => console.log(m.parsePort("")))')" = "3000"
+```
+
+Avoid verifiers that depend on timing, network access, hidden provider state, or exact implementation text when behavior is what matters:
+
+```sh
+# Bad: nondeterministic and implementation-coupled.
+sleep "$((RANDOM % 3))"
+grep -q "function parsePort" src/parse-port.js
+curl https://example.com/check
+```
 
 When adding or changing tasks, also run the relevant repository checks:
 

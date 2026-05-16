@@ -59,6 +59,9 @@ temperature = 0.2
 max_output_tokens = 4096
 reasoning_effort = "medium"
 stop = []
+# Optional estimated pricing in USD per 1,000,000 tokens.
+# input_cost_per_million_tokens = 1.25
+# output_cost_per_million_tokens = 10
 
 [profiles.default.headers]
 X-Title = "Smith"
@@ -80,9 +83,22 @@ transcript_turns = 20
 max_context_chars = 120000
 danger_review = "llm"
 danger_review_profile = "reviewer"
+max_turns = 20
+provider_retries = 2
+provider_retry_delay_ms = 250
+read_only = false
 ```
 
-Useful flags include `--cwd`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, and `--danger-review`.
+Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--danger-review`, and `--read-only`.
+
+When a provider response includes token usage, Smith records per-turn and total usage in the run trace. If `input_cost_per_million_tokens` and/or `output_cost_per_million_tokens` are set on the active profile, traces also include estimated USD cost.
+
+Inspect the merged config and diagnose the active profile with:
+
+```sh
+smith config show --json
+smith config doctor --profile default
+```
 
 ## Provider Adapters
 
@@ -133,6 +149,14 @@ smith remote --resume abc123 "Use the mock-token branch and continue"
 
 Resume starts a fresh shell, restores the transcript context, appends the new parent answer as `chat_in`, and continues.
 
+Remote sessions can be inspected and deleted:
+
+```sh
+smith remote list
+smith remote show abc123
+smith remote delete abc123
+```
+
 ## smith_patch
 
 Smith installs a terminal-native patch helper into the agent shell:
@@ -152,13 +176,13 @@ It supports focused add, update, and delete operations, rejects malformed patche
 
 ## Danger Review
 
-Smith is powerful by design. With `danger_review = "llm"`, Smith detects a narrow set of clearly dangerous shell inputs, then asks the configured reviewer profile whether to allow or block the command. Blocked commands are not executed; the terminal transcript receives:
+Smith is powerful by design. With `danger_review = "deterministic"`, Smith locally blocks a narrow set of clearly dangerous shell inputs. With `danger_review = "llm"`, the same detector first matches commands, then asks the configured reviewer profile whether to allow or block the command. Blocked commands are not executed; the terminal transcript receives:
 
 ```text
 Command too dangerous
 ```
 
-The detector targets destructive root/home removals, `sudo`, downloaded scripts piped to shells, disk formatting/raw disk writes, and credential-seeking file or environment access. Set `danger_review = "off"` to disable this backstop.
+The detector targets destructive root/home removals, `sudo`, downloaded scripts piped to shells, disk formatting/raw disk writes, and credential-seeking file or environment access. Set `read_only = true` or pass `--read-only` to block common filesystem write commands for inspection-only tasks. Set `danger_review = "off"` to disable the dangerous-command backstop.
 
 ## Prompts and Project Instructions
 
@@ -189,11 +213,13 @@ Run one task or a directory of task folders:
 ```sh
 smith benchmark run ./benchmarks/basic-edit
 smith benchmark run ./benchmarks --profile fast
+smith benchmark run ./benchmarks --timeout-ms 120000 --image node:22-bookworm --json
+smith benchmark validate ./benchmarks
 ```
 
-The runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace.
+The runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. Successful sandboxes are removed automatically; pass `--keep-sandbox` to preserve them for debugging.
 
-See [docs/benchmarks.md](docs/benchmarks.md) for the task taxonomy, maintenance workflow, and validation commands.
+See [docs/benchmarks.md](docs/benchmarks.md) for the task taxonomy, authoring examples, maintenance workflow, and validation commands. See also [docs/architecture.md](docs/architecture.md), [docs/provider-configs.md](docs/provider-configs.md), and [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Development
 
