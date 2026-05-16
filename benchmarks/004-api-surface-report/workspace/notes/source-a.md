@@ -1,0 +1,3 @@
+Primary note:
+- createSession
+- resumeSession

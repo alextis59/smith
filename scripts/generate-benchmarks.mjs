@@ -284,7 +284,7 @@ function singleSpec(base, index) {
       file: "src/invoice-total.js",
       initial: `export function invoiceTotal(lines) {\n  return lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);\n}\n`,
       solution: `export function invoiceTotal(lines) {\n  const cents = lines.reduce((sum, line) => sum + Math.round(line.quantity * line.unitPrice * 100), 0);\n  return cents / 100;\n}\n`,
-      tests: `import { invoiceTotal } from "./src/invoice-total.js";\nimport assert from "node:assert/strict";\nassert.equal(invoiceTotal([{ quantity: 3, unitPrice: 0.1 }]), 0.3);\nassert.equal(invoiceTotal([{ quantity: 2, unitPrice: 10.235 }]), 20.48);\n`
+      tests: `import { invoiceTotal } from "./src/invoice-total.js";\nimport assert from "node:assert/strict";\nassert.equal(invoiceTotal([{ quantity: 3, unitPrice: 0.1 }]), 0.3);\nassert.equal(invoiceTotal([{ quantity: 2, unitPrice: 10.235 }]), 20.47);\n`
     },
     {
       file: "src/env-bool.js",
@@ -347,7 +347,7 @@ function multiSpec(base, index) {
     "package.json": `{"type":"module","scripts":{"test":"node test.js"}}\n`,
     "src/index.js": `import { ${feature[2]} } from "./${feature[1]}.js";\n\nexport function run(input) {\n  return ${feature[2]}(input);\n}\n`,
     [`src/${feature[1]}.js`]: `export function ${feature[2]}(input) {\n  return String(input.name || input.command || "smith");\n}\n`,
-    "test.js": `import assert from "node:assert/strict";\nimport { run } from "./src/index.js";\nassert.equal(run({ name: "smith", command: "start", enabled: true }), ${JSON.stringify(expectedMulti(index))});\n`
+    "test.js": `import assert from "node:assert/strict";\nimport { run } from "./src/index.js";\nassert.equal(run(${JSON.stringify(multiInput(index))}), ${JSON.stringify(expectedMulti(index))});\n`
   };
   const solution = {
     "src/index.js": `import { ${feature[2]} } from "./${feature[1]}.js";\n\nexport function run(input) {\n  return ${feature[2]}(input);\n}\n\nexport { ${feature[2]} } from "./${feature[1]}.js";\n`,
@@ -585,6 +585,12 @@ function expectedMulti(index) {
     "/repo",
     "enabled"
   ][index];
+}
+
+function multiInput(index) {
+  const input = { name: "smith", command: "start", enabled: true };
+  if (index === 5) input.quiet = true;
+  return input;
 }
 
 function multiSolution(index, fn) {
