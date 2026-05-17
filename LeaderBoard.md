@@ -1,13 +1,26 @@
 # Leaderboard
 
-Benchmark suite: `benchmarks/` (100 tasks)
+Benchmark suites: `benchmarks/` (100 tasks) and `swe-bench-pro` (10 tasks).
 
-Pricing uses standard GPT-5.4 mini API rates from OpenAI pricing on 2026-05-16:
-`$0.75 / 1M` input tokens, `$0.075 / 1M` cached input tokens, and `$4.50 / 1M` output tokens.
+Pricing uses standard API rates checked on 2026-05-17:
+[`gpt-5.4-mini`](https://developers.openai.com/api/docs/models/gpt-5.4-mini) is `$0.75 / 1M` input, `$0.075 / 1M` cached input, and `$4.50 / 1M` output tokens; [`gpt-5.4`](https://developers.openai.com/api/docs/models/gpt-5.4/) is `$2.50 / 1M` input, `$0.25 / 1M` cached input, and `$15.00 / 1M` output tokens.
 
-| Date | Agent | Model | Reasoning | Passed | Failed | Score | Duration | Cost | Avg cost/task | Total tokens | Raw result |
-| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| 2026-05-16 | Codex CLI (`codex exec`) | `gpt-5.4-mini` | high | 61 | 39 | 61.0% | 1h 25m 52s | `$2.580855` | `$0.025809` | 17,082,782 | `.smith-bench/codex-gpt-5.4-mini-high.json` |
+| Date | Dataset | Agent | Model | Reasoning | Passed | Failed | Score | Duration | Cost | Avg cost/task | Total tokens | Raw result |
+| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 2026-05-17 | `benchmarks/` | Smith | `gpt-5.4-mini` | high | 100 | 0 | 100.0% | ~12m wall | `$2.264509` | `$0.022645` | 1,764,200 | `.smith-bench/smith-gpt-5.4-mini-high-project.json` |
+| 2026-05-16 | `benchmarks/` | Codex CLI (`codex exec`) | `gpt-5.4-mini` | high | 61 | 39 | 61.0% | 1h 25m 52s | `$2.580855` | `$0.025809` | 17,082,782 | `.smith-bench/codex-gpt-5.4-mini-high.json` |
+
+## Smith gpt-5.4-mini high, project benchmark
+
+- Command: `node bin/smith.js benchmark run benchmarks --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 60 --timeout-ms 900000 --concurrency 5 --log-dir /tmp/smith --input-cost-per-million-tokens 0.75 --cached-input-cost-per-million-tokens 0.075 --output-cost-per-million-tokens 4.5 --json`
+- Concurrency: 5
+- Wall time: approximately 12m; aggregate task duration: 52m 42s
+- Input tokens: 1,513,171
+- Cached input tokens: 0
+- Output tokens: 251,029
+- Reasoning output tokens: 0
+- Estimated cost: `$2.26450875`
+- Failed tasks: none
 
 ## Codex gpt-5.4-mini high
 
