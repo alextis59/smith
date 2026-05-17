@@ -618,3 +618,35 @@ npm test -- tests/benchmark.test.ts
 npm test -- tests/patch.test.ts tests/benchmark.test.ts
 npm run build
 ```
+
+## 2026-05-17: SWE-bench Pro 010 Vuls Alpine Source Package Detection
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --json
+```
+
+Result: failed in 445.1s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T22-36-03-140Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`. Trace: `.smith-bench/run-cHmTMz/home/.smith/runs/2026-05-17T22-28-39-353Z.trace`. Sandbox: `.smith-bench/run-cHmTMz`.
+
+Classification:
+
+- no chat_out / turn-limit exhaustion
+- weak inspection
+- bad patching
+- patch command weakness
+- task-specific reasoning difficulty
+
+Evidence summary: Smith inspected the Alpine scanner, OVAL matching utilities, package models, tests, and history. It attempted one broad `smith_patch` touching `scanner/alpine.go`, `models/packages.go`, and `oval/util.go`, but the patch failed with `smith_patch: hunk context not found in scanner/alpine.go`. Smith then returned to broad inspection and never applied tracked changes, ran local Go tests, reached the SWE-bench Pro verifier, or called `chat_out`. No `go: command not found` verifier issue appeared in this editing run.
+
+Decision: no new Smith change from this task. The failed broad patch reinforces existing patch-size and patch-recovery weaknesses, but the previous `smith_patch` ordered-hunk change does not address missing context in a large speculative patch, and adding more prompt-only patch guidance would duplicate existing "focused edits" guidance. The remaining failure is dominated by task-specific implementation breadth and recovery from a large failed patch.
