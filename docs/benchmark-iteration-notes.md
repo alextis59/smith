@@ -343,3 +343,44 @@ Validation commands run for the retained Smith change:
 npm test -- tests/benchmark.test.ts
 npm run build
 ```
+
+## 2026-05-17: SWE-bench Pro 004 OpenLibrary Wikidata Statement Values
+
+Command for each run:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/004-internetarchive-openlibrary-v13642507b4fc1f8d234172bf8129942da2c2ca26 \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --json
+```
+
+Baseline result: passed in 135.3s, 16 turns, 132,113 total tokens. Log: `/tmp/smith/2026-05-17T15-25-52-851Z-smith-004-internetarchive-openlibrary-v13642507b4fc1f8d234172bf8129942da2c2ca26.json`. Trace: `.smith-bench/run-OFO9zm/home/.smith/runs/2026-05-17T15-24-44-430Z.trace`. Sandbox: `.smith-bench/run-OFO9zm`.
+
+Classification:
+
+- verifier misuse
+- shell/PTY issue
+
+Evidence summary: Smith inspected the relevant OpenLibrary Wikidata model and tests, applied focused patches to `openlibrary/core/wikidata.py` and `openlibrary/tests/core/test_wikidata.py`, and the SWE-bench Pro verifier passed all 9 selected tests. The trace still showed avoidable local-validation churn in the editing container: `pytest` was not found, `python` was not found, `python3 -m pytest` lacked pytest, and a direct import failed because `requests` was unavailable. Smith recovered with `python3 -m py_compile` and reached `chat_out`, so this was an inefficiency rather than a correctness failure.
+
+Decision and Smith change: Add SWE-bench Pro benchmark-task guidance that after a local check fails because a test runner, Python module, package, or project dependency is missing, the agent should not retry equivalent local test/import commands. It should use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run.
+
+Rerun result after dependency-check guidance: passed in 143.1s, 15 turns, 100,297 total tokens. Log: `/tmp/smith/2026-05-17T15-29-32-950Z-smith-004-internetarchive-openlibrary-v13642507b4fc1f8d234172bf8129942da2c2ca26.json`. Trace: `.smith-bench/run-GNlxjC/home/.smith/runs/2026-05-17T15-27-23-121Z.trace`. Sandbox: `.smith-bench/run-GNlxjC`.
+
+Improvement evidence: The rerun still passed the verifier, reduced total tokens from 132,113 to 100,297, reduced turns from 16 to 15, and avoided the previous `python -m pytest` / `python3 -m pytest` sequence before finalizing with `py_compile`. It still had one `python` edit-command failure and one dependency-missing import attempt, but the failure mode was clearer and cheaper.
+
+Trial change not retained: Added a temporary instruction to prefer `python3` over `python` for Python one-off commands. Rerun passed in 115.3s, 17 turns, 121,758 total tokens. Log: `/tmp/smith/2026-05-17T15-32-19-438Z-smith-004-internetarchive-openlibrary-v13642507b4fc1f8d234172bf8129942da2c2ca26.json`. Trace: `.smith-bench/run-rOoytk/home/.smith/runs/2026-05-17T15-30-38-001Z.trace`. Sandbox: `.smith-bench/run-rOoytk`. The trace still used `python` once, then retried `pytest`, `python3 -m pytest`, and an import check before `py_compile`, so this extra instruction did not produce a stable improvement and was reverted.
+
+Validation commands run for the retained Smith change:
+
+```sh
+npm test -- tests/benchmark.test.ts
+```

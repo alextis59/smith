@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   BENCHMARK_TASK_INSTRUCTIONS,
+  SWE_BENCH_PRO_TASK_INSTRUCTIONS,
   buildSweBenchProVerifierScript,
   resolveBenchmarkTarget,
   runBenchmarkTask,
@@ -107,6 +108,12 @@ timeout_ms = 5000
     );
     expect(BENCHMARK_TASK_INSTRUCTIONS).toContain(
       "Do not read /task/verify.sh before the first verifier run; inspect it only after a verifier failure or when you are blocked."
+    );
+  });
+
+  it("tells SWE-bench Pro agents not to churn on missing local dependencies", () => {
+    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
+      "After a local check fails because a test runner, Python module, package, or project dependency is missing, do not retry equivalent local test/import commands; use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run."
     );
   });
 
