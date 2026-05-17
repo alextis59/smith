@@ -384,3 +384,78 @@ Validation commands run for the retained Smith change:
 ```sh
 npm test -- tests/benchmark.test.ts
 ```
+
+## 2026-05-17: SWE-bench Pro 005 Teleport Kubernetes Forwarder
+
+Command for each run:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --json
+```
+
+Baseline result: failed in 328.7s before `chat_out` or verifier. Log: `/tmp/smith/2026-05-17T15-39-34-312Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`. Trace: `.smith-bench/run-rJmvPE/home/.smith/runs/2026-05-17T15-35-52-595Z.trace`. Sandbox path: `.smith-bench/run-rJmvPE` (later removed during disk cleanup).
+
+Classification:
+
+- tool/schema mismatch
+- benchmark runner issue
+
+Evidence summary: Smith performed 18 inspection turns, then exited with `smith: terminated`. The error came from a low-level ChatGPT Codex response stream failure and was not wrapped as a transient provider error, so Smith did not use its configured provider retries.
+
+Decision and Smith change: Wrap ChatGPT Codex request and response-body stream failures as transient `ProviderError`s so the existing provider retry loop can recover from temporary stream termination.
+
+Rerun result after provider retry handling, before rebuilding `dist`: failed in 57.5s, 12 turns, 265,318 total tokens. Log: `/tmp/smith/2026-05-17T15-42-44-201Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`. Trace: `.smith-bench/run-GgQ6Se/home/.smith/runs/2026-05-17T15-41-54-470Z.trace`. Sandbox path: `.smith-bench/run-GgQ6Se` (later removed during disk cleanup).
+
+Classification:
+
+- premature chat_out
+- prompt misunderstanding
+- SWE-bench Pro harness issue
+
+Evidence summary: This rerun used the previously built CLI, so it did not validate the provider code change. It reached `chat_out` and then the verifier, which exposed a separate harness problem: `/task/run_script.sh` failed with `go: command not found` even though the image contains `/usr/local/go/bin/go`.
+
+Decision and Smith change: Add `/usr/local/go/bin` to `PATH` in the SWE-bench Pro verifier script before running task tests.
+
+Rerun result after a trial benchmark prompt instruction, still before rebuilding `dist`: failed in 54.6s, 10 turns, 221,855 total tokens. Log: `/tmp/smith/2026-05-17T15-45-01-575Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`. Trace: `.smith-bench/run-gt7PM7/home/.smith/runs/2026-05-17T15-44-13-258Z.trace`. Sandbox path: `.smith-bench/run-gt7PM7` (later removed during disk cleanup). It still asked for the task to be restated and still hit `go: command not found`, because the CLI had not yet been rebuilt.
+
+Rerun result after rebuilding with the verifier `PATH` fix and trial prompt instruction: failed in 103.2s, 14 turns, 312,769 total tokens. Log: `/tmp/smith/2026-05-17T15-47-09-630Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`. Trace: `.smith-bench/run-AcoDX6/home/.smith/runs/2026-05-17T15-45-32-954Z.trace`. Sandbox: `.smith-bench/run-AcoDX6`.
+
+Classification:
+
+- premature chat_out
+- context pollution
+- transcript formatting
+- SWE-bench Pro harness issue, improved
+
+Evidence summary: The verifier now found `go` and ran Go tests, confirming the `PATH` fix. Smith still asked for a concrete change request after large file inspections. The trace showed the task could be pushed out of model context by long terminal outputs; benchmark prompt guidance alone did not fix the failure.
+
+Decision and Smith change: Preserve the initial `chat_in` user request during transcript compaction and final context-budget truncation, so long inspection transcripts cannot drop the active task. Revert the trial prompt instruction because it did not improve the rebuilt run.
+
+Interrupted validation run: after the transcript change, a rerun failed at the host level with `ENOSPC: no space left on device, write`; it produced an empty log file at `/tmp/smith/2026-05-17T15-51-09-027Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json` and no usable benchmark result. To continue, older generated `.smith-bench` sandboxes were removed and Docker unused objects were pruned. This was an environment/storage issue, not a Smith model or verifier result.
+
+Rerun result after disk cleanup and transcript preservation: failed in 261.3s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T15-58-06-039Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`. Trace: `.smith-bench/run-yuEdW0/home/.smith/runs/2026-05-17T15-53-50-696Z.trace`. Sandbox: `.smith-bench/run-yuEdW0`.
+
+Classification:
+
+- no chat_out / turn-limit exhaustion
+- weak inspection
+- context pollution
+
+Improvement evidence: The run no longer produced the premature "no actual request" `chat_out`; it continued working until the 60-turn limit. Trace entries include the transcript truncation marker that preserves the active user request. The workspace had no tracked source changes, and the remaining failure is broad repeated inspection of a large Teleport refactor without converging on an edit. No additional small, evidence-backed Smith change is clear from this task beyond the retained provider retry, verifier `PATH`, and transcript-preservation fixes.
+
+Validation commands run for the retained Smith changes:
+
+```sh
+npm test -- tests/transcript.test.ts tests/providers.test.ts tests/benchmark.test.ts
+npm run build
+```

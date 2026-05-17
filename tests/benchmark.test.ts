@@ -131,6 +131,8 @@ timeout_ms = 5000
     });
 
     expect(script).toContain("git config --global --add safe.directory /app || true");
+    expect(script).toContain("export PATH=/usr/local/go/bin:$PATH");
+    expect(script.indexOf("export PATH=/usr/local/go/bin:$PATH")).toBeLessThan(script.indexOf("bash /task/run_script.sh"));
     expect(script.indexOf("git config --global --add safe.directory /app || true")).toBeLessThan(script.indexOf("cd /app"));
   });
 });

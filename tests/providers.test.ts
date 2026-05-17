@@ -99,6 +99,53 @@ describe("provider adapters", () => {
     expect(response.usage).toEqual({ inputTokens: 5, outputTokens: 6, totalTokens: 11 });
   });
 
+  it("retries chatgpt-codex response stream failures", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "smith-codex-auth-"));
+    const authPath = join(dir, "auth.json");
+    writeFileSync(
+      authPath,
+      JSON.stringify({
+        auth_mode: "chatgpt",
+        tokens: {
+          access_token: fakeJwt({ exp: Math.floor(Date.now() / 1000) + 3600 }),
+          refresh_token: "refresh-token"
+        },
+        last_refresh: new Date().toISOString()
+      }),
+      "utf8"
+    );
+    let count = 0;
+    const fetchImpl: ProviderFetch = async () => {
+      count += 1;
+      if (count === 1) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => {
+            throw new Error("terminated");
+          }
+        } as Response;
+      }
+      return new Response(
+        [
+          'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"done"}',
+          'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":6,"total_tokens":11}}}'
+        ].join("\n\n"),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } }
+      );
+    };
+    const chatgptProfile = { ...profile("chatgpt-codex", "https://chatgpt.example/backend-api/codex"), codexAuthPath: authPath };
+
+    const response = await completeWithProfile(baseRequest(), chatgptProfile, {
+      fetch: fetchImpl,
+      retries: 1,
+      retryDelayMs: 1
+    });
+
+    expect(response.text).toBe("done");
+    expect(count).toBe(2);
+  });
+
   it("maps anthropic messages requests", async () => {
     const calls = captureFetch({ content: [{ text: "answer" }], usage: { input_tokens: 3, output_tokens: 4 } });
     const response = await completeWithProfile(baseRequest(), profile("anthropic-messages", "https://gateway.example"), {

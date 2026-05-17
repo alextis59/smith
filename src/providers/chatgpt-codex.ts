@@ -37,12 +37,25 @@ export const chatGptCodexAdapter: ProviderAdapter = {
       "provider request",
       JSON.stringify({ url: joinUrl(profile.baseUrl, "responses"), headers: redactHeaders(headers), body }, null, 2)
     );
-    const response = await (options.fetch ?? fetch)(joinUrl(profile.baseUrl, "responses"), {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body)
-    });
-    const raw = await response.text();
+    let response: Response;
+    try {
+      response = await (options.fetch ?? fetch)(joinUrl(profile.baseUrl, "responses"), {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body)
+      });
+    } catch (error) {
+      throw new ProviderError(`provider request failed: ${errorMessage(error)}`, { transient: true, cause: error });
+    }
+    let raw: string;
+    try {
+      raw = await response.text();
+    } catch (error) {
+      throw new ProviderError(`provider response stream failed: ${errorMessage(error)}`, {
+        transient: true,
+        cause: error
+      });
+    }
     options.debugLog?.("provider response", raw);
     if (!response.ok) {
       throw new ProviderError(`provider request failed (${response.status}): ${raw.trim() || "empty response body"}`, {
@@ -84,6 +97,10 @@ function buildBody(request: SmithModelRequest, profile: ProfileConfig): Record<s
     ...profile.body,
     ...request.extra
   };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function shellCommandTool(): Record<string, unknown> {

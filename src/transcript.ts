@@ -43,7 +43,7 @@ export function transcriptToMessages(
   maxContextChars: number
 ): TranscriptEntry[] {
   const budget = Math.max(0, maxContextChars - systemPrompt.length);
-  const content = transcript.length > budget ? transcript.slice(transcript.length - budget) : transcript;
+  const content = truncateTranscriptPreservingRequest(transcript, budget);
   return [
     { role: "system", content: systemPrompt },
     { role: "user", content }
@@ -57,9 +57,11 @@ export function appendTerminalTurn(transcript: string, command: string, output: 
 
 export function compactTranscript(transcript: string, options: { keepTurns: number; maxSummaryChars: number }): string {
   const parts = transcript.split(/\n(?=smith\$ )/);
-  if (parts.length <= options.keepTurns + 1) return transcript;
-  const removed = parts.slice(0, Math.max(0, parts.length - options.keepTurns));
-  const kept = parts.slice(parts.length - options.keepTurns);
+  const initialRequest = parts[0]?.startsWith("smith$ chat_in ") ? parts[0] : undefined;
+  const candidates = initialRequest ? parts.slice(1) : parts;
+  if (candidates.length <= options.keepTurns) return transcript;
+  const removed = candidates.slice(0, Math.max(0, candidates.length - options.keepTurns));
+  const kept = candidates.slice(candidates.length - options.keepTurns);
   const summaryText = removed.join("\n").slice(-options.maxSummaryChars);
   const summary = [
     "smith$ # transcript compacted",
@@ -68,5 +70,17 @@ export function compactTranscript(transcript: string, options: { keepTurns: numb
   ]
     .filter(Boolean)
     .join("\n");
-  return `${summary}\n${kept.join("\n")}`;
+  return [initialRequest, summary, kept.join("\n")].filter(Boolean).join("\n");
+}
+
+function truncateTranscriptPreservingRequest(transcript: string, budget: number): string {
+  if (transcript.length <= budget) return transcript;
+  const parts = transcript.split(/\n(?=smith\$ )/);
+  const initialRequest = parts[0]?.startsWith("smith$ chat_in ") ? parts[0] : undefined;
+  if (!initialRequest || initialRequest.length >= budget) return transcript.slice(transcript.length - budget);
+
+  const marker = "\nsmith$ # context truncated\nEarlier terminal transcript omitted to preserve the active user request.\n";
+  const tailBudget = budget - initialRequest.length - marker.length;
+  if (tailBudget <= 0) return transcript.slice(transcript.length - budget);
+  return `${initialRequest}${marker}${transcript.slice(transcript.length - tailBudget)}`;
 }

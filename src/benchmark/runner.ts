@@ -382,6 +382,7 @@ async function runSweBenchProVerifier(context: {
 export function buildSweBenchProVerifierScript(metadata: SweBenchProTaskMetadata): string {
   const script = [
     "set -euo pipefail",
+    "export PATH=/usr/local/go/bin:$PATH",
     "git config --global --add safe.directory /app || true",
     "mkdir -p /benchmark-results",
     "cd /app",

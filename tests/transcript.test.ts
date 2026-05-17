@@ -32,9 +32,37 @@ describe("transcript helpers", () => {
     expect(messages[1].content).toBe("aaaa");
   });
 
+  it("preserves the initial user request when truncating long transcripts", () => {
+    const transcript = [
+      appendChatIn("Fix the benchmark bug."),
+      appendTerminalTurn("", "sed -n '1,200p' big.go", "x".repeat(200)),
+      appendTerminalTurn("", "sed -n '200,400p' big.go", "y".repeat(200))
+    ].join("\n");
+
+    const messages = transcriptToMessages("system", transcript, 180);
+    expect(messages[1].content).toContain("Fix the benchmark bug.");
+    expect(messages[1].content).toContain("Earlier terminal transcript omitted");
+    expect(messages[1].content).toContain("yyyy");
+  });
+
   it("compacts old terminal turns deterministically", () => {
     const transcript = ["smith$ one\n1", "smith$ two\n2", "smith$ three\n3"].join("\n");
     const compacted = compactTranscript(transcript, { keepTurns: 1, maxSummaryChars: 20 });
+    expect(compacted).toContain("Earlier transcript compacted: 2 entries omitted.");
+    expect(compacted).toContain("smith$ three");
+    expect(compacted).not.toContain("smith$ one");
+  });
+
+  it("preserves the initial user request when compacting old turns", () => {
+    const transcript = [
+      appendChatIn("Implement the requested source change."),
+      appendTerminalTurn("", "one", "1"),
+      appendTerminalTurn("", "two", "2"),
+      appendTerminalTurn("", "three", "3")
+    ].join("\n");
+    const compacted = compactTranscript(transcript, { keepTurns: 1, maxSummaryChars: 20 });
+
+    expect(compacted).toContain("Implement the requested source change.");
     expect(compacted).toContain("Earlier transcript compacted: 2 entries omitted.");
     expect(compacted).toContain("smith$ three");
     expect(compacted).not.toContain("smith$ one");
