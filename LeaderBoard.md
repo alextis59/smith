@@ -8,6 +8,7 @@ Pricing uses standard API rates checked on 2026-05-17:
 | Date | Dataset | Agent | Model | Reasoning | Passed | Failed | Score | Duration | Cost | Avg cost/task | Total tokens | Raw result |
 | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | 2026-05-17 | `benchmarks/` | Smith | `gpt-5.4-mini` | high | 100 | 0 | 100.0% | ~12m wall | `$2.264509` | `$0.022645` | 1,764,200 | `.smith-bench/smith-gpt-5.4-mini-high-project.json` |
+| 2026-05-17 | `swe-bench-pro` | Codex CLI (`codex exec`) | `gpt-5.4-mini` | high | 5 | 5 | 50.0% | 16m 42s wall | `$4.248726` | `$0.424873` | 33,755,588 | `.smith-bench/codex-gpt-5.4-mini-high-swe-pro.json` |
 | 2026-05-16 | `benchmarks/` | Codex CLI (`codex exec`) | `gpt-5.4-mini` | high | 61 | 39 | 61.0% | 1h 25m 52s | `$2.580855` | `$0.025809` | 17,082,782 | `.smith-bench/codex-gpt-5.4-mini-high.json` |
 
 ## Smith gpt-5.4-mini high, project benchmark
@@ -21,6 +22,18 @@ Pricing uses standard API rates checked on 2026-05-17:
 - Reasoning output tokens: 0
 - Estimated cost: `$2.26450875`
 - Failed tasks: none
+
+## Codex gpt-5.4-mini high, SWE-bench Pro
+
+- Command: `node bin/smith.js benchmark run swe-bench-pro --agent codex --model gpt-5.4-mini --reasoning-effort high --timeout-ms 900000 --concurrency 5 --log-dir /tmp/smith --input-cost-per-million-tokens 0.75 --cached-input-cost-per-million-tokens 0.075 --output-cost-per-million-tokens 4.5 --json`
+- Concurrency: 5
+- Wall time: 16m 42s; aggregate task duration: 1h 4m 45s
+- Input tokens: 33,497,383
+- Cached input tokens: 32,646,272
+- Output tokens: 258,205
+- Reasoning output tokens: 167,672
+- Estimated cost: `$4.24872615`
+- Failed tasks: `001-nodebb-nodebb-vnan`, `003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5`, `005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037`, `006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e`, `009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59`
 
 ## Codex gpt-5.4-mini high
 
