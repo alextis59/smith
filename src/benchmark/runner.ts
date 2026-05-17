@@ -50,6 +50,7 @@ export type BenchmarkRunOptions = {
   image?: string;
   timeoutMs?: number;
   keepSandbox?: boolean;
+  concurrency?: number;
   cost?: BenchmarkCostRates;
   logDir?: string;
 };
@@ -96,10 +97,28 @@ export const SWE_BENCH_PRO_TASK_INSTRUCTIONS = [
 
 export async function runBenchmarkPath(path: string, options: BenchmarkRunOptions = {}): Promise<BenchmarkTaskResult[]> {
   const taskPaths = discoverTasks(resolveBenchmarkTarget(path));
-  const results: BenchmarkTaskResult[] = [];
-  for (const taskPath of taskPaths) {
-    results.push(await runBenchmarkTask(taskPath, options));
+  return runTasksWithConcurrency(taskPaths, options.concurrency ?? 1, (taskPath) => runBenchmarkTask(taskPath, options));
+}
+
+export async function runTasksWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new Error(`benchmark concurrency must be a positive integer, got ${concurrency}`);
   }
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(workers);
   return results;
 }
 

@@ -10,6 +10,7 @@ import {
   buildSweBenchProVerifierScript,
   resolveBenchmarkTarget,
   runBenchmarkTask,
+  runTasksWithConcurrency,
   validateBenchmarkPath
 } from "../src/benchmark/runner.js";
 
@@ -93,6 +94,31 @@ timeout_ms = 5000
     expect(validateBenchmarkPath("swe-bench-pro")).toHaveLength(10);
     expect(resolveBenchmarkTarget("swe-bench-pro/001-nodebb-nodebb-vnan")).toMatch(
       /benchmark-datasets\/swe-bench-pro\/tasks\/001-nodebb-nodebb-vnan$/
+    );
+  });
+
+  it("runs benchmark tasks with bounded concurrency while preserving result order", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const started: number[] = [];
+
+    const results = await runTasksWithConcurrency([1, 2, 3, 4, 5], 2, async (item) => {
+      started.push(item);
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, (6 - item) * 5));
+      active -= 1;
+      return `result-${item}`;
+    });
+
+    expect(maxActive).toBe(2);
+    expect(started.slice(0, 2)).toEqual([1, 2]);
+    expect(results).toEqual(["result-1", "result-2", "result-3", "result-4", "result-5"]);
+  });
+
+  it("rejects invalid benchmark concurrency", async () => {
+    await expect(runTasksWithConcurrency(["task"], 0, async (item) => item)).rejects.toThrow(
+      "benchmark concurrency must be a positive integer"
     );
   });
 

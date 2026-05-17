@@ -31,5 +31,6 @@ describe("CLI skeleton", () => {
     expect(helpText()).toContain("--quiet");
     expect(helpText()).toContain("--json");
     expect(helpText()).toContain("--log-dir");
+    expect(helpText()).toContain("--concurrency");
   });
 });

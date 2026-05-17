@@ -62,6 +62,7 @@ Use runner controls:
 
 ```sh
 smith benchmark run ./benchmarks --timeout-ms 120000 --image node:22-bookworm
+smith benchmark run ./benchmarks --concurrency 5 --timeout-ms 120000
 smith benchmark run ./benchmarks --json
 smith benchmark run ./benchmarks/011-parse-port-default --keep-sandbox
 smith benchmark run ./benchmarks/011-parse-port-default --log-dir /tmp/smith --json
@@ -69,6 +70,8 @@ smith benchmark validate ./benchmarks
 ```
 
 The default benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. With `--agent codex`, the runner executes `codex exec` against the copied workspace on the host, then runs the same verifier. Tasks run in stable sorted order. Successful sandboxes are removed automatically; failed sandboxes are retained for inspection.
+
+Use `--concurrency <count>` to run multiple task sandboxes at once. Result JSON and summaries preserve the stable task order, while execution is limited to the requested number of concurrent tasks.
 
 SWE-bench Pro dataset tasks use a different task format. The runner prepares the repository workspace from the task's prebuilt Docker image, runs Smith or Codex against that copied workspace, then verifies inside the original SWE-bench Pro image using the extracted run script and parser. These tasks can be slow and image-heavy, so they should be run explicitly by dataset name rather than as part of the local `benchmarks/` suite.
 

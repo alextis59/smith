@@ -102,6 +102,7 @@ Options:
   --read-only
   --log-dir <dir>
   --agent <smith|codex>
+  --concurrency <count>
   --cached-input-cost-per-million-tokens <usd>
 
 Examples:
@@ -109,7 +110,7 @@ Examples:
   smith --quiet --json "inspect package scripts"
   smith config doctor --profile default
   smith benchmark run ./benchmarks/001-release-note-summary --timeout-ms 120000
-  smith benchmark run ./benchmarks --agent codex --model gpt-5.4-mini --reasoning-effort high
+  smith benchmark run ./benchmarks --agent codex --model gpt-5.4-mini --reasoning-effort high --concurrency 5
   smith benchmark run swe-bench-pro --timeout-ms 900000
   smith benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --timeout-ms 900000
 `;
@@ -296,6 +297,7 @@ async function runBenchmarkCommand(args: string[]): Promise<void> {
     image: options.image,
     timeoutMs: options.timeoutMs,
     keepSandbox: options.keepSandbox,
+    concurrency: options.concurrency,
     cost,
     logDir: options.logDir
   });
@@ -340,6 +342,7 @@ function parseBenchmarkOptions(args: string[]): {
   agent?: BenchmarkAgent;
   json: boolean;
   keepSandbox: boolean;
+  concurrency?: number;
   cachedInputCostPerMillionTokens?: number;
   logDir?: string;
 } {
@@ -349,6 +352,7 @@ function parseBenchmarkOptions(args: string[]): {
   let agent: BenchmarkAgent | undefined;
   let json = false;
   let keepSandbox = false;
+  let concurrency: number | undefined;
   let cachedInputCostPerMillionTokens: number | undefined;
   let logDir: string | undefined;
   for (let i = 0; i < args.length; i += 1) {
@@ -366,6 +370,7 @@ function parseBenchmarkOptions(args: string[]): {
     else if (flag === "--agent") agent = parseBenchmarkAgent(readValue());
     else if (flag === "--json") json = true;
     else if (flag === "--keep-sandbox") keepSandbox = true;
+    else if (flag === "--concurrency") concurrency = parsePositiveInteger(readValue(), "--concurrency");
     else if (flag === "--cached-input-cost-per-million-tokens") cachedInputCostPerMillionTokens = Number(readValue());
     else if (flag === "--log-dir") logDir = readValue();
     else smithArgs.push(arg);
@@ -378,9 +383,18 @@ function parseBenchmarkOptions(args: string[]): {
     agent,
     json,
     keepSandbox,
+    concurrency,
     cachedInputCostPerMillionTokens,
     logDir
   };
+}
+
+function parsePositiveInteger(value: string, flag: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1 || String(parsed) !== value) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  return parsed;
 }
 
 function parseBenchmarkAgent(value: string): BenchmarkAgent {
