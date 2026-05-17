@@ -78,6 +78,7 @@ export type BenchmarkCostRates = {
 export const BENCHMARK_TASK_INSTRUCTIONS = [
   "Complete this benchmark task in the current workspace.",
   "Make only the file changes needed for the task. Do not modify files outside the workspace.",
+  "When the task names implementation paths, functions, methods, or interfaces, treat those as primary source-code targets; do not satisfy the task with only documentation, localization, fixture, test, build, or generated-file changes unless those are explicitly requested.",
   "Inspect and edit files with shell commands. Do not call chat_out until the requested change is actually implemented and, when practical, checked.",
   "The benchmark verifier is available at /task/verify.sh; run bash /task/verify.sh before chat_out unless blocked.",
   "After a focused edit, run the verifier directly; avoid optional status, diff, or .git self-checks unless diagnosing a concrete failure.",
@@ -339,35 +340,7 @@ async function runSweBenchProVerifier(context: {
   const { metadata, taskCopy, workspace, sandbox, timeoutMs } = context;
   const resultsDir = join(sandbox, "benchmark-results");
   mkdirSync(resultsDir, { recursive: true });
-  const script = [
-    "set -euo pipefail",
-    "mkdir -p /benchmark-results",
-    "cd /app",
-    metadata.setupCommand?.trim() ? metadata.setupCommand.trim() : ":",
-    "set +e",
-    `bash /task/run_script.sh ${metadata.selectedTestFilesToRun.map(shellQuote).join(" ")} > /benchmark-results/stdout.log 2> /benchmark-results/stderr.log`,
-    "test_status=$?",
-    "set -e",
-    "cat /benchmark-results/stdout.log",
-    "cat /benchmark-results/stderr.log >&2",
-    "python /task/parser.py /benchmark-results/stdout.log /benchmark-results/stderr.log /benchmark-results/output.json",
-    "python - <<'PY'",
-    "import json, sys",
-    "with open('/task/task.json') as f:",
-    "    task = json.load(f)",
-    "with open('/benchmark-results/output.json') as f:",
-    "    output = json.load(f)",
-    "statuses = {item.get('name'): item.get('status') for item in output.get('tests', [])}",
-    "required = list(task.get('failToPass', [])) + list(task.get('passToPass', []))",
-    "missing = [name for name in required if name not in statuses]",
-    "failed = [name for name in required if statuses.get(name) != 'PASSED']",
-    "if missing or failed:",
-    "    print(json.dumps({'missing': missing, 'failed': failed[:50]}, indent=2), file=sys.stderr)",
-    "    sys.exit(1)",
-    "print(json.dumps({'passed': len(required)}))",
-    "PY",
-    "exit \"$test_status\""
-  ].join("\n");
+  const script = buildSweBenchProVerifierScript(metadata);
   const command = `docker run --rm -v ${workspace}:/app -v ${taskCopy}:/task:ro ${metadata.dockerImage} -lc <verifier>`;
   try {
     const result = await execFileAsync(
@@ -402,6 +375,40 @@ async function runSweBenchProVerifier(context: {
       verifier
     });
   }
+}
+
+export function buildSweBenchProVerifierScript(metadata: SweBenchProTaskMetadata): string {
+  const script = [
+    "set -euo pipefail",
+    "git config --global --add safe.directory /app || true",
+    "mkdir -p /benchmark-results",
+    "cd /app",
+    metadata.setupCommand?.trim() ? metadata.setupCommand.trim() : ":",
+    "set +e",
+    `bash /task/run_script.sh ${metadata.selectedTestFilesToRun.map(shellQuote).join(" ")} > /benchmark-results/stdout.log 2> /benchmark-results/stderr.log`,
+    "test_status=$?",
+    "set -e",
+    "cat /benchmark-results/stdout.log",
+    "cat /benchmark-results/stderr.log >&2",
+    "python /task/parser.py /benchmark-results/stdout.log /benchmark-results/stderr.log /benchmark-results/output.json",
+    "python - <<'PY'",
+    "import json, sys",
+    "with open('/task/task.json') as f:",
+    "    task = json.load(f)",
+    "with open('/benchmark-results/output.json') as f:",
+    "    output = json.load(f)",
+    "statuses = {item.get('name'): item.get('status') for item in output.get('tests', [])}",
+    "required = list(task.get('failToPass', [])) + list(task.get('passToPass', []))",
+    "missing = [name for name in required if name not in statuses]",
+    "failed = [name for name in required if statuses.get(name) != 'PASSED']",
+    "if missing or failed:",
+    "    print(json.dumps({'missing': missing, 'failed': failed[:50]}, indent=2), file=sys.stderr)",
+    "    sys.exit(1)",
+    "print(json.dumps({'passed': len(required)}))",
+    "PY",
+    "exit \"$test_status\""
+  ].join("\n");
+  return script;
 }
 
 async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot: string }): Promise<BenchmarkTaskResult> {

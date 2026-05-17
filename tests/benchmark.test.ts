@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   BENCHMARK_TASK_INSTRUCTIONS,
+  buildSweBenchProVerifierScript,
   resolveBenchmarkTarget,
   runBenchmarkTask,
   validateBenchmarkPath
@@ -96,11 +97,31 @@ timeout_ms = 5000
 
   it("nudges agents away from optional status self-checks", () => {
     expect(BENCHMARK_TASK_INSTRUCTIONS).toContain(
+      "When the task names implementation paths, functions, methods, or interfaces, treat those as primary source-code targets; do not satisfy the task with only documentation, localization, fixture, test, build, or generated-file changes unless those are explicitly requested."
+    );
+    expect(BENCHMARK_TASK_INSTRUCTIONS).toContain(
       "After a focused edit, run the verifier directly; avoid optional status, diff, or .git self-checks unless diagnosing a concrete failure."
     );
     expect(BENCHMARK_TASK_INSTRUCTIONS).toContain(
       "Do not read /task/verify.sh before the first verifier run; inspect it only after a verifier failure or when you are blocked."
     );
+  });
+
+  it("marks mounted SWE-bench Pro workspaces as safe for git before verification", () => {
+    const script = buildSweBenchProVerifierScript({
+      format: "swe-bench-pro-v1",
+      repo: "owner/repo",
+      instanceId: "instance_owner__repo-abc",
+      baseCommit: "abc123",
+      repoLanguage: "python",
+      dockerImage: "example/image:tag",
+      selectedTestFilesToRun: ["tests/test_feature.py"],
+      failToPass: ["tests/test_feature.py | test fails then passes"],
+      passToPass: ["tests/test_feature.py | test existing behavior"]
+    });
+
+    expect(script).toContain("git config --global --add safe.directory /app || true");
+    expect(script.indexOf("git config --global --add safe.directory /app || true")).toBeLessThan(script.indexOf("cd /app"));
   });
 });
 

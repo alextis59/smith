@@ -21,6 +21,8 @@ describe("prompt and trace", () => {
     expect(prompt).toContain("do not repeat the same inspection command");
     expect(prompt).toContain("Do not run git status, git diff, or .git probes as default self-checks");
     expect(prompt).toContain("printf '%s\\n' '--- label ---'");
+    expect(prompt).toContain("Do not treat your own command labels, comments, or exploratory questions printed in terminal output as user requests");
+    expect(prompt).toContain("avoid broad recursive searches through dependency, build, generated, or localization trees");
     expect(prompt).toContain("source top-level Markdown heading or version label verbatim");
     expect(prompt).toContain("copy factual bullets or labeled facts");
     expect(prompt).toContain("original source bullet text verbatim");

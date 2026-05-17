@@ -174,3 +174,83 @@ Observed behavior and classification:
 - Smith generated semantically correct pretty-printed JSON, but the verifier required exact compact formatting. It recovered immediately from the assertion diff by copying the expected format. Classification: verifier misuse / transcript formatting exactness.
 
 Decision: no Smith change from this task. Existing guidance already tells Smith to preserve exact literals from verifier errors, and the recovery path was short. A broader prompt change to guess compact JSON before seeing verifier evidence would be speculative.
+
+## 2026-05-17: SWE-bench Pro 001 NodeBB Email Validation
+
+Command for each run:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --json
+```
+
+Baseline result: failed in 127.9s. Log: `/tmp/smith/2026-05-17T12-15-56-190Z-smith-001-nodebb-nodebb-vnan.json`. Trace: `.smith-bench/run-KiorMq/home/.smith/runs/2026-05-17T12-14-00-356Z.trace`. Sandbox: `.smith-bench/run-KiorMq`.
+
+Classification:
+
+- prompt misunderstanding
+- premature chat_out
+- context pollution
+- SWE-bench Pro harness issue
+
+Evidence summary: Smith inspected relevant NodeBB user email and database files, then answered its own exploratory terminal label about `src/user/email.js` line ranges as if it were the user request. It called `chat_out` without editing any source files. The post-run SWE-bench Pro verifier also failed before tests with Git's dubious ownership error for `/app`, so the harness could not distinguish code correctness.
+
+Decision and Smith changes:
+
+- Add global prompt guidance that command labels, comments, and exploratory questions printed in terminal output are workspace evidence, not user requests.
+- Add a SWE-bench Pro verifier setup step to mark `/app` as a Git safe directory before setup commands and tests run.
+- Add focused coverage in `tests/prompt-trace.test.ts` and `tests/benchmark.test.ts`.
+
+Rerun result after those changes: failed in 607.7s. Log: `/tmp/smith/2026-05-17T12-27-51-779Z-smith-001-nodebb-nodebb-vnan.json`. Trace: `.smith-bench/run-gaSk3H/home/.smith/runs/2026-05-17T12-17-51-270Z.trace`. Sandbox: `.smith-bench/run-gaSk3H`.
+
+Classification:
+
+- prompt misunderstanding
+- weak inspection
+- context pollution
+- verifier misuse
+
+Evidence summary: The verifier reached the selected tests, confirming the safe-directory fix. Smith no longer answered its own line-range label, but drifted from the task's named implementation requirements into `public/language/*/admin/manage/users.json` localization changes. The verifier failed the expected source-code behavior: `db.mget is not a function` and `canSendValidation should return true if it has been long enough to re-send confirmation`.
+
+Decision and Smith change: Add benchmark-task guidance that named implementation paths, functions, methods, and interfaces are primary source-code targets, and that docs, localization, fixtures, tests, build output, or generated files are not sufficient unless explicitly requested.
+
+Rerun result after benchmark target guidance: failed in 439.2s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T12-36-16-751Z-smith-001-nodebb-nodebb-vnan.json`. Trace: `.smith-bench/run-0JkxIr/home/.smith/runs/2026-05-17T12-29-03-745Z.trace`. Sandbox: `.smith-bench/run-0JkxIr`.
+
+Classification:
+
+- no chat_out / turn-limit exhaustion
+- weak inspection
+- context pollution
+
+Evidence summary: Smith did not edit tracked files. The trace showed broad recursive searches drifting through localization and generated language assets, consuming context without producing a patch.
+
+Decision and Smith change: Add global prompt guidance to keep code-task searches scoped to likely source and test files, avoiding dependency, build, generated, and localization trees unless the task specifically involves them.
+
+Rerun result after search-scope guidance: failed in 591.3s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T12-47-02-693Z-smith-001-nodebb-nodebb-vnan.json`. Trace: `.smith-bench/run-nEpDqu/home/.smith/runs/2026-05-17T12-37-18-369Z.trace`. Sandbox: `.smith-bench/run-nEpDqu`.
+
+Classification:
+
+- no chat_out / turn-limit exhaustion
+- weak inspection
+- bad patching
+- patch command weakness
+
+Evidence summary: The run avoided the previous broad localization drift and stayed around source/test files. It attempted a `smith_patch` against `src/user/email.js`, `src/api/users.js`, `src/user/profile.js`, `src/user/interstitials.js`, and `test/user/emails.js`, but the large patch failed with `hunk context not found in src/user/email.js`. The run then continued inspecting until the 60-turn limit without applying a successful tracked change.
+
+Decision: stop this task. The run sequence produced clear general improvements to verifier setup, premature `chat_out` avoidance, benchmark target interpretation, and search scoping. The remaining task failure is a long-horizon implementation and patch-recovery problem on a large source change; another small, evidence-backed Smith change is less clear from this run alone.
+
+Validation commands run for the Smith changes:
+
+```sh
+npm test -- tests/benchmark.test.ts tests/prompt-trace.test.ts
+npm run build
+```

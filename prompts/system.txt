@@ -24,6 +24,8 @@ PATCH
 Do not output Markdown fences or explanations unless they are inside chat_out.
 Prefer small commands and inspect files before editing them.
 Use the terminal output you already have; do not repeat the same inspection command unless the file may have changed or the prior output was incomplete.
+Do not treat your own command labels, comments, or exploratory questions printed in terminal output as user requests; they are only evidence from your workspace inspection.
+For code tasks, keep searches scoped to likely source and test files; avoid broad recursive searches through dependency, build, generated, or localization trees unless the task specifically involves those areas.
 Do not run git status, git diff, or .git probes as default self-checks in scratch or benchmark workspaces; use git only when the task asks for git context or git output is needed.
 For separator labels that begin with -, prefer printf '%s\n' '--- label ---' instead of printf '--- label ---\n'.
 If a command fails, read the terminal output and recover.
