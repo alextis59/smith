@@ -10,6 +10,7 @@ Pricing uses standard API rates checked on 2026-05-17:
 | 2026-05-17 | `benchmarks/` | Smith | `gpt-5.4-mini` | high | 100 | 0 | 100.0% | ~12m wall | `$2.264509` | `$0.022645` | 1,764,200 | `.smith-bench/smith-gpt-5.4-mini-high-project.json` |
 | 2026-05-17 | `swe-bench-pro` | Codex CLI (`codex exec`) | `gpt-5.4` | high | 7 | 3 | 70.0% | 11m 49s wall | `$6.523216` | `$0.652322` | 13,913,681 | `.smith-bench/codex-gpt-5.4-high-swe-pro.json` |
 | 2026-05-17 | `swe-bench-pro` | Codex CLI (`codex exec`) | `gpt-5.4-mini` | high | 5 | 5 | 50.0% | 16m 42s wall | `$4.248726` | `$0.424873` | 33,755,588 | `.smith-bench/codex-gpt-5.4-mini-high-swe-pro.json` |
+| 2026-05-17 | `swe-bench-pro` | Smith | `gpt-5.4` | high | 3 | 7 | 30.0% | 30m 41s wall | `$2.729475` | `$0.272948` | 885,540 | `.smith-bench/smith-gpt-5.4-high-swe-pro.json` |
 | 2026-05-17 | `swe-bench-pro` | Smith | `gpt-5.4-mini` | high | 3 | 7 | 30.0% | 25m 10s wall | `$2.704605` | `$0.270461` | 2,932,540 | `.smith-bench/smith-gpt-5.4-mini-high-swe-pro.json` |
 | 2026-05-16 | `benchmarks/` | Codex CLI (`codex exec`) | `gpt-5.4-mini` | high | 61 | 39 | 61.0% | 1h 25m 52s | `$2.580855` | `$0.025809` | 17,082,782 | `.smith-bench/codex-gpt-5.4-mini-high.json` |
 
@@ -60,6 +61,18 @@ Pricing uses standard API rates checked on 2026-05-17:
 - Reasoning output tokens: 37,401
 - Estimated cost: `$6.523216`
 - Failed tasks: `003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5`, `006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e`, `009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59`
+
+## Smith gpt-5.4 high, SWE-bench Pro
+
+- Command: `node bin/smith.js benchmark run swe-bench-pro --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4 --reasoning-effort high --danger-review off --max-turns 60 --timeout-ms 900000 --concurrency 5 --log-dir /tmp/smith --input-cost-per-million-tokens 2.5 --cached-input-cost-per-million-tokens 0.25 --output-cost-per-million-tokens 15 --json`
+- Concurrency: 5
+- Wall time: 30m 41s; aggregate task duration: 1h 55m 9s
+- Input tokens: 844,290
+- Cached input tokens: 0
+- Output tokens: 41,250
+- Reasoning output tokens: 0
+- Estimated cost: `$2.729475`
+- Failed tasks: `001-nodebb-nodebb-vnan`, `003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5`, `005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037`, `006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e`, `008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904`, `009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59`, `010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`
 
 ## Codex gpt-5.4-mini high
 
