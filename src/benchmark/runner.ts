@@ -54,6 +54,21 @@ export type BenchmarkRunOptions = {
   logDir?: string;
 };
 
+type BenchmarkTaskKind = "local" | "swe-bench-pro";
+
+type SweBenchProTaskMetadata = {
+  format: "swe-bench-pro-v1";
+  repo: string;
+  instanceId: string;
+  baseCommit: string;
+  repoLanguage: string;
+  dockerImage: string;
+  setupCommand?: string;
+  selectedTestFilesToRun: string[];
+  failToPass: string[];
+  passToPass: string[];
+};
+
 export type BenchmarkCostRates = {
   inputCostPerMillionTokens?: number;
   cachedInputCostPerMillionTokens?: number;
@@ -70,8 +85,14 @@ export const BENCHMARK_TASK_INSTRUCTIONS = [
   "If files need to change, a response that only calls chat_out is a failed benchmark attempt."
 ];
 
+const SWE_BENCH_PRO_TASK_INSTRUCTIONS = [
+  "This task comes from SWE-bench Pro. The repository checkout is already available in the current workspace.",
+  "Project-specific verification runs after your final answer in the original SWE-bench Pro Docker image.",
+  "If this editing container lacks project-specific dependencies, use shell inspection and focused edits instead of installing broad dependency sets."
+];
+
 export async function runBenchmarkPath(path: string, options: BenchmarkRunOptions = {}): Promise<BenchmarkTaskResult[]> {
-  const taskPaths = discoverTasks(path);
+  const taskPaths = discoverTasks(resolveBenchmarkTarget(path));
   const results: BenchmarkTaskResult[] = [];
   for (const taskPath of taskPaths) {
     results.push(await runBenchmarkTask(taskPath, options));
@@ -80,7 +101,7 @@ export async function runBenchmarkPath(path: string, options: BenchmarkRunOption
 }
 
 export async function runBenchmarkTask(taskPath: string, options: BenchmarkRunOptions = {}): Promise<BenchmarkTaskResult> {
-  const task = resolve(taskPath);
+  const task = resolveBenchmarkTarget(taskPath);
   validateBenchmarkTask(task);
   const agent = options.agent ?? "smith";
   const repoRoot = findRepoRoot();
@@ -92,6 +113,11 @@ export async function runBenchmarkTask(taskPath: string, options: BenchmarkRunOp
   const home = join(sandbox, "home");
   mkdirSync(home, { recursive: true });
   cpSync(task, taskCopy, { recursive: true });
+  const taskKind = benchmarkTaskKind(taskCopy);
+  if (taskKind === "swe-bench-pro") {
+    return runSweBenchProBenchmarkTask({ task, taskCopy, workspace, home, sandbox, options, repoRoot });
+  }
+
   cpSync(join(taskCopy, "workspace"), workspace, { recursive: true });
 
   if (agent === "codex") {
@@ -108,6 +134,275 @@ type BenchmarkTaskContext = {
   sandbox: string;
   options: BenchmarkRunOptions;
 };
+
+async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { repoRoot: string }): Promise<BenchmarkTaskResult> {
+  const { task, taskCopy, workspace, home, sandbox, options, repoRoot } = context;
+  const started = Date.now();
+  const metadata = readSweBenchProTaskMetadata(taskCopy);
+  const agent = options.agent ?? "smith";
+  let agentStdout = "";
+  let agentStderr = "";
+  let verifier: BenchmarkVerifierResult | undefined;
+
+  try {
+    await prepareSweBenchProWorkspace(metadata, workspace, options.timeoutMs ?? 120_000);
+    if (agent === "codex") {
+      const codex = await runCodexForSweBenchProTask({ taskCopy, workspace, options, metadata });
+      agentStdout = codex.stdout;
+      agentStderr = codex.stderr;
+    } else {
+      const smith = await runSmithForSweBenchProTask({ taskCopy, workspace, home, options, repoRoot, metadata });
+      agentStdout = smith.stdout;
+      agentStderr = smith.stderr;
+    }
+    verifier = await runSweBenchProVerifier({ metadata, taskCopy, workspace, sandbox, timeoutMs: options.timeoutMs ?? 120_000 });
+    const taskResult: BenchmarkTaskResult = {
+      task,
+      agent,
+      passed: true,
+      durationMs: Date.now() - started,
+      stdout: `${agentStdout}${verifier.stdout}`,
+      stderr: `${agentStderr}${verifier.stderr}`,
+      traceDir: agent === "smith" ? join(home, ".smith", "runs") : codexTraceDir(),
+      ...(agent === "smith" ? optionalTracePath(home, agentStdout) : {}),
+      sandboxDir: sandbox,
+      usage: usageWithCost(agent === "smith" ? parseSmithUsage(agentStdout) : parseCodexUsage(agentStdout), options.cost),
+      verifier
+    };
+    taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
+      command: sweBenchProCommandForLog(agent, metadata),
+      stdout: taskResult.stdout,
+      stderr: taskResult.stderr,
+      sandboxRetained: Boolean(options.keepSandbox)
+    });
+    if (!options.keepSandbox) cleanupSandbox(sandbox);
+    return taskResult;
+  } catch (error) {
+    const failed = error as { stdout?: string; stderr?: string; code?: number; verifier?: BenchmarkVerifierResult };
+    if (failed.verifier) verifier = failed.verifier;
+    const stdout = `${agentStdout}${failed.stdout ?? ""}`;
+    const stderr = `${agentStderr}${failed.stderr ?? String(error)}`;
+    const taskResult: BenchmarkTaskResult = {
+      task,
+      agent,
+      passed: false,
+      durationMs: Date.now() - started,
+      stdout,
+      stderr,
+      traceDir: agent === "smith" ? join(home, ".smith", "runs") : codexTraceDir(),
+      ...(agent === "smith" ? optionalTracePath(home, agentStdout || stdout) : {}),
+      sandboxDir: sandbox,
+      usage: usageWithCost(agent === "smith" ? parseSmithUsage(agentStdout || stdout) : parseCodexUsage(agentStdout || stdout), options.cost),
+      ...(verifier ? { verifier } : {})
+    };
+    taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
+      command: sweBenchProCommandForLog(agent, metadata),
+      stdout,
+      stderr,
+      sandboxRetained: true
+    });
+    return taskResult;
+  }
+}
+
+async function runSmithForSweBenchProTask(context: {
+  taskCopy: string;
+  workspace: string;
+  home: string;
+  options: BenchmarkRunOptions;
+  repoRoot: string;
+  metadata: SweBenchProTaskMetadata;
+}): Promise<{ stdout: string; stderr: string }> {
+  const { taskCopy, workspace, home, options, repoRoot, metadata } = context;
+  const image = options.image ?? "node:22-bookworm";
+  const profileArgs = options.profile ? ["--profile", options.profile] : [];
+  const smithArgs = prepareSmithArgsForDocker(home, [...profileArgs, ...(options.smithArgs ?? [])]);
+  const jsonArgs = ["--quiet", "--json"];
+  const command = `node /smith/bin/smith.js --cwd /workspace ${[...smithArgs, ...jsonArgs].map(shellQuote).join(" ")} "$TASK"`;
+  const script = [
+    "set -euo pipefail",
+    "mkdir -p /home/smith",
+    "RESULT_DIR=/home/smith/benchmark-results",
+    "mkdir -p \"$RESULT_DIR\"",
+    `TASK=$(printf '%s\\n\\n' ${benchmarkInstructionsForTask(metadata).map(shellQuote).join(" ")}; cat /task/Task.md)`,
+    "set +e",
+    `${command} > "$RESULT_DIR/smith.stdout" 2> "$RESULT_DIR/smith.stderr"`,
+    "smith_status=$?",
+    "printf '%s\\n' \"$smith_status\" > \"$RESULT_DIR/smith.status\"",
+    "set -e",
+    "cat \"$RESULT_DIR/smith.stdout\"",
+    "cat \"$RESULT_DIR/smith.stderr\" >&2",
+    "exit \"$smith_status\""
+  ].join("\n");
+  return execFileAsync(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "--add-host=host.docker.internal:host-gateway",
+      "--user",
+      `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,
+      "-e",
+      "HOME=/home/smith",
+      "-v",
+      `${repoRoot}:/smith`,
+      "-v",
+      `${workspace}:/workspace`,
+      "-v",
+      `${home}:/home/smith`,
+      "-v",
+      `${taskCopy}:/task:ro`,
+      image,
+      "bash",
+      "-lc",
+      script
+    ],
+    { timeout: options.timeoutMs ?? 120_000, maxBuffer: 1024 * 1024 * 50 }
+  );
+}
+
+async function runCodexForSweBenchProTask(context: {
+  taskCopy: string;
+  workspace: string;
+  options: BenchmarkRunOptions;
+  metadata: SweBenchProTaskMetadata;
+}): Promise<{ stdout: string; stderr: string }> {
+  const { taskCopy, workspace, options, metadata } = context;
+  const modelArgs = options.model ? ["--model", options.model] : [];
+  const reasoningArgs = options.reasoningEffort
+    ? ["-c", `model_reasoning_effort="${options.reasoningEffort}"`]
+    : [];
+  const prompt = benchmarkPrompt(readFileSync(join(taskCopy, "Task.md"), "utf8"), benchmarkInstructionsForTask(metadata));
+  return spawnFileWithInput(
+    "codex",
+    [
+      "exec",
+      "--json",
+      "--color",
+      "never",
+      "--ephemeral",
+      "--ignore-rules",
+      "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--cd",
+      workspace,
+      ...modelArgs,
+      ...reasoningArgs,
+      "-"
+    ],
+    prompt,
+    {
+      timeout: options.timeoutMs ?? 120_000,
+      maxBuffer: 1024 * 1024 * 50,
+      env: process.env
+    }
+  );
+}
+
+async function prepareSweBenchProWorkspace(
+  metadata: SweBenchProTaskMetadata,
+  workspace: string,
+  timeoutMs: number
+): Promise<void> {
+  mkdirSync(workspace, { recursive: true });
+  const created = await execFileAsync("docker", ["create", metadata.dockerImage], {
+    timeout: timeoutMs,
+    maxBuffer: 1024 * 1024
+  });
+  const containerId = created.stdout.trim();
+  try {
+    await execFileAsync("docker", ["cp", `${containerId}:/app/.`, workspace], {
+      timeout: timeoutMs,
+      maxBuffer: 1024 * 1024 * 10
+    });
+  } finally {
+    await execFileAsync("docker", ["rm", "-f", containerId], {
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024
+    }).catch(() => undefined);
+  }
+  if (process.getuid && process.getgid) {
+    await execFileAsync("chown", ["-R", `${process.getuid()}:${process.getgid()}`, workspace], {
+      timeout: timeoutMs,
+      maxBuffer: 1024 * 1024
+    });
+  }
+}
+
+async function runSweBenchProVerifier(context: {
+  metadata: SweBenchProTaskMetadata;
+  taskCopy: string;
+  workspace: string;
+  sandbox: string;
+  timeoutMs: number;
+}): Promise<BenchmarkVerifierResult> {
+  const { metadata, taskCopy, workspace, sandbox, timeoutMs } = context;
+  const resultsDir = join(sandbox, "benchmark-results");
+  mkdirSync(resultsDir, { recursive: true });
+  const script = [
+    "set -euo pipefail",
+    "mkdir -p /benchmark-results",
+    "cd /app",
+    metadata.setupCommand?.trim() ? metadata.setupCommand.trim() : ":",
+    "set +e",
+    `bash /task/run_script.sh ${metadata.selectedTestFilesToRun.map(shellQuote).join(" ")} > /benchmark-results/stdout.log 2> /benchmark-results/stderr.log`,
+    "test_status=$?",
+    "set -e",
+    "cat /benchmark-results/stdout.log",
+    "cat /benchmark-results/stderr.log >&2",
+    "python /task/parser.py /benchmark-results/stdout.log /benchmark-results/stderr.log /benchmark-results/output.json",
+    "python - <<'PY'",
+    "import json, sys",
+    "with open('/task/task.json') as f:",
+    "    task = json.load(f)",
+    "with open('/benchmark-results/output.json') as f:",
+    "    output = json.load(f)",
+    "statuses = {item.get('name'): item.get('status') for item in output.get('tests', [])}",
+    "required = list(task.get('failToPass', [])) + list(task.get('passToPass', []))",
+    "missing = [name for name in required if name not in statuses]",
+    "failed = [name for name in required if statuses.get(name) != 'PASSED']",
+    "if missing or failed:",
+    "    print(json.dumps({'missing': missing, 'failed': failed[:50]}, indent=2), file=sys.stderr)",
+    "    sys.exit(1)",
+    "print(json.dumps({'passed': len(required)}))",
+    "PY",
+    "exit \"$test_status\""
+  ].join("\n");
+  const command = `docker run --rm -v ${workspace}:/app -v ${taskCopy}:/task:ro ${metadata.dockerImage} -lc <verifier>`;
+  try {
+    const result = await execFileAsync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "-v",
+        `${workspace}:/app`,
+        "-v",
+        `${taskCopy}:/task:ro`,
+        "-v",
+        `${resultsDir}:/benchmark-results`,
+        metadata.dockerImage,
+        "-lc",
+        script
+      ],
+      { timeout: timeoutMs, maxBuffer: 1024 * 1024 * 50 }
+    );
+    return { command, exitCode: 0, stdout: result.stdout, stderr: result.stderr };
+  } catch (error) {
+    const failed = error as { stdout?: string; stderr?: string; code?: number };
+    const verifier = {
+      command,
+      ...(typeof failed.code === "number" ? { exitCode: failed.code } : {}),
+      stdout: failed.stdout ?? "",
+      stderr: failed.stderr ?? String(error)
+    };
+    throw Object.assign(new Error("SWE-bench Pro verifier failed"), {
+      stdout: verifier.stdout,
+      stderr: verifier.stderr,
+      verifier
+    });
+  }
+}
 
 async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot: string }): Promise<BenchmarkTaskResult> {
   const { task, taskCopy, workspace, home, sandbox, options, repoRoot } = context;
@@ -368,9 +663,9 @@ async function runCodexBenchmarkTask(context: BenchmarkTaskContext): Promise<Ben
   }
 }
 
-function benchmarkPrompt(taskPrompt: string): string {
+function benchmarkPrompt(taskPrompt: string, instructions = BENCHMARK_TASK_INSTRUCTIONS): string {
   return [
-    ...BENCHMARK_TASK_INSTRUCTIONS,
+    ...instructions,
     "",
     taskPrompt
   ].join("\n");
@@ -379,10 +674,26 @@ function benchmarkPrompt(taskPrompt: string): string {
 function discoverTasks(path: string): string[] {
   const root = resolve(path);
   if (existsSync(join(root, "Task.md"))) return [root];
+  if (existsSync(join(root, "dataset.json")) && existsSync(join(root, "tasks"))) {
+    return discoverTasks(join(root, "tasks"));
+  }
   return readdirSync(root)
     .map((name) => join(root, name))
     .filter((entry) => statSync(entry).isDirectory() && existsSync(join(entry, "Task.md")))
     .sort((left, right) => left.localeCompare(right));
+}
+
+export function resolveBenchmarkTarget(target: string): string {
+  const direct = resolve(target);
+  if (existsSync(direct)) return direct;
+  if (target.startsWith(".") || target.startsWith("/") || target.includes("..")) return direct;
+
+  const [dataset, ...taskParts] = target.split(/[\\/]/).filter(Boolean);
+  if (!dataset) return direct;
+  const datasetRoot = join(findRepoRoot(), "benchmark-datasets", dataset);
+  if (taskParts.length === 0) return existsSync(datasetRoot) ? datasetRoot : direct;
+  const task = join(datasetRoot, "tasks", ...taskParts);
+  return existsSync(task) ? task : direct;
 }
 
 export type BenchmarkValidationResult = {
@@ -392,7 +703,7 @@ export type BenchmarkValidationResult = {
 };
 
 export function validateBenchmarkPath(path: string): BenchmarkValidationResult[] {
-  return discoverTasks(path).map((task) => {
+  return discoverTasks(resolveBenchmarkTarget(path)).map((task) => {
     const errors = benchmarkTaskErrors(task);
     return { task, valid: errors.length === 0, errors };
   });
@@ -406,9 +717,13 @@ export function validateBenchmarkTask(task: string): void {
 function benchmarkTaskErrors(task: string): string[] {
   const errors: string[] = [];
   const taskFile = join(task, "Task.md");
+  if (!existsSync(taskFile)) errors.push("missing Task.md");
+  if (benchmarkTaskKind(task) === "swe-bench-pro") {
+    return [...errors, ...sweBenchProTaskErrors(task)];
+  }
+
   const workspace = join(task, "workspace");
   const verify = join(task, "verify.sh");
-  if (!existsSync(taskFile)) errors.push("missing Task.md");
   if (!existsSync(workspace)) {
     errors.push("missing workspace");
   } else if (!statSync(workspace).isDirectory()) {
@@ -420,6 +735,72 @@ function benchmarkTaskErrors(task: string): string[] {
     errors.push("verify.sh is not a file");
   }
   return errors;
+}
+
+function benchmarkTaskKind(task: string): BenchmarkTaskKind {
+  const metadataPath = join(task, "task.json");
+  if (!existsSync(metadataPath)) return "local";
+  try {
+    const metadata = JSON.parse(readFileSync(metadataPath, "utf8")) as { format?: unknown };
+    return metadata.format === "swe-bench-pro-v1" ? "swe-bench-pro" : "local";
+  } catch {
+    return "local";
+  }
+}
+
+function sweBenchProTaskErrors(task: string): string[] {
+  const errors: string[] = [];
+  const metadataPath = join(task, "task.json");
+  const runScript = join(task, "run_script.sh");
+  const parser = join(task, "parser.py");
+  if (!existsSync(metadataPath)) {
+    errors.push("missing task.json");
+  } else {
+    try {
+      readSweBenchProTaskMetadata(task);
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  if (!existsSync(runScript)) errors.push("missing run_script.sh");
+  else if (!statSync(runScript).isFile()) errors.push("run_script.sh is not a file");
+  if (!existsSync(parser)) errors.push("missing parser.py");
+  else if (!statSync(parser).isFile()) errors.push("parser.py is not a file");
+  return errors;
+}
+
+function readSweBenchProTaskMetadata(task: string): SweBenchProTaskMetadata {
+  const metadata = JSON.parse(readFileSync(join(task, "task.json"), "utf8")) as Partial<SweBenchProTaskMetadata>;
+  const errors: string[] = [];
+  if (metadata.format !== "swe-bench-pro-v1") errors.push("task.json format must be swe-bench-pro-v1");
+  for (const key of ["repo", "instanceId", "baseCommit", "repoLanguage", "dockerImage"] as const) {
+    if (typeof metadata[key] !== "string" || !metadata[key]) errors.push(`task.json missing ${key}`);
+  }
+  for (const key of ["selectedTestFilesToRun", "failToPass", "passToPass"] as const) {
+    if (!Array.isArray(metadata[key]) || !metadata[key]?.every((value) => typeof value === "string")) {
+      errors.push(`task.json ${key} must be a string array`);
+    }
+  }
+  if (errors.length > 0) throw new Error(errors.join("; "));
+  return metadata as SweBenchProTaskMetadata;
+}
+
+function benchmarkInstructionsForTask(metadata: SweBenchProTaskMetadata): string[] {
+  return [
+    ...BENCHMARK_TASK_INSTRUCTIONS.filter((instruction) => !instruction.includes("/task/verify.sh") && !instruction.includes("run the verifier directly")),
+    ...SWE_BENCH_PRO_TASK_INSTRUCTIONS,
+    `SWE-bench Pro instance: ${metadata.instanceId}`,
+    `Repository: ${metadata.repo} at base commit ${metadata.baseCommit}.`
+  ];
+}
+
+function optionalTracePath(home: string, stdout: string): { tracePath?: string } {
+  const tracePath = smithTracePathFromStdout(home, stdout);
+  return tracePath ? { tracePath } : {};
+}
+
+function sweBenchProCommandForLog(agent: BenchmarkAgent, metadata: SweBenchProTaskMetadata): string {
+  return `${agent} swe-bench-pro ${metadata.instanceId} (${metadata.dockerImage})`;
 }
 
 function cleanupSandbox(sandbox: string): void {

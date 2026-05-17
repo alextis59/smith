@@ -2,6 +2,8 @@
 
 Smith benchmark tasks live under `benchmarks/` and each task is a self-contained coding-agent exercise. The suite is intentionally local-only: tasks must not require internet access, secrets, package installs, privileged commands, external APIs, or nondeterministic timing.
 
+Additional named datasets live under `benchmark-datasets/`. They are launched separately from the local suite by dataset name, for example `smith benchmark run swe-bench-pro`.
+
 ## Directory Format
 
 Each task directory must contain exactly the runner contract:
@@ -42,6 +44,14 @@ smith benchmark run ./benchmarks/011-parse-port-default --profile fast
 smith benchmark run ./benchmarks/011-parse-port-default --agent codex --model gpt-5.4-mini --reasoning-effort high
 ```
 
+Run a named dataset:
+
+```sh
+smith benchmark run swe-bench-pro --timeout-ms 900000
+smith benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --timeout-ms 900000
+smith benchmark validate swe-bench-pro
+```
+
 Run every task:
 
 ```sh
@@ -59,6 +69,8 @@ smith benchmark validate ./benchmarks
 ```
 
 The default benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. With `--agent codex`, the runner executes `codex exec` against the copied workspace on the host, then runs the same verifier. Tasks run in stable sorted order. Successful sandboxes are removed automatically; failed sandboxes are retained for inspection.
+
+SWE-bench Pro dataset tasks use a different task format. The runner prepares the repository workspace from the task's prebuilt Docker image, runs Smith or Codex against that copied workspace, then verifies inside the original SWE-bench Pro image using the extracted run script and parser. These tasks can be slow and image-heavy, so they should be run explicitly by dataset name rather than as part of the local `benchmarks/` suite.
 
 Use `--log-dir /tmp/smith` or `SMITH_LOG_DIR=/tmp/smith` when iterating on failures. The runner writes one redacted JSON session log per task with the task id, command, stdout/stderr, trace path, sandbox path, usage, verifier result, model output, terminal output, and parsed provider event summaries.
 

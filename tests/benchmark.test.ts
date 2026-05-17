@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
-import { BENCHMARK_TASK_INSTRUCTIONS, runBenchmarkTask, validateBenchmarkPath } from "../src/benchmark/runner.js";
+import {
+  BENCHMARK_TASK_INSTRUCTIONS,
+  resolveBenchmarkTarget,
+  runBenchmarkTask,
+  validateBenchmarkPath
+} from "../src/benchmark/runner.js";
 
 const hasDocker = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
 
@@ -53,6 +58,40 @@ timeout_ms = 5000
     expect(result.valid).toBe(false);
     expect(result.errors).toContain("missing workspace");
     expect(result.errors).toContain("missing verify.sh");
+  });
+
+  it("validates SWE-bench Pro task structure", () => {
+    const task = mkdtempSync(join(tmpdir(), "smith-swe-pro-task-"));
+    writeFileSync(join(task, "Task.md"), "Fix the bug.", "utf8");
+    writeFileSync(
+      join(task, "task.json"),
+      JSON.stringify({
+        format: "swe-bench-pro-v1",
+        repo: "owner/repo",
+        instanceId: "instance_owner__repo-abc",
+        baseCommit: "abc123",
+        repoLanguage: "python",
+        dockerImage: "example/image:tag",
+        selectedTestFilesToRun: ["tests/test_feature.py"],
+        failToPass: ["tests/test_feature.py | test fails then passes"],
+        passToPass: ["tests/test_feature.py | test existing behavior"]
+      }),
+      "utf8"
+    );
+    writeFileSync(join(task, "run_script.sh"), "#!/usr/bin/env bash\n", "utf8");
+    writeFileSync(join(task, "parser.py"), "print('parser')\n", "utf8");
+
+    const [result] = validateBenchmarkPath(task);
+    expect(result.valid, result.errors.join("; ")).toBe(true);
+  });
+
+  it("resolves named benchmark datasets separately from the local suite", () => {
+    const resolved = resolveBenchmarkTarget("swe-bench-pro");
+    expect(resolved).toMatch(/benchmark-datasets\/swe-bench-pro$/);
+    expect(validateBenchmarkPath("swe-bench-pro")).toHaveLength(10);
+    expect(resolveBenchmarkTarget("swe-bench-pro/001-nodebb-nodebb-vnan")).toMatch(
+      /benchmark-datasets\/swe-bench-pro\/tasks\/001-nodebb-nodebb-vnan$/
+    );
   });
 
   it("nudges agents away from optional status self-checks", () => {

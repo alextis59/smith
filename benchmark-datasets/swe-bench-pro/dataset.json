@@ -1,0 +1,83 @@
+{
+  "format": "smith-benchmark-dataset-v1",
+  "name": "swe-bench-pro",
+  "title": "SWE-bench Pro sample",
+  "taskFormat": "swe-bench-pro-v1",
+  "sourceDataset": "ScaleAI/SWE-bench_Pro",
+  "sourceRepository": "https://github.com/scaleapi/SWE-bench_Pro-os",
+  "sourceDatasetRevision": "7ab5114912baf22bb098818e604c02fe7ad2c11f",
+  "sourceRepositoryRevision": "0c64e26f00b9c190432de7fc520c8ceed5c25518",
+  "imageRepository": "jefzda/sweap-images",
+  "tasks": [
+    {
+      "id": "001-nodebb-nodebb-vnan",
+      "instanceId": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan",
+      "repo": "NodeBB/NodeBB",
+      "language": "js",
+      "dockerImage": "jefzda/sweap-images:nodebb.nodebb-NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5"
+    },
+    {
+      "id": "002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c",
+      "instanceId": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c",
+      "repo": "qutebrowser/qutebrowser",
+      "language": "python",
+      "dockerImage": "jefzda/sweap-images:qutebrowser.qutebrowser-qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f"
+    },
+    {
+      "id": "003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5",
+      "instanceId": "instance_ansible__ansible-f327e65d11bb905ed9f15996024f857a95592629-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5",
+      "repo": "ansible/ansible",
+      "language": "python",
+      "dockerImage": "jefzda/sweap-images:ansible.ansible-ansible__ansible-f327e65d11bb905ed9f15996024f857a95592629-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5"
+    },
+    {
+      "id": "004-internetarchive-openlibrary-v13642507b4fc1f8d234172bf8129942da2c2ca26",
+      "instanceId": "instance_internetarchive__openlibrary-4a5d2a7d24c9e4c11d3069220c0685b736d5ecde-v13642507b4fc1f8d234172bf8129942da2c2ca26",
+      "repo": "internetarchive/openlibrary",
+      "language": "python",
+      "dockerImage": "jefzda/sweap-images:internetarchive.openlibrary-internetarchive__openlibrary-4a5d2a7d24c9e4c11d3069220c0685b736d5ecde-v13642507b4fc1f8d234172bf81299"
+    },
+    {
+      "id": "005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037",
+      "instanceId": "instance_gravitational__teleport-3fa6904377c006497169945428e8197158667910-v626ec2a48416b10a88641359a169d99e935ff037",
+      "repo": "gravitational/teleport",
+      "language": "go",
+      "dockerImage": "jefzda/sweap-images:gravitational.teleport-gravitational__teleport-3fa6904377c006497169945428e8197158667910-v626ec2a48416b10a88641359a169d99e935ff03"
+    },
+    {
+      "id": "006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e",
+      "instanceId": "instance_navidrome__navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e",
+      "repo": "navidrome/navidrome",
+      "language": "go",
+      "dockerImage": "jefzda/sweap-images:navidrome.navidrome-navidrome__navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e"
+    },
+    {
+      "id": "007-element-hq-element-web-33e8edb3d508d6eefb354819ca693b7accc695e7",
+      "instanceId": "instance_element-hq__element-web-33e8edb3d508d6eefb354819ca693b7accc695e7",
+      "repo": "element-hq/element-web",
+      "language": "js",
+      "dockerImage": "jefzda/sweap-images:element-hq.element-element-hq__element-web-33e8edb3d508d6eefb354819ca693b7accc695e7"
+    },
+    {
+      "id": "008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904",
+      "instanceId": "instance_future-architect__vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904",
+      "repo": "future-architect/vuls",
+      "language": "go",
+      "dockerImage": "jefzda/sweap-images:future-architect.vuls-future-architect__vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904"
+    },
+    {
+      "id": "009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59",
+      "instanceId": "instance_internetarchive__openlibrary-111347e9583372e8ef91c82e0612ea437ae3a9c9-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59",
+      "repo": "internetarchive/openlibrary",
+      "language": "python",
+      "dockerImage": "jefzda/sweap-images:internetarchive.openlibrary-internetarchive__openlibrary-111347e9583372e8ef91c82e0612ea437ae3a9c9-v2d9a6c849c60ed19fd0858ce9e40b"
+    },
+    {
+      "id": "010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a",
+      "instanceId": "instance_future-architect__vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a",
+      "repo": "future-architect/vuls",
+      "language": "go",
+      "dockerImage": "jefzda/sweap-images:future-architect.vuls-future-architect__vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a"
+    }
+  ]
+}

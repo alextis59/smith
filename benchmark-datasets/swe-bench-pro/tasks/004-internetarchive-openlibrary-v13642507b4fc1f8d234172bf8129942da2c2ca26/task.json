@@ -1,0 +1,39 @@
+{
+  "format": "swe-bench-pro-v1",
+  "sourceDataset": "ScaleAI/SWE-bench_Pro",
+  "sourceSplit": "test",
+  "sourceRepository": "https://github.com/scaleapi/SWE-bench_Pro-os",
+  "repo": "internetarchive/openlibrary",
+  "instanceId": "instance_internetarchive__openlibrary-4a5d2a7d24c9e4c11d3069220c0685b736d5ecde-v13642507b4fc1f8d234172bf8129942da2c2ca26",
+  "baseCommit": "90475fb6c168e8317e22bd5fbe057d98e570a715",
+  "repoLanguage": "python",
+  "dockerImage": "jefzda/sweap-images:internetarchive.openlibrary-internetarchive__openlibrary-4a5d2a7d24c9e4c11d3069220c0685b736d5ecde-v13642507b4fc1f8d234172bf81299",
+  "dockerhubTag": "internetarchive.openlibrary-internetarchive__openlibrary-4a5d2a7d24c9e4c11d3069220c0685b736d5ecde-v13642507b4fc1f8d234172bf81299",
+  "setupCommand": "git checkout 4a5d2a7d24c9e4c11d3069220c0685b736d5ecde -- openlibrary/tests/core/test_wikidata.py",
+  "selectedTestFilesToRun": [
+    "openlibrary/tests/core/test_wikidata.py"
+  ],
+  "failToPass": [
+    "openlibrary/tests/core/test_wikidata.py::test_get_statement_values"
+  ],
+  "passToPass": [
+    "openlibrary/tests/core/test_wikidata.py::test_get_wikidata_entity[True-True--True-False]",
+    "openlibrary/tests/core/test_wikidata.py::test_get_wikidata_entity[True-False--True-False]",
+    "openlibrary/tests/core/test_wikidata.py::test_get_wikidata_entity[False-False--False-True]",
+    "openlibrary/tests/core/test_wikidata.py::test_get_wikidata_entity[False-False-expired-True-True]",
+    "openlibrary/tests/core/test_wikidata.py::test_get_wikidata_entity[False-True--False-True]",
+    "openlibrary/tests/core/test_wikidata.py::test_get_wikidata_entity[False-True-missing-True-True]",
+    "openlibrary/tests/core/test_wikidata.py::test_get_wikidata_entity[False-True-expired-True-True]",
+    "openlibrary/tests/core/test_wikidata.py::test_get_wikipedia_link"
+  ],
+  "issueSpecificity": [
+    "core_feat",
+    "ui_ux_feat",
+    "integration_feat"
+  ],
+  "issueCategories": [
+    "full_stack_knowledge",
+    "web_knowledge",
+    "ui_ux_knowledge"
+  ]
+}

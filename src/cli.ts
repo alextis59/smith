@@ -110,6 +110,8 @@ Examples:
   smith config doctor --profile default
   smith benchmark run ./benchmarks/001-release-note-summary --timeout-ms 120000
   smith benchmark run ./benchmarks --agent codex --model gpt-5.4-mini --reasoning-effort high
+  smith benchmark run swe-bench-pro --timeout-ms 900000
+  smith benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --timeout-ms 900000
 `;
 }
 
