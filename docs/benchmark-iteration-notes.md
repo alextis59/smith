@@ -459,3 +459,66 @@ Validation commands run for the retained Smith changes:
 npm test -- tests/transcript.test.ts tests/providers.test.ts tests/benchmark.test.ts
 npm run build
 ```
+
+## 2026-05-17: SWE-bench Pro 006 Navidrome Agent Client Encapsulation
+
+Command for each run:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --json
+```
+
+Baseline result: failed in 719.0s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T16-12-44-574Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`. Trace: `.smith-bench/run-L7QLRk/home/.smith/runs/2026-05-17T16-02-01-471Z.trace`. Sandbox: `.smith-bench/run-L7QLRk`.
+
+Classification:
+
+- no chat_out / turn-limit exhaustion
+- weak inspection
+- bad patching
+- patch command weakness
+- shell/PTY issue
+- context pollution
+
+Evidence summary: Smith identified the LastFM, ListenBrainz, and Spotify client APIs and made broad mechanical edits across 14 files. It hit repeated `smith_patch: hunk context not found` failures and `bash: python: command not found`, recovered with `perl`, and left tracked source/test changes. It never ran `go test`, the SWE-bench Pro verifier, or `chat_out`. The retained sandbox still had inconsistent references such as `NewClient` call sites after client constructors were renamed to `newClient`, so verifier reachability would have exposed compile failures if reached.
+
+Decision and trial Smith change: The evidence supported trying a general benchmark instruction that after broad or mechanical edits across multiple files, the agent should run the narrowest relevant compile/test command or verifier before further broad inspection, using failures to find remaining references. This was added as a trial runner instruction with a focused benchmark test, then rebuilt before rerunning the same task.
+
+Rerun result after trial mechanical-edit validation guidance: failed in 495.4s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T16-23-54-475Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`. Trace: `.smith-bench/run-bb9036/home/.smith/runs/2026-05-17T16-15-55-155Z.trace`. Sandbox: `.smith-bench/run-bb9036`.
+
+Classification:
+
+- no chat_out / turn-limit exhaustion
+- weak inspection
+- bad patching
+- shell/PTY issue
+- context pollution
+
+Evidence summary: The rerun still made broad mechanical source edits, retried after `python` was unavailable, and spent many turns grepping for remaining exported symbols. It did not run a Go compile/test command or `/task/verify.sh`, and it again never called `chat_out`. The top-level failure mode did not improve to verifier reachability or clearer compile feedback.
+
+Decision: do not retain the trial mechanical-edit validation guidance. The model did not follow it in the validation rerun, and the remaining failure appears dominated by task-specific implementation breadth and repeated source-inspection loops rather than a new small, evidence-backed Smith runner, patch, transcript, shell, or verifier issue. This is plateau evidence after the retained improvements from tasks 004 and 005.
+
+Validation commands run for the trial change before it was reverted:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+```
+
+Final validation issue and Smith change: a full `npm test` run after retaining SWE-bench Pro sandboxes failed because Vitest discovered JavaScript tests inside `.smith-bench/run-L7QLRk/workspace` and `.smith-bench/run-bb9036/workspace`. This is a general benchmark-runner workflow issue: `--keep-sandbox` should not make Smith's own default test command collect tests from retained benchmark workspaces. Add a `vitest.config.ts` default include for `tests/**/*.test.ts` and exclude `.smith-bench/**`, with a focused regression test for the config.
+
+Validation commands run after the retained test-config change:
+
+```sh
+npm test
+npm run build
+```
