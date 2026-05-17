@@ -94,7 +94,13 @@ describe("danger review", () => {
       new Response(
         JSON.stringify({
           choices: [{ message: { content: commands.shift() ?? "chat_out done" } }],
-          usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 }
+          usage: {
+            prompt_tokens: 1000,
+            prompt_tokens_details: { cached_tokens: 700 },
+            completion_tokens: 500,
+            completion_tokens_details: { reasoning_tokens: 300 },
+            total_tokens: 1500
+          }
         }),
         {
           status: 200,
@@ -117,7 +123,9 @@ describe("danger review", () => {
 
     expect(result.usage).toEqual({
       inputTokens: 2000,
+      cachedInputTokens: 1400,
       outputTokens: 1000,
+      reasoningOutputTokens: 600,
       totalTokens: 3000,
       costUsd: 0.008
     });

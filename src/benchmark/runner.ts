@@ -996,7 +996,7 @@ function normalizeUsage(value: unknown): BenchmarkUsage | undefined {
 
 function usageWithCost(usage: BenchmarkUsage | undefined, rates: BenchmarkCostRates | undefined): BenchmarkUsage | undefined {
   if (!usage) return undefined;
-  const costUsd = usage.costUsd ?? calculateCost(usage, rates);
+  const costUsd = rates ? calculateCost(usage, rates) : usage.costUsd;
   return { ...usage, ...(costUsd !== undefined ? { costUsd } : {}) };
 }
 

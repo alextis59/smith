@@ -20,7 +20,9 @@ export type SmithModelResponse = {
   raw: unknown;
   usage?: {
     inputTokens?: number;
+    cachedInputTokens?: number;
     outputTokens?: number;
+    reasoningOutputTokens?: number;
     totalTokens?: number;
   };
 };
@@ -116,9 +118,21 @@ export async function postJson(
 export function usageFromOpenAi(raw: Record<string, unknown>): SmithModelResponse["usage"] {
   const usage = raw.usage;
   if (!isRecord(usage)) return undefined;
+  const inputDetails = isRecord(usage.prompt_tokens_details)
+    ? usage.prompt_tokens_details
+    : isRecord(usage.input_tokens_details)
+      ? usage.input_tokens_details
+      : undefined;
+  const outputDetails = isRecord(usage.completion_tokens_details)
+    ? usage.completion_tokens_details
+    : isRecord(usage.output_tokens_details)
+      ? usage.output_tokens_details
+      : undefined;
   return {
     inputTokens: numberValue(usage.prompt_tokens) ?? numberValue(usage.input_tokens),
+    cachedInputTokens: numberValue(inputDetails?.cached_tokens),
     outputTokens: numberValue(usage.completion_tokens) ?? numberValue(usage.output_tokens),
+    reasoningOutputTokens: numberValue(outputDetails?.reasoning_tokens),
     totalTokens: numberValue(usage.total_tokens)
   };
 }

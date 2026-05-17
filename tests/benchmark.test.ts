@@ -25,7 +25,13 @@ describe("Docker benchmark runner", () => {
   });
 
   it.skipIf(!hasDocker)("runs a minimal passing task in Docker", async () => {
-    const provider = await startFakeProvider(["printf done > result.txt", "chat_out \"done\""]);
+    const provider = await startFakeProvider(["printf done > result.txt", "chat_out \"done\""], {
+      prompt_tokens: 1000,
+      prompt_tokens_details: { cached_tokens: 800 },
+      completion_tokens: 500,
+      completion_tokens_details: { reasoning_tokens: 300 },
+      total_tokens: 1500
+    });
     servers.push(provider.server);
 
     const task = mkdtempSync(join(tmpdir(), "smith-benchmark-task-"));
@@ -49,9 +55,24 @@ timeout_ms = 5000
     writeFileSync(join(task, "verify.sh"), "test \"$(cat result.txt)\" = done\n", "utf8");
     chmodSync(join(task, "verify.sh"), 0o755);
 
-    const result = await runBenchmarkTask(task, { timeoutMs: 120_000 });
+    const result = await runBenchmarkTask(task, {
+      timeoutMs: 120_000,
+      cost: {
+        inputCostPerMillionTokens: 1,
+        cachedInputCostPerMillionTokens: 0.1,
+        outputCostPerMillionTokens: 2
+      }
+    });
     expect(result.passed, result.stderr).toBe(true);
     expect(result.stdout).toContain("done");
+    expect(result.usage).toEqual({
+      inputTokens: 2000,
+      cachedInputTokens: 1600,
+      outputTokens: 1000,
+      reasoningOutputTokens: 600,
+      totalTokens: 3000,
+      costUsd: 0.00256
+    });
   }, 180_000);
 
   it("validates benchmark task structure", () => {
@@ -163,7 +184,7 @@ timeout_ms = 5000
   });
 });
 
-async function startFakeProvider(commands: string[]): Promise<{
+async function startFakeProvider(commands: string[], usage?: Record<string, unknown>): Promise<{
   baseUrl: string;
   server: { close: (callback: () => void) => void };
 }> {
@@ -173,7 +194,7 @@ async function startFakeProvider(commands: string[]): Promise<{
     const command = commands[Math.min(count, commands.length - 1)];
     count += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ choices: [{ message: { content: command } }] }));
+    response.end(JSON.stringify({ choices: [{ message: { content: command } }], ...(usage ? { usage } : {}) }));
   });
 
   await new Promise<void>((resolve) => server.listen(0, "0.0.0.0", () => resolve()));

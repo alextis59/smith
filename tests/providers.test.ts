@@ -68,11 +68,11 @@ describe("provider adapters", () => {
       "utf8"
     );
     const calls = captureFetch(
-      [
-        'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"done"}',
-        'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":6,"total_tokens":11}}}'
-      ].join("\n\n"),
-      "text/event-stream"
+        [
+          'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"done"}',
+          'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":3},"output_tokens":6,"output_tokens_details":{"reasoning_tokens":4},"total_tokens":11}}}'
+        ].join("\n\n"),
+        "text/event-stream"
     );
     const chatgptProfile = { ...profile("chatgpt-codex", "https://chatgpt.example/backend-api/codex"), codexAuthPath: authPath };
 
@@ -96,7 +96,13 @@ describe("provider adapters", () => {
     ]);
     expect(calls.first.body).not.toHaveProperty("max_output_tokens");
     expect(response.text).toBe("done");
-    expect(response.usage).toEqual({ inputTokens: 5, outputTokens: 6, totalTokens: 11 });
+    expect(response.usage).toEqual({
+      inputTokens: 5,
+      cachedInputTokens: 3,
+      outputTokens: 6,
+      reasoningOutputTokens: 4,
+      totalTokens: 11
+    });
   });
 
   it("retries chatgpt-codex response stream failures", async () => {
@@ -129,7 +135,7 @@ describe("provider adapters", () => {
       return new Response(
         [
           'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"done"}',
-          'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":6,"total_tokens":11}}}'
+          'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":3},"output_tokens":6,"output_tokens_details":{"reasoning_tokens":4},"total_tokens":11}}}'
         ].join("\n\n"),
         { status: 200, headers: { "Content-Type": "text/event-stream" } }
       );
@@ -144,6 +150,13 @@ describe("provider adapters", () => {
 
     expect(response.text).toBe("done");
     expect(count).toBe(2);
+    expect(response.usage).toEqual({
+      inputTokens: 5,
+      cachedInputTokens: 3,
+      outputTokens: 6,
+      reasoningOutputTokens: 4,
+      totalTokens: 11
+    });
   });
 
   it("maps anthropic messages requests", async () => {

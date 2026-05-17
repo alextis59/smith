@@ -246,9 +246,13 @@ function extractCompletedResponseText(response: Record<string, unknown>): string
 
 function usageFromResponse(response: Record<string, unknown>): SmithModelResponse["usage"] | undefined {
   if (!isRecord(response.usage)) return undefined;
+  const inputDetails = isRecord(response.usage.input_tokens_details) ? response.usage.input_tokens_details : undefined;
+  const outputDetails = isRecord(response.usage.output_tokens_details) ? response.usage.output_tokens_details : undefined;
   return {
     inputTokens: numberValue(response.usage.input_tokens),
+    cachedInputTokens: numberValue(inputDetails?.cached_tokens),
     outputTokens: numberValue(response.usage.output_tokens),
+    reasoningOutputTokens: numberValue(outputDetails?.reasoning_tokens),
     totalTokens: numberValue(response.usage.total_tokens)
   };
 }
