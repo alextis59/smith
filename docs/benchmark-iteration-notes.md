@@ -522,3 +522,49 @@ Validation commands run after the retained test-config change:
 npm test
 npm run build
 ```
+
+## 2026-05-17: SWE-bench Pro 008 Vuls Trivy CVE Content Deduplication
+
+Command for each run:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --json
+```
+
+Baseline result: failed in 594.1s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T21-28-56-943Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`. Trace: `.smith-bench/run-6Fvp9i/home/.smith/runs/2026-05-17T21-19-03-755Z.trace`. Sandbox: `.smith-bench/run-6Fvp9i`.
+
+Classification:
+
+- no chat_out / turn-limit exhaustion
+- weak inspection
+- context pollution
+- SMITH.md / SMITH.TASK.md memory issue
+
+Evidence summary: Smith spent all 60 turns inspecting Vuls Trivy conversion, CVE content, and severity code. It never attempted `smith_patch`, left no tracked workspace changes, never reached the SWE-bench Pro verifier, and hit `go: command not found` when trying local Go environment inspection. Mid-run, after compaction pressure, it re-read `SMITH.TASK.md`; the generated task-memory file still contained the full initial benchmark prompt and no distilled working set, hypothesis, verifier state, or next edit. The generated `SMITH.TASK.md` in the trace was 5,676 bytes, duplicating the initial `chat_in` that transcript truncation already preserves.
+
+Decision and Smith change: Retain a small task-memory improvement. Generated `SMITH.TASK.md` now caps long initial task text, points back to the preserved initial `chat_in` for the full request, and starts with explicit working-set slots for important files/functions, current hypothesis, and verifier/local check. The system prompt now tells Smith to update task memory once a likely working set exists before broad further searching. This reduces prompt/context duplication and gives compacted runs a better place to persist investigation state without adding a new command or task-specific behavior.
+
+Rerun result after task-memory change: failed in 367.7s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T21-36-54-334Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`. Trace: `.smith-bench/run-Obuv3L/home/.smith/runs/2026-05-17T21-30-47-906Z.trace`. Sandbox: `.smith-bench/run-Obuv3L`.
+
+Improvement evidence: The failure mode remained no-`chat_out` and no verifier, but context pollution was reduced concretely: generated `SMITH.TASK.md` dropped from 5,676 bytes to 2,202 bytes, the run no longer duplicated the full initial task in refreshed task memory, and wall time dropped from 594.1s to 367.7s under the same 60-turn cap. The model still did not update the working-set slots or make a source edit, so this is a context-size improvement rather than a task-solving improvement.
+
+Trial change not retained: Added temporary benchmark guidance to avoid long read-only loops and make the smallest source edit once likely target files/functions were known. Rerun failed in 556.2s with no `chat_out`, no verifier, no tracked sandbox changes, and no patch attempt. Log: `/tmp/smith/2026-05-17T21-47-14-881Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`. Trace: `.smith-bench/run-lCOSe0/home/.smith/runs/2026-05-17T21-37-59-086Z.trace`. Sandbox: `.smith-bench/run-lCOSe0`. This instruction did not produce a better failure mode and was reverted.
+
+Decision: stop this task for now. The retained change addresses concrete SMITH.TASK.md context pollution. Remaining failure is task-specific implementation/reasoning difficulty plus persistent read-only source exploration; another small general Smith prompt, memory, runner, patch, shell, or harness improvement is not supported by the evidence from the final rerun.
+
+Validation commands run for the retained Smith change:
+
+```sh
+npm test -- tests/benchmark.test.ts tests/prompt-trace.test.ts
+npm run build
+```

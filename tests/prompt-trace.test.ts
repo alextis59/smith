@@ -31,11 +31,28 @@ describe("prompt and trace", () => {
     const handle = ensureTaskMemoryFile(cwd, "Fix parser");
 
     expect(handle.created).toBe(true);
-    expect(readFileSync(join(cwd, "SMITH.TASK.md"), "utf8")).toContain("Fix parser");
+    const memory = readFileSync(join(cwd, "SMITH.TASK.md"), "utf8");
+    expect(memory).toContain("Fix parser");
+    expect(memory).toContain("## Working Set");
+    expect(memory).toContain("Important files/functions: (unknown yet)");
+    expect(memory).toContain("Current hypothesis: (unknown yet)");
 
     cleanupTaskMemoryFile(handle);
 
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
+  });
+
+  it("caps long generated task memory instead of duplicating entire prompts", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-task-memory-long-"));
+    const handle = ensureTaskMemoryFile(cwd, `Fix parser\n${"details\n".repeat(500)}`);
+
+    const memory = readFileSync(join(cwd, "SMITH.TASK.md"), "utf8");
+
+    expect(memory.length).toBeLessThan(2600);
+    expect(memory).toContain("initial task truncated in SMITH.TASK.md");
+    expect(memory).toContain("preserved initial chat_in");
+
+    cleanupTaskMemoryFile(handle);
   });
 
   it("includes benchmark-hardened shell guidance", () => {
@@ -56,6 +73,8 @@ describe("prompt and trace", () => {
 
     expect(prompt).toContain("SMITH.md is durable project memory");
     expect(prompt).toContain("SMITH.TASK.md is ephemeral task memory");
+    expect(prompt).toContain("current hypothesis");
+    expect(prompt).toContain("before broad further searching");
     expect(prompt).toContain("refreshed after transcript compaction");
   });
 
