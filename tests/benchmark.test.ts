@@ -103,6 +103,9 @@ timeout_ms = 5000
       "After a focused edit, run the verifier directly; avoid optional status, diff, or .git self-checks unless diagnosing a concrete failure."
     );
     expect(BENCHMARK_TASK_INSTRUCTIONS).toContain(
+      "After an edit command, read its terminal result. If the command failed or might not have changed files, recover immediately and confirm the intended files changed with a targeted file read or path-specific diff before continuing."
+    );
+    expect(BENCHMARK_TASK_INSTRUCTIONS).toContain(
       "Do not read /task/verify.sh before the first verifier run; inspect it only after a verifier failure or when you are blocked."
     );
   });

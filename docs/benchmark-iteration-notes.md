@@ -254,3 +254,92 @@ Validation commands run for the Smith changes:
 npm test -- tests/benchmark.test.ts tests/prompt-trace.test.ts
 npm run build
 ```
+
+## 2026-05-17: SWE-bench Pro 002 qutebrowser Qt Warning Filter Move
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --json
+```
+
+Result: passed in 250.3s, 27 turns, 375,373 total tokens. Log: `/tmp/smith/2026-05-17T13-50-54-417Z-smith-002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c.json`. Trace: `.smith-bench/run-EVt0vd/home/.smith/runs/2026-05-17T13-47-11-726Z.trace`. Sandbox: `.smith-bench/run-EVt0vd`.
+
+Classification:
+
+- no material Smith failure observed
+
+Evidence summary: Smith inspected the relevant qutebrowser logging code and tests, moved `hide_qt_warning` and `QtWarningFilter` from `qutebrowser/utils/log.py` to `qutebrowser/utils/qtlog.py`, updated the caller in `qutebrowser/browser/qtnetworkdownloads.py`, and performed a local `py_compile` check. The SWE-bench Pro verifier then ran the selected `tests/unit/utils/test_log.py` and `tests/unit/utils/test_qtlog.py` tests and reported `56 passed`.
+
+Decision: no Smith change. The run reached a correct patch and verifier pass on the first attempt. Remaining overhead was normal inspection for a real codebase task, not a clear reusable prompt, patch-command, runner, transcript, or harness defect.
+
+## 2026-05-17: SWE-bench Pro 003 ansible Collection Keyword Validation
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5 \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --json
+```
+
+Baseline result: failed in 607.7s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T14-02-00-340Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`. Trace: `.smith-bench/run-PLnvVF/home/.smith/runs/2026-05-17T13-52-19-181Z.trace`. Sandbox: `.smith-bench/run-PLnvVF`.
+
+Classification:
+
+- no chat_out / turn-limit exhaustion
+- weak inspection
+- bad patching
+- shell/PTY issue
+
+Evidence summary: Smith found the relevant Ansible collection validation code and attempted to edit `lib/ansible/utils/collection_loader/_collection_finder.py` with a `python - <<'PY'` rewrite. The terminal reported `bash: python: command not found` with exit status 127. Smith then continued inspecting collection validation code for the rest of the run, never applied a tracked file change, never reached the verifier, and never called `chat_out`.
+
+Decision and Smith change: Add benchmark-task guidance that after an edit command the agent must read the terminal result, recover immediately if the edit command failed or might not have changed files, and confirm intended files changed with a targeted file read or path-specific diff before continuing. This is a general recovery instruction for failed or ambiguous edits, not a task-specific Ansible hint.
+
+Rerun result after edit-result recovery guidance: failed in 666.0s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T14-15-44-703Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`. Trace: `.smith-bench/run-56FnrR/home/.smith/runs/2026-05-17T14-04-42-493Z.trace`. Sandbox: `.smith-bench/run-56FnrR`.
+
+Classification:
+
+- no chat_out / turn-limit exhaustion
+- weak inspection
+- verifier misuse
+
+Evidence summary: The run improved over the baseline by using `smith_patch`, applying a tracked source patch to `lib/ansible/galaxy/dependency_resolution/dataclasses.py`, and inspecting the edited file afterward. It then attempted local validation with `python3 -m pytest --version`; the editing container reported `/usr/bin/python3: No module named pytest`. Instead of finalizing so the SWE-bench Pro verifier could run in the original Docker image, Smith continued source and test inspection until the turn limit and never called `chat_out`.
+
+Decision and trial Smith change: Add SWE-bench Pro task guidance that after focused implementation edits, if local checks are blocked by missing project dependencies, the agent should not spend turns recreating the environment and should call `chat_out` with a concise summary so the benchmark verifier can run.
+
+Rerun result after dependency-blocked-finalization guidance: failed in 661.6s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T14-28-20-644Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`. Trace: `.smith-bench/run-ha5v4a/home/.smith/runs/2026-05-17T14-17-20-906Z.trace`. Sandbox: `.smith-bench/run-ha5v4a`.
+
+Classification:
+
+- no chat_out / turn-limit exhaustion
+- weak inspection
+
+Evidence summary: The run did not reach the dependency-blocked validation state seen in the previous rerun. It performed repeated source and test inspection around collection name validation and left no tracked sandbox changes. It never called `chat_out`, never reached the SWE-bench Pro verifier, and did not show a concrete improvement over the prior failure mode.
+
+Decision: do not retain the dependency-blocked-finalization guidance. The evidence from this rerun does not support that change as a stable general improvement. Keep the edit-result recovery guidance because it produced the concrete better failure mode of a tracked source patch after the baseline had no patch.
+
+Validation commands run for the retained Smith change:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+```
