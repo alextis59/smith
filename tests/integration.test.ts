@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -51,6 +51,48 @@ timeout_ms = 5000
     expect(stdout).toContain("Read fake project");
     expect(provider.requests).toHaveLength(2);
     expect(provider.requests[0].headers.authorization).toBe("Bearer test");
+    expect(systemMessage(provider.requests[0].body)).toContain("Task memory from SMITH.TASK.md");
+    expect(systemMessage(provider.requests[0].body)).toContain("inspect README");
+    expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
+  });
+
+  it("refreshes task memory after transcript compaction", async () => {
+    const provider = await startFakeProvider([
+      "printf first",
+      "printf '%s\\n' 'Updated task fact' > SMITH.TASK.md",
+      "chat_out \"done\""
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-refresh-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+transcript_turns = 1
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "track task"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(3);
+    expect(systemMessage(provider.requests[2].body)).toContain("Updated task fact");
+    expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
   it("remote prints only first chat_out to stdout and supports resume", async () => {
@@ -75,6 +117,7 @@ timeout_ms = 5000
 `,
       "utf8"
     );
+    writeFileSync(join(cwd, "SMITH.TASK.md"), "Parent task context", "utf8");
 
     const first = await execFileAsync(
       "node",
@@ -83,6 +126,8 @@ timeout_ms = 5000
     );
     expect(first.stdout).toBe("need info\n");
     expect(first.stderr).toMatch(/smith remote session saved: [a-z0-9_-]{6}/);
+    expect(systemMessage(provider.requests[0].body)).toContain("Parent task context");
+    expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(true);
     const id = /saved: ([a-z0-9_-]{6})/.exec(first.stderr)?.[1];
     expect(id).toBeTruthy();
 
@@ -160,4 +205,9 @@ async function startFakeProvider(commands: string[]): Promise<{
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("expected TCP server address");
   return { baseUrl: `http://127.0.0.1:${address.port}`, requests, server };
+}
+
+function systemMessage(body: unknown): string {
+  const messages = (body as { messages?: Array<{ role?: string; content?: string }> }).messages ?? [];
+  return messages.find((message) => message.role === "system")?.content ?? "";
 }

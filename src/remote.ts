@@ -98,6 +98,7 @@ async function startRemote(options: RemoteCliOptions): Promise<void> {
     reviewerProfile,
     runtime: config.runtime,
     systemPrompt,
+    reloadSystemPrompt: () => loadSystemPrompt(cwd),
     maxTurns: options.maxTurns,
     env: { ...process.env, SMITH_PROFILE: selectedProfile },
     trace
@@ -139,6 +140,7 @@ async function resumeRemote(options: RemoteCliOptions): Promise<void> {
     reviewerProfile,
     runtime: config.runtime,
     systemPrompt,
+    reloadSystemPrompt: () => loadSystemPrompt(cwd),
     maxTurns: options.maxTurns,
     env: { ...process.env, SMITH_PROFILE: profileName },
     trace

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ProfileConfig, RuntimeConfig } from "../src/config.js";
 import { loadSystemPrompt } from "../src/prompt.js";
+import { cleanupTaskMemoryFile, ensureTaskMemoryFile } from "../src/task-memory.js";
 import { createTraceLogger, runsDir } from "../src/trace.js";
 
 describe("prompt and trace", () => {
@@ -13,6 +14,28 @@ describe("prompt and trace", () => {
     const prompt = loadSystemPrompt(cwd);
     expect(prompt).toContain("You are Smith");
     expect(prompt).toContain("Use npm test.");
+  });
+
+  it("loads task memory from SMITH.TASK.md", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-task-prompt-"));
+    writeFileSync(join(cwd, "SMITH.TASK.md"), "Current verifier: npm test.", "utf8");
+
+    const prompt = loadSystemPrompt(cwd);
+
+    expect(prompt).toContain("Task memory from SMITH.TASK.md");
+    expect(prompt).toContain("Current verifier: npm test.");
+  });
+
+  it("creates and cleans up generated task memory", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-task-memory-"));
+    const handle = ensureTaskMemoryFile(cwd, "Fix parser");
+
+    expect(handle.created).toBe(true);
+    expect(readFileSync(join(cwd, "SMITH.TASK.md"), "utf8")).toContain("Fix parser");
+
+    cleanupTaskMemoryFile(handle);
+
+    expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
   it("includes benchmark-hardened shell guidance", () => {
@@ -26,6 +49,14 @@ describe("prompt and trace", () => {
     expect(prompt).toContain("source top-level Markdown heading or version label verbatim");
     expect(prompt).toContain("copy factual bullets or labeled facts");
     expect(prompt).toContain("original source bullet text verbatim");
+  });
+
+  it("includes concise memory guidance", () => {
+    const prompt = loadSystemPrompt("/");
+
+    expect(prompt).toContain("SMITH.md is durable project memory");
+    expect(prompt).toContain("SMITH.TASK.md is ephemeral task memory");
+    expect(prompt).toContain("refreshed after transcript compaction");
   });
 
   it("includes concrete remote delegation guidance", () => {

@@ -20,6 +20,7 @@ export type SmithRunOptions = {
   maxTurns?: number;
   env?: NodeJS.ProcessEnv;
   fetch?: ProviderFetch;
+  reloadSystemPrompt?: () => string;
   onTerminalOutput?: (output: string) => void;
   onModelOutput?: (output: string) => void;
   trace?: TraceLogger;
@@ -35,6 +36,7 @@ export type SmithRunResult = {
 export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunResult> {
   const maxTurns = options.maxTurns ?? options.runtime.maxTurns;
   let transcript = options.initialTranscript ?? appendChatIn(options.prompt);
+  let systemPrompt = options.systemPrompt;
   let totalUsage: TokenUsageCost | undefined;
   const shell = await PtyShellRunner.start({
     cwd: options.cwd,
@@ -51,7 +53,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       const response = await completeWithProfile(
         {
           model: options.profile.model,
-          messages: transcriptToMessages(options.systemPrompt, transcript, options.runtime.maxContextChars)
+          messages: transcriptToMessages(systemPrompt, transcript, options.runtime.maxContextChars)
         },
         options.profile,
         {
@@ -106,10 +108,19 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         options.trace?.write("timeout", timeoutOutput);
         options.onTerminalOutput?.(timeoutOutput);
       }
-      transcript = compactTranscript(transcript, {
+      const compactedTranscript = compactTranscript(transcript, {
         keepTurns: options.runtime.transcriptTurns,
         maxSummaryChars: options.runtime.transcriptCompactionChars
       });
+      if (compactedTranscript !== transcript) {
+        transcript = compactedTranscript;
+        if (options.reloadSystemPrompt) {
+          systemPrompt = options.reloadSystemPrompt();
+          options.trace?.write("system prompt refreshed", `system_prompt_chars: ${systemPrompt.length}`);
+        }
+      } else {
+        transcript = compactedTranscript;
+      }
     }
   } finally {
     process.off("SIGINT", killShell);

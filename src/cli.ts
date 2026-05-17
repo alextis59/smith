@@ -8,6 +8,7 @@ import { runSmithTask } from "./loop.js";
 import { loadSystemPrompt } from "./prompt.js";
 import { runRemoteCommand } from "./remote.js";
 import { summarizeTrace, writeSessionLog } from "./session-log.js";
+import { cleanupTaskMemoryFile, ensureTaskMemoryFile } from "./task-memory.js";
 import { createTraceLogger } from "./trace.js";
 import {
   runBenchmarkPath,
@@ -124,54 +125,61 @@ async function runCommand(args: string[]): Promise<void> {
   const selectedProfile = overrides.profile ?? config.defaultProfile;
   const profile = resolveProfile(config, selectedProfile);
   const reviewerProfile = resolveProfile(config, config.runtime.dangerReviewProfile);
-  const systemPrompt = loadSystemPrompt(cwd);
-  const startedAt = new Date().toISOString();
-  const trace = createTraceLogger({
-    cwd,
-    profileName: selectedProfile,
-    profile,
-    runtime: config.runtime,
-    systemPrompt
-  });
   const prompt = rest.join(" ").trim();
+  const taskMemory = ensureTaskMemoryFile(cwd, prompt);
 
-  if (!prompt) {
-    await runInteractive(cwd, config.runtime, profile, reviewerProfile, systemPrompt);
-    return;
-  }
+  try {
+    const systemPrompt = loadSystemPrompt(cwd);
+    const startedAt = new Date().toISOString();
+    const trace = createTraceLogger({
+      cwd,
+      profileName: selectedProfile,
+      profile,
+      runtime: config.runtime,
+      systemPrompt
+    });
 
-  const result = await runSmithTask({
-    cwd,
-    prompt,
-    profile,
-    reviewerProfile,
-    runtime: config.runtime,
-    systemPrompt,
-    trace,
-    env: process.env,
-    onTerminalOutput: (terminalOutput) => {
-      if (!outputOptions.quiet && !outputOptions.json) process.stdout.write(`${terminalOutput}\n`);
+    if (!prompt) {
+      await runInteractive(cwd, config.runtime, profile, reviewerProfile, systemPrompt);
+      return;
     }
-  });
-  const logPath = writeSessionLog(config.runtime.logDir, "run", {
-    kind: "smith.run",
-    startedAt,
-    completedAt: new Date().toISOString(),
-    cwd,
-    command: `smith ${args.map(shellQuoteForLog).join(" ")}`,
-    profile: selectedProfile,
-    adapter: profile.adapter,
-    model: profile.model,
-    turns: result.turns,
-    tracePath: trace.path,
-    usage: result.usage,
-    chatOut: result.chatOut,
-    ...summarizeTrace(trace.path)
-  });
-  if (outputOptions.json) {
-    process.stdout.write(`${JSON.stringify({ chatOut: result.chatOut, turns: result.turns, usage: result.usage, tracePath: trace.path, logPath }, null, 2)}\n`);
-  } else if (outputOptions.quiet) {
-    process.stdout.write(`${result.chatOut}\n`);
+
+    const result = await runSmithTask({
+      cwd,
+      prompt,
+      profile,
+      reviewerProfile,
+      runtime: config.runtime,
+      systemPrompt,
+      reloadSystemPrompt: () => loadSystemPrompt(cwd),
+      trace,
+      env: process.env,
+      onTerminalOutput: (terminalOutput) => {
+        if (!outputOptions.quiet && !outputOptions.json) process.stdout.write(`${terminalOutput}\n`);
+      }
+    });
+    const logPath = writeSessionLog(config.runtime.logDir, "run", {
+      kind: "smith.run",
+      startedAt,
+      completedAt: new Date().toISOString(),
+      cwd,
+      command: `smith ${args.map(shellQuoteForLog).join(" ")}`,
+      profile: selectedProfile,
+      adapter: profile.adapter,
+      model: profile.model,
+      turns: result.turns,
+      tracePath: trace.path,
+      usage: result.usage,
+      chatOut: result.chatOut,
+      ...summarizeTrace(trace.path)
+    });
+    if (outputOptions.json) {
+      process.stdout.write(`${JSON.stringify({ chatOut: result.chatOut, turns: result.turns, usage: result.usage, tracePath: trace.path, logPath }, null, 2)}\n`);
+    } else if (outputOptions.quiet) {
+      process.stdout.write(`${result.chatOut}\n`);
+    }
+  } finally {
+    cleanupTaskMemoryFile(taskMemory);
   }
 }
 
@@ -194,6 +202,7 @@ async function runInteractive(
         reviewerProfile,
         runtime,
         systemPrompt,
+        reloadSystemPrompt: () => loadSystemPrompt(cwd),
         trace: createTraceLogger({ cwd, profileName: "interactive", profile, runtime, systemPrompt }),
         env: process.env,
         onTerminalOutput: (terminalOutput) => {

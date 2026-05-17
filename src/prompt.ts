@@ -4,14 +4,25 @@ import { fileURLToPath } from "node:url";
 
 export function loadSystemPrompt(cwd = process.cwd()): string {
   const basePrompt = readPackagedPrompt();
-  const projectPrompt = findProjectInstructions(cwd);
-  return projectPrompt ? `${basePrompt}\n\nProject instructions from SMITH.md:\n\n${projectPrompt}` : basePrompt;
+  const projectPrompt = findInstructionFile(cwd, "SMITH.md");
+  const taskPrompt = findInstructionFile(cwd, "SMITH.TASK.md");
+  return [
+    basePrompt,
+    projectPrompt ? `Project memory from SMITH.md:\n\n${projectPrompt}` : undefined,
+    taskPrompt ? `Task memory from SMITH.TASK.md:\n\n${taskPrompt}` : undefined
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function findProjectInstructions(start: string): string | undefined {
+  return findInstructionFile(start, "SMITH.md");
+}
+
+export function findInstructionFile(start: string, filename: string): string | undefined {
   let current = resolve(start);
   while (true) {
-    const file = join(current, "SMITH.md");
+    const file = join(current, filename);
     if (existsSync(file)) return readFileSync(file, "utf8").trim();
     if (existsSync(join(current, ".git"))) return undefined;
     const parent = parsePath(current).dir;
