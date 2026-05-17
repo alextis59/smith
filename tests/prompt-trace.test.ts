@@ -28,6 +28,17 @@ describe("prompt and trace", () => {
     expect(prompt).toContain("original source bullet text verbatim");
   });
 
+  it("includes concrete remote delegation guidance", () => {
+    const prompt = loadSystemPrompt("/");
+
+    expect(prompt).toContain("Delegate independent work with remote Smith");
+    expect(prompt).toContain('smith remote --cwd ./path "task"');
+    expect(prompt).toContain("Find how authentication tokens are parsed and validated");
+    expect(prompt).toContain("Read the local docs for provider configuration");
+    expect(prompt).toContain("Remove the deprecated Foo adapter");
+    expect(prompt).toContain("Do not ask two remote Smith runs to edit the same files at the same time");
+  });
+
   it("writes trace files under ~/.smith/runs", () => {
     const home = mkdtempSync(join(tmpdir(), "smith-trace-home-"));
     const logger = createTraceLogger({

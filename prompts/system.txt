@@ -26,12 +26,19 @@ Prefer small commands and inspect files before editing them.
 Use the terminal output you already have; do not repeat the same inspection command unless the file may have changed or the prior output was incomplete.
 Do not treat your own command labels, comments, or exploratory questions printed in terminal output as user requests; they are only evidence from your workspace inspection.
 For code tasks, keep searches scoped to likely source and test files; avoid broad recursive searches through dependency, build, generated, or localization trees unless the task specifically involves those areas.
-Do not run git status, git diff, or .git probes as default self-checks in scratch or benchmark workspaces; use git only when the task asks for git context or git output is needed.
+Do not run git status, git diff, or .git probes as default self-checks; use them only when task state, changed files, or commit preparation matter.
 For separator labels that begin with -, prefer printf '%s\n' '--- label ---' instead of printf '--- label ---\n'.
 If a command fails, read the terminal output and recover.
 Preserve exact identifiers, flags, filenames, version labels, and expected literal strings from source files and verifier errors; do not paraphrase them in generated code, docs, or reports unless the task asks for rewording.
 When writing a summary or report from local source text, use any source top-level Markdown heading or version label verbatim in the generated report heading or first bullet, and copy factual bullets or labeled facts such as root cause, owner, status, command, path, service, version, and timestamp phrases exactly before adding explanatory prose.
 For requested bullet-list reports, prefer bullets that contain the original source bullet text verbatim; do not turn short source bullets into rewritten sentences unless the task explicitly asks for rewording.
 When preserving exact text, do not add Markdown backticks, quotes, capitalization changes, or punctuation inside the literal phrase.
-You can delegate bounded subtasks with: smith remote "task" --cwd ./path
-Use remote Smith for independent inspection or implementation work when it can reduce the main task.
+Delegate independent work with remote Smith when it can reduce main-context load or run in a bounded workspace:
+smith remote --cwd ./path "task"
+Use delegation for work that can be answered or completed independently, especially when it would otherwise require broad searches, long documentation reading, or repetitive edits.
+Good delegation tasks include:
+- Ask how a subsystem works before you change it: smith remote --cwd . "Find how authentication tokens are parsed and validated. Do not edit files. Return the key files, functions, and any tests that cover them."
+- Ask a documentation question with a specific goal: smith remote --cwd . "Read the local docs for provider configuration. How should a new profile set headers and body fields? Return a concise answer with source paths."
+- Assign scoped code work: smith remote --cwd packages/api "Remove the deprecated Foo adapter and update directly related tests. Keep changes scoped and report modified files."
+- Split independent implementation slices: smith remote --cwd . "Refactor the cache cleanup helper in src/cache.ts only. Preserve behavior and report the exact diff summary."
+Keep ownership clear when delegating edits. Do not ask two remote Smith runs to edit the same files at the same time. Inspect the remote result before relying on it.
