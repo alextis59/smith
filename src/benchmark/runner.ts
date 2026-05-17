@@ -95,6 +95,15 @@ export const SWE_BENCH_PRO_TASK_INSTRUCTIONS = [
   "After a local check fails because a test runner, Python module, package, or project dependency is missing, do not retry equivalent local test/import commands; use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run."
 ];
 
+export const BENCHMARK_PYTHON_SHIM_SCRIPT = [
+  "SHIM_DIR=\"$RESULT_DIR/bin\"",
+  "mkdir -p \"$SHIM_DIR\"",
+  "if ! command -v python >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then",
+  "  ln -sf \"$(command -v python3)\" \"$SHIM_DIR/python\"",
+  "fi",
+  "export PATH=\"$SHIM_DIR:$PATH\""
+];
+
 export async function runBenchmarkPath(path: string, options: BenchmarkRunOptions = {}): Promise<BenchmarkTaskResult[]> {
   const taskPaths = discoverTasks(resolveBenchmarkTarget(path));
   return runTasksWithConcurrency(taskPaths, options.concurrency ?? 1, (taskPath) => runBenchmarkTask(taskPath, options));
@@ -246,6 +255,7 @@ async function runSmithForSweBenchProTask(context: {
     "mkdir -p /home/smith",
     "RESULT_DIR=/home/smith/benchmark-results",
     "mkdir -p \"$RESULT_DIR\"",
+    ...BENCHMARK_PYTHON_SHIM_SCRIPT,
     `TASK=$(printf '%s\\n\\n' ${benchmarkInstructionsForTask(metadata).map(shellQuote).join(" ")}; cat /task/Task.md)`,
     "set +e",
     `${command} > "$RESULT_DIR/smith.stdout" 2> "$RESULT_DIR/smith.stderr"`,
@@ -446,6 +456,7 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
     "mkdir -p /home/smith",
     "RESULT_DIR=/home/smith/benchmark-results",
     "mkdir -p \"$RESULT_DIR\"",
+    ...BENCHMARK_PYTHON_SHIM_SCRIPT,
     `TASK=$(printf '%s\\n\\n' ${BENCHMARK_TASK_INSTRUCTIONS.map(shellQuote).join(" ")}; cat /task/Task.md)`,
     "set +e",
     `${command} > "$RESULT_DIR/smith.stdout" 2> "$RESULT_DIR/smith.stderr"`,

@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   BENCHMARK_TASK_INSTRUCTIONS,
+  BENCHMARK_PYTHON_SHIM_SCRIPT,
   SWE_BENCH_PRO_TASK_INSTRUCTIONS,
   buildSweBenchProVerifierScript,
   resolveBenchmarkTarget,
@@ -162,6 +163,14 @@ timeout_ms = 5000
     expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
       "After a local check fails because a test runner, Python module, package, or project dependency is missing, do not retry equivalent local test/import commands; use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run."
     );
+  });
+
+  it("adds a python shim for benchmark editing containers with only python3", () => {
+    const script = BENCHMARK_PYTHON_SHIM_SCRIPT.join("\n");
+
+    expect(script).toContain("command -v python3");
+    expect(script).toContain("ln -sf \"$(command -v python3)\" \"$SHIM_DIR/python\"");
+    expect(script).toContain("export PATH=\"$SHIM_DIR:$PATH\"");
   });
 
   it("marks mounted SWE-bench Pro workspaces as safe for git before verification", () => {

@@ -53,6 +53,28 @@ describe("smith_patch", () => {
       )
     ).toThrow("hunk context not found");
   });
+
+  it("applies repeated update contexts in file order instead of matching earlier replacements", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "file.txt"), "section\nvalue\nsection\nvalue\n", "utf8");
+
+    applySmithPatch(
+      `*** Begin Patch
+*** Update File: file.txt
+@@
+ section
+ value
++first
+@@
+ section
+ value
++second
+*** End Patch`,
+      cwd
+    );
+
+    expect(readFileSync(join(cwd, "file.txt"), "utf8")).toBe("section\nvalue\nfirst\nsection\nvalue\nsecond\n");
+  });
 });
 
 function tempDir(): string {

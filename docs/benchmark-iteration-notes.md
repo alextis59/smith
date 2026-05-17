@@ -568,3 +568,53 @@ Validation commands run for the retained Smith change:
 npm test -- tests/benchmark.test.ts tests/prompt-trace.test.ts
 npm run build
 ```
+
+## 2026-05-17: SWE-bench Pro 009 OpenLibrary MARC Linkage Parsing
+
+Command for each run:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59 \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --json
+```
+
+Baseline result: failed in 525.2s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T21-57-54-727Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`. Trace: `.smith-bench/run-UHI4Xh/home/.smith/runs/2026-05-17T21-49-10-690Z.trace`. Sandbox: `.smith-bench/run-UHI4Xh`.
+
+Classification:
+
+- no chat_out / turn-limit exhaustion
+- weak inspection
+- shell/PTY issue
+- verifier misuse
+- context pollution
+
+Evidence summary: Smith spent 60 turns inspecting MARC linkage parsing and fixtures. It never reached the SWE-bench Pro verifier and did not call `chat_out`. The trace showed repeated local validation friction in the editing container: `python: command not found`, `pytest: command not found`, `ModuleNotFoundError: No module named 'lxml'`, `ModuleNotFoundError: No module named 'web'`, and `ModuleNotFoundError: No module named 'pymarc'`. The retained workspace had no relevant MARC source changes; `tests/integration/__init__.py` and `vendor/infogami` were already dirty/untracked image state, not Smith's task work.
+
+Decision and Smith change: Add a benchmark-runner Python shim for Smith benchmark containers. When `python` is absent but `python3` exists, the runner now creates a per-run `python` symlink in `/home/smith/benchmark-results/bin` and prepends it to `PATH`. This is a small general shell compatibility fix for benchmark editing containers and avoids spending turns recovering from `python` missing while preserving the underlying image.
+
+Rerun result after Python shim: failed in 565.3s with no `chat_out` within 60 turns. Log: `/tmp/smith/2026-05-17T22-08-59-633Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`. Trace: `.smith-bench/run-Jnu66u/home/.smith/runs/2026-05-17T21-59-35-251Z.trace`. Sandbox: `.smith-bench/run-Jnu66u`.
+
+Improvement evidence: The rerun had no `python: command not found` entries. Smith applied a tracked `smith_patch` to `openlibrary/catalog/marc/marc_base.py` and ran `python -m py_compile`, reaching a clearer source-patch failure instead of only read-only inspection and missing `python` recovery. The patch was syntactically corrupt, and `py_compile` failed with an unterminated string literal in `marc_base.py`.
+
+Second Smith change: Fix a `smith_patch` update weakness exposed by the corrupt patch. Update hunks now apply in file order after the previous replacement cursor instead of each hunk searching from the top of the already-mutated file. This prevents later hunks with repeated context from matching text introduced by earlier hunks. Added focused regression coverage for repeated update contexts.
+
+Rerun result after ordered hunk application: failed after 926.5s at the outer benchmark timeout. Log: `/tmp/smith/2026-05-17T22-26-26-760Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`. Trace: `.smith-bench/run-AhXxr8/home/.smith/runs/2026-05-17T22-11-01-160Z.trace`. Sandbox: `.smith-bench/run-AhXxr8`.
+
+Final evidence: The final rerun did not attempt `smith_patch`, left no relevant MARC source changes, and did not reach verifier or `chat_out`. It confirmed the Python shim remained active, but did not directly re-exercise the ordered hunk fix. Remaining behavior is broad source/fixture inspection and missing dependency friction (`pytest`, `lxml`, `pymarc`) without converging on a task patch. No further small general improvement is supported from this task beyond the retained shell shim and patch-command fix.
+
+Validation commands run for the retained Smith changes:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm test -- tests/patch.test.ts tests/benchmark.test.ts
+npm run build
+```

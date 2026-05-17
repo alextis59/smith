@@ -38,27 +38,45 @@ export function applySmithPatch(patch: string, cwd = process.cwd()): PatchResult
     }
 
     if (!existsSync(file)) throw new Error(`file does not exist: ${operation.path}`);
-    let content = readFileSync(file, "utf8");
-    for (const hunk of operation.hunks) {
-      const oldBlock = hunk.oldLines.join("\n");
-      const newBlock = hunk.newLines.join("\n");
-      const oldWithNewline = `${oldBlock}\n`;
-      const newWithNewline = `${newBlock}\n`;
-      if (oldBlock && content.includes(oldWithNewline)) {
-        content = content.replace(oldWithNewline, newWithNewline);
-      } else if (oldBlock && content.includes(oldBlock)) {
-        content = content.replace(oldBlock, newBlock);
-      } else if (!oldBlock) {
-        content = `${newWithNewline}${content}`;
-      } else {
-        throw new Error(`hunk context not found in ${operation.path}`);
-      }
-    }
+    const content = applyUpdateHunks(readFileSync(file, "utf8"), operation.path, operation.hunks);
     writeFileSync(file, content, "utf8");
     changedFiles.push(operation.path);
   }
 
   return { changedFiles };
+}
+
+function applyUpdateHunks(initialContent: string, path: string, hunks: Hunk[]): string {
+  let content = initialContent;
+  let cursor = 0;
+  for (const hunk of hunks) {
+    const oldBlock = hunk.oldLines.join("\n");
+    const newBlock = hunk.newLines.join("\n");
+    const oldWithNewline = `${oldBlock}\n`;
+    const newWithNewline = `${newBlock}\n`;
+    if (!oldBlock) {
+      content = `${content.slice(0, cursor)}${newWithNewline}${content.slice(cursor)}`;
+      cursor += newWithNewline.length;
+      continue;
+    }
+
+    const withNewlineIndex = content.indexOf(oldWithNewline, cursor);
+    if (withNewlineIndex !== -1) {
+      content = `${content.slice(0, withNewlineIndex)}${newWithNewline}${content.slice(withNewlineIndex + oldWithNewline.length)}`;
+      cursor = withNewlineIndex + newWithNewline.length;
+      continue;
+    }
+
+    const blockIndex = content.indexOf(oldBlock, cursor);
+    if (blockIndex !== -1) {
+      content = `${content.slice(0, blockIndex)}${newBlock}${content.slice(blockIndex + oldBlock.length)}`;
+      cursor = blockIndex + newBlock.length;
+      continue;
+    }
+
+    throw new Error(`hunk context not found in ${path}`);
+  }
+  return content;
 }
 
 export function parseSmithPatch(patch: string): Operation[] {
