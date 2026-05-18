@@ -112,14 +112,24 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       }
       const compactedTranscript = compactTranscript(transcript, {
         keepTurns: options.runtime.transcriptTurns,
-        maxSummaryChars: options.runtime.transcriptCompactionChars
+        maxSummaryChars: options.runtime.transcriptCompactionChars,
+        minChars: options.runtime.transcriptCompactionMinChars,
+        hysteresisTurns: options.runtime.transcriptCompactionHysteresisTurns
       });
       if (compactedTranscript !== transcript) {
+        const beforeChars = transcript.length;
         transcript = compactedTranscript;
-        if (options.reloadSystemPrompt) {
-          systemPrompt = options.reloadSystemPrompt();
-          options.trace?.write("system prompt refreshed", `system_prompt_chars: ${systemPrompt.length}`);
-        }
+        options.trace?.write(
+          "transcript compacted",
+          [
+            `turn: ${turn}`,
+            `chars_before: ${beforeChars}`,
+            `chars_after: ${transcript.length}`,
+            `keep_turns: ${options.runtime.transcriptTurns}`,
+            `min_chars: ${options.runtime.transcriptCompactionMinChars}`,
+            `hysteresis_turns: ${options.runtime.transcriptCompactionHysteresisTurns}`
+          ].join("\n")
+        );
       } else {
         transcript = compactedTranscript;
       }

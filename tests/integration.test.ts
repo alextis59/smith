@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -57,7 +57,7 @@ timeout_ms = 5000
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
-  it("refreshes task memory after transcript compaction", async () => {
+  it("records transcript compaction without refreshing the system prompt", async () => {
     const provider = await startFakeProvider([
       "printf first",
       "printf '%s\\n' 'Updated task fact' > SMITH.TASK.md",
@@ -81,6 +81,8 @@ model = "fake-model"
 danger_review = "off"
 timeout_ms = 5000
 transcript_turns = 1
+transcript_compaction_min_chars = 0
+transcript_compaction_hysteresis_turns = 0
 `,
       "utf8"
     );
@@ -94,6 +96,10 @@ transcript_turns = 1
     expect(provider.requests).toHaveLength(3);
     expect(systemMessage(provider.requests[2].body)).toContain("SMITH.TASK.md");
     expect(systemMessage(provider.requests[2].body)).not.toContain("Updated task fact");
+    const traceDir = join(home, ".smith", "runs");
+    const trace = readFileSync(join(traceDir, readdirSync(traceDir)[0]), "utf8");
+    expect(trace).toContain("## transcript compacted");
+    expect(trace).not.toContain("## system prompt refreshed");
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 

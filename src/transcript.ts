@@ -55,11 +55,23 @@ export function appendTerminalTurn(transcript: string, command: string, output: 
   return transcript ? `${transcript}\n${entry}` : entry;
 }
 
-export function compactTranscript(transcript: string, options: { keepTurns: number; maxSummaryChars: number }): string {
+export function compactTranscript(
+  transcript: string,
+  options: {
+    keepTurns: number;
+    maxSummaryChars: number;
+    minChars?: number;
+    hysteresisTurns?: number;
+  }
+): string {
+  if (transcript.length < (options.minChars ?? 0)) return transcript;
   const parts = transcript.split(/\n(?=smith\$ )/);
   const initialRequest = parts[0]?.startsWith("smith$ chat_in ") ? parts[0] : undefined;
-  const candidates = initialRequest ? parts.slice(1) : parts;
-  if (candidates.length <= options.keepTurns) return transcript;
+  const afterInitialRequest = initialRequest ? parts.slice(1) : parts;
+  const stablePrefix = takeStablePrefix(afterInitialRequest);
+  const candidates = afterInitialRequest.slice(stablePrefix.length);
+  const triggerTurns = options.keepTurns + (options.hysteresisTurns ?? 0);
+  if (candidates.length <= triggerTurns) return transcript;
   const removed = candidates.slice(0, Math.max(0, candidates.length - options.keepTurns));
   const kept = candidates.slice(candidates.length - options.keepTurns);
   const summaryText = removed.join("\n").slice(-options.maxSummaryChars);
@@ -70,7 +82,19 @@ export function compactTranscript(transcript: string, options: { keepTurns: numb
   ]
     .filter(Boolean)
     .join("\n");
-  return [initialRequest, summary, kept.join("\n")].filter(Boolean).join("\n");
+  return [initialRequest, stablePrefix.join("\n"), summary, kept.join("\n")].filter(Boolean).join("\n");
+}
+
+function takeStablePrefix(entries: string[]): string[] {
+  const stable: string[] = [];
+  for (const entry of entries) {
+    if (entry.startsWith("smith$ # memory files")) {
+      stable.push(entry);
+      continue;
+    }
+    break;
+  }
+  return stable;
 }
 
 function truncateTranscriptPreservingRequest(transcript: string, budget: number): string {

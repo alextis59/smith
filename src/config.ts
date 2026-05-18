@@ -28,6 +28,8 @@ export type RuntimeConfig = {
   shell: string;
   timeoutMs: number;
   transcriptTurns: number;
+  transcriptCompactionMinChars: number;
+  transcriptCompactionHysteresisTurns: number;
   maxContextChars: number;
   maxTurns: number;
   transcriptCompactionChars: number;
@@ -76,6 +78,8 @@ export type CliConfigOverrides = {
   shell?: string;
   timeoutMs?: number;
   transcriptTurns?: number;
+  transcriptCompactionMinChars?: number;
+  transcriptCompactionHysteresisTurns?: number;
   maxContextChars?: number;
   maxTurns?: number;
   transcriptCompactionChars?: number;
@@ -123,6 +127,8 @@ const DEFAULT_CONFIG: SmithConfig = {
     shell: "bash",
     timeoutMs: 120_000,
     transcriptTurns: 20,
+    transcriptCompactionMinChars: 24_000,
+    transcriptCompactionHysteresisTurns: 10,
     maxContextChars: 120_000,
     maxTurns: 20,
     transcriptCompactionChars: 8_000,
@@ -260,6 +266,12 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--transcript-turns":
         overrides.transcriptTurns = Number.parseInt(readValue(), 10);
         break;
+      case "--transcript-compaction-min-chars":
+        overrides.transcriptCompactionMinChars = Number.parseInt(readValue(), 10);
+        break;
+      case "--transcript-compaction-hysteresis-turns":
+        overrides.transcriptCompactionHysteresisTurns = Number.parseInt(readValue(), 10);
+        break;
       case "--max-context-chars":
         overrides.maxContextChars = Number.parseInt(readValue(), 10);
         break;
@@ -330,6 +342,8 @@ temperature = 0
 shell = "bash"
 timeout_ms = 120000
 transcript_turns = 20
+transcript_compaction_min_chars = 24000
+transcript_compaction_hysteresis_turns = 10
 max_context_chars = 120000
 max_turns = 20
 transcript_compaction_chars = 8000
@@ -413,6 +427,12 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.shell ? { shell: cli.shell } : {}),
     ...(cli.timeoutMs !== undefined ? { timeoutMs: cli.timeoutMs } : {}),
     ...(cli.transcriptTurns !== undefined ? { transcriptTurns: cli.transcriptTurns } : {}),
+    ...(cli.transcriptCompactionMinChars !== undefined
+      ? { transcriptCompactionMinChars: cli.transcriptCompactionMinChars }
+      : {}),
+    ...(cli.transcriptCompactionHysteresisTurns !== undefined
+      ? { transcriptCompactionHysteresisTurns: cli.transcriptCompactionHysteresisTurns }
+      : {}),
     ...(cli.maxContextChars !== undefined ? { maxContextChars: cli.maxContextChars } : {}),
     ...(cli.maxTurns !== undefined ? { maxTurns: cli.maxTurns } : {}),
     ...(cli.transcriptCompactionChars !== undefined
@@ -466,6 +486,12 @@ function mergeRuntime(previous: RuntimeConfig, raw: RawConfig): RuntimeConfig {
     ...(typeof raw.shell === "string" ? { shell: raw.shell } : {}),
     ...(typeof raw.timeout_ms === "number" ? { timeoutMs: raw.timeout_ms } : {}),
     ...(typeof raw.transcript_turns === "number" ? { transcriptTurns: raw.transcript_turns } : {}),
+    ...(typeof raw.transcript_compaction_min_chars === "number"
+      ? { transcriptCompactionMinChars: raw.transcript_compaction_min_chars }
+      : {}),
+    ...(typeof raw.transcript_compaction_hysteresis_turns === "number"
+      ? { transcriptCompactionHysteresisTurns: raw.transcript_compaction_hysteresis_turns }
+      : {}),
     ...(typeof raw.max_context_chars === "number" ? { maxContextChars: raw.max_context_chars } : {}),
     ...(typeof raw.max_turns === "number" ? { maxTurns: raw.max_turns } : {}),
     ...(typeof raw.transcript_compaction_chars === "number"
@@ -557,6 +583,13 @@ export function validateConfig(config: SmithConfig): void {
   }
   validateInteger("runtime.timeout_ms", config.runtime.timeoutMs, 1, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.transcript_turns", config.runtime.transcriptTurns, 1, Number.MAX_SAFE_INTEGER);
+  validateInteger("runtime.transcript_compaction_min_chars", config.runtime.transcriptCompactionMinChars, 0, Number.MAX_SAFE_INTEGER);
+  validateInteger(
+    "runtime.transcript_compaction_hysteresis_turns",
+    config.runtime.transcriptCompactionHysteresisTurns,
+    0,
+    Number.MAX_SAFE_INTEGER
+  );
   validateInteger("runtime.max_context_chars", config.runtime.maxContextChars, 1, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.max_turns", config.runtime.maxTurns, 1, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.transcript_compaction_chars", config.runtime.transcriptCompactionChars, 0, Number.MAX_SAFE_INTEGER);

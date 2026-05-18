@@ -173,6 +173,8 @@ function runtime(dangerReview: RuntimeConfig["dangerReview"]): RuntimeConfig {
     shell: "bash",
     timeoutMs: 5000,
     transcriptTurns: 20,
+    transcriptCompactionMinChars: 0,
+    transcriptCompactionHysteresisTurns: 0,
     maxContextChars: 10000,
     dangerReview,
     dangerReviewProfile: "reviewer",

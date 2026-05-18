@@ -53,6 +53,26 @@ describe("transcript helpers", () => {
     expect(compacted).not.toContain("smith$ one");
   });
 
+  it("waits for size and hysteresis thresholds before compacting", () => {
+    const transcript = ["smith$ one\n1", "smith$ two\n2", "smith$ three\n3"].join("\n");
+
+    expect(
+      compactTranscript(transcript, {
+        keepTurns: 1,
+        maxSummaryChars: 20,
+        minChars: transcript.length + 1
+      })
+    ).toBe(transcript);
+
+    expect(
+      compactTranscript(transcript, {
+        keepTurns: 1,
+        maxSummaryChars: 20,
+        hysteresisTurns: 2
+      })
+    ).toBe(transcript);
+  });
+
   it("preserves the initial user request when compacting old turns", () => {
     const transcript = [
       appendChatIn("Implement the requested source change."),
@@ -66,5 +86,20 @@ describe("transcript helpers", () => {
     expect(compacted).toContain("Earlier transcript compacted: 2 entries omitted.");
     expect(compacted).toContain("smith$ three");
     expect(compacted).not.toContain("smith$ one");
+  });
+
+  it("preserves stable memory presence before compaction summaries", () => {
+    const transcript = [
+      appendChatIn("Implement the requested source change."),
+      "smith$ # memory files\nNo local SMITH.md or SMITH.TASK.md found.",
+      appendTerminalTurn("", "one", "1"),
+      appendTerminalTurn("", "two", "2"),
+      appendTerminalTurn("", "three", "3")
+    ].join("\n");
+    const compacted = compactTranscript(transcript, { keepTurns: 1, maxSummaryChars: 20 });
+
+    expect(compacted.indexOf("smith$ # memory files")).toBeLessThan(compacted.indexOf("smith$ # transcript compacted"));
+    expect(compacted).toContain("No local SMITH.md or SMITH.TASK.md found.");
+    expect(compacted).toContain("smith$ three");
   });
 });

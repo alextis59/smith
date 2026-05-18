@@ -129,6 +129,8 @@ function runtime(): RuntimeConfig {
     shell: "bash",
     timeoutMs: 5000,
     transcriptTurns: 20,
+    transcriptCompactionMinChars: 0,
+    transcriptCompactionHysteresisTurns: 0,
     maxContextChars: 10000,
     maxTurns: 20,
     transcriptCompactionChars: 1000,

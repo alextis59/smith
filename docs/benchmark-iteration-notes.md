@@ -739,3 +739,128 @@ Decision and Smith change: retain a small prompt/context handling change. `loadS
 Rerun result after retained change: 5 passed, 0 failed in 160,145 ms aggregate task duration. Usage was 77,003 input tokens, 25,600 cached input tokens, 15,343 output tokens, 11,984 reasoning output tokens, 92,346 total tokens, and `$0.10951575` estimated cost. Raw JSON: `/tmp/smith-project-cache-after-memory-presence-note.json`.
 
 Improvement evidence: Total input tokens dropped by 7,971, total tokens dropped by 15,952, aggregate task duration dropped by 60,565 ms, and estimated cost dropped by `$0.03187035` on the same 5-task slice. Cached input tokens dropped from 40,448 to 25,600 and cached share dropped from 47.6% to 33.2%, so this is not evidence of a higher cache-token ratio. The concrete improvement is lower total context/turn use while preserving 5/5 pass rate.
+
+## 2026-05-18: Transcript Compaction Hysteresis And Trace Naming
+
+Task slice: `001-release-note-summary`, `011-parse-port-default`, `041-safe-clean-script`, `061-csv-to-json-report`, and `091-command-router-refactor`.
+
+Retained Smith change:
+
+- Compaction no longer calls `reloadSystemPrompt()` or writes `system prompt refreshed` when only the transcript changed.
+- Compaction writes a `transcript compacted` trace section with turn, before/after character counts, keep turns, minimum characters, and hysteresis.
+- The initial `chat_in` request and memory-file presence note are preserved ahead of compaction summaries as stable prefix content.
+- New runtime settings: `transcript_compaction_min_chars = 24000` and `transcript_compaction_hysteresis_turns = 10`.
+
+Default-slice command:
+
+```sh
+node bin/smith.js benchmark run /tmp/smith-project-compaction-after-20260518204125 \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 300000 \
+  --concurrency 5 \
+  --log-dir /tmp/smith \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5 \
+  --json
+```
+
+Default-slice result: 5 passed, 0 failed in 215,161 ms aggregate task duration. Usage was 92,107 input tokens, 29,440 cached input tokens, 23,193 output tokens, 19,789 reasoning output tokens, 115,300 total tokens, and `$0.15357675` estimated cost. Cached share was 32.0%. Raw JSON: `/tmp/smith-project-compaction-after.json`.
+
+Default-slice evidence: no task in this short project slice reached compaction with the retained defaults, so this run is classified as a pass-rate no-regression check rather than direct compaction evidence. It preserved 5/5 pass rate, but total tokens and cost were higher than the previous memory-presence run, likely normal benchmark variance plus a longer `091` trajectory. Decision: retain only with stress-run compaction evidence below, not because the default short slice improved cost.
+
+Stress baseline command:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 300000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --transcript-turns 2 \
+  --transcript-compaction-min-chars 0 \
+  --transcript-compaction-hysteresis-turns 0 \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5 \
+  --json
+```
+
+Stress baseline result: passed in 108,333 ms and 11 model turns. Usage was 28,512 input tokens, 3,072 cached input tokens, 13,857 output tokens, 12,667 reasoning output tokens, 42,369 total tokens, and `$0.08166690` estimated cost. Cached share was 10.8%. Log: `/tmp/smith/2026-05-18T18-49-02-822Z-smith-091-command-router-refactor.json`. Trace: `.smith-bench/run-T6hvcT/home/.smith/runs/2026-05-18T18-47-14-728Z.trace`. Sandbox: `.smith-bench/run-T6hvcT`. Compaction events: 8. Prompt refresh events: 0. First compaction turn: 3.
+
+Cache behavior around stress baseline compaction: after compaction began at turn 3, cached tokens appeared on turns 3 and 4, then collapsed to 0 cached tokens on turns 5 through 11.
+
+Stress hysteresis command:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 300000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --transcript-turns 2 \
+  --transcript-compaction-min-chars 0 \
+  --transcript-compaction-hysteresis-turns 4 \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5 \
+  --json
+```
+
+Stress hysteresis result: passed in 92,792 ms and 9 model turns. Usage was 22,772 input tokens, 5,376 cached input tokens, 10,341 output tokens, 9,287 reasoning output tokens, 33,113 total tokens, and `$0.05998470` estimated cost. Cached share was 23.6%. Log: `/tmp/smith/2026-05-18T18-50-50-519Z-smith-091-command-router-refactor.json`. Trace: `.smith-bench/run-BcxAyR/home/.smith/runs/2026-05-18T18-49-17-956Z.trace`. Sandbox: `.smith-bench/run-BcxAyR`. Compaction events: 2. Prompt refresh events: 0. First compaction turn: 7.
+
+Cache behavior around stress hysteresis compaction: cache hits appeared before and at first compaction, including 1,280 cached tokens on turn 4, 1,792 on turn 5, and 2,304 on turn 7. Cached tokens still fell to 0 on turns 8 and 9, but the run had fewer prefix mutations, fewer total turns, lower total tokens, and lower cost.
+
+Classification: retained. The direct compaction stress comparison reduced compaction events by 6, avoided misleading prompt-refresh events entirely, improved cached-token share from 10.8% to 23.6%, lowered input tokens by 5,740, lowered total tokens by 9,256, lowered estimated cost by `$0.02168220`, lowered runtime by 15,541 ms, and preserved pass=true. The default project slice did not show a default-cost improvement and did not exercise compaction, so the retained evidence is specifically the stress comparison plus focused tests.
+
+Rejected strategy: reload the packaged system prompt after compaction only if the contents changed. This was not retained because `SMITH.md` and `SMITH.TASK.md` contents are no longer inlined into the system prompt, so compaction has no legitimate reason to refresh prompt text. A dedicated `transcript compacted` trace event is clearer and avoids conflating transcript maintenance with system-prompt changes.
+
+## 2026-05-18: SWE-bench Pro 008 Compaction Follow-up
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 240 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5 \
+  --json
+```
+
+Result: incomplete / manually terminated. The benchmark wrapper did not return cleanly at the expected timeout; after the parent benchmark process was terminated, the Docker child continued running and was stopped by killing the host child processes. No final benchmark JSON or `/tmp/smith` session log was produced. Partial trace: `.smith-bench/run-pnk77K/home/.smith/runs/2026-05-18T18-52-21-487Z.trace`. Sandbox: `.smith-bench/run-pnk77K`.
+
+Partial usage from the retained trace at termination: 99 model turns, 3,171,701 input tokens, 485,120 cached input tokens, 129,244 output tokens, 121,781 reasoning output tokens, 3,300,945 total tokens, and approximately `$2.63291775` estimated cost under the configured rates. Cached share was 15.3%.
+
+Compaction and prompt-refresh evidence: 11 transcript compaction events, 0 prompt refresh events, first compaction at turn 31. Cache hits did not stay healthy after compaction began: turns 31 through 42 all reported 0 cached input tokens, and turns 91 through 99 also reported 0 cached input tokens. This did confirm that the misleading `system prompt refreshed` event is gone in a long SWE-bench Pro run.
+
+Classification:
+
+- no `chat_out` / long investigation loop
+- context-prefix mutations still present, but less frequent than every-turn compaction
+- benchmark runner timeout cleanup issue
+
+Decision: retain the compaction trace/threshold/hysteresis implementation because the project stress result is positive and the SWE-bench Pro partial trace confirms prompt refresh noise is removed. Do not claim a SWE-bench Pro task-success improvement from this run. Add a follow-up item to investigate benchmark-runner timeout cleanup separately; it is outside the retained compaction change.
