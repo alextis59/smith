@@ -11,7 +11,7 @@ Pricing uses standard API rates checked on 2026-05-17:
 | 2026-05-17 | `swe-bench-pro` | Codex CLI (`codex exec`) | `gpt-5.4` | high | 7 | 3 | 70.0% | 11m 49s wall | `$6.523216` | `$0.652322` | 13,913,681 | `.smith-bench/codex-gpt-5.4-high-swe-pro.json` |
 | 2026-05-17 | `swe-bench-pro` | Codex CLI (`codex exec`) | `gpt-5.4-mini` | high | 5 | 5 | 50.0% | 16m 42s wall | `$4.248726` | `$0.424873` | 33,755,588 | `.smith-bench/codex-gpt-5.4-mini-high-swe-pro.json` |
 | 2026-05-17 | `swe-bench-pro` | Smith | `gpt-5.4` | high | 3 | 7 | 30.0% | 30m 41s wall | `$2.729475` | `$0.272948` | 885,540 | `.smith-bench/smith-gpt-5.4-high-swe-pro.json` |
-| 2026-05-17 | `swe-bench-pro` | Smith | `gpt-5.4-mini` | high | 2 | 8 | 20.0% | 18m 58s wall | `$1.802433` | `$0.180243` | 2,204,068 | `.smith-bench/smith-gpt-5.4-mini-high-swe-pro.json` |
+| 2026-05-18 | `swe-bench-pro` | Smith | `gpt-5.4-mini` | high | 3 | 7 | 30.0% | 1h 32m 24s wall | `$2.928527` | `$0.292853` | 3,590,370 | `.smith-bench/smith-gpt-5.4-mini-high-swe-pro.json` |
 | 2026-05-16 | `benchmarks/` | Codex CLI (`codex exec`) | `gpt-5.4-mini` | high | 61 | 39 | 61.0% | 1h 25m 52s | `$2.580855` | `$0.025809` | 17,082,782 | `.smith-bench/codex-gpt-5.4-mini-high.json` |
 
 ## Smith gpt-5.4-mini high, project benchmark
@@ -40,16 +40,17 @@ Pricing uses standard API rates checked on 2026-05-17:
 
 ## Smith gpt-5.4-mini high, SWE-bench Pro
 
-- Command: `node bin/smith.js benchmark run swe-bench-pro --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 60 --timeout-ms 900000 --concurrency 5 --log-dir /tmp/smith --input-cost-per-million-tokens 0.75 --cached-input-cost-per-million-tokens 0.075 --output-cost-per-million-tokens 4.5 --json`
+- Command: `node bin/smith.js benchmark run swe-bench-pro --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --concurrency 5 --log-dir /tmp/smith --input-cost-per-million-tokens 0.75 --cached-input-cost-per-million-tokens 0.075 --output-cost-per-million-tokens 4.5 --json`
 - Concurrency: 5
-- Wall time: 18m 58s; aggregate task duration: 1h 8m 08s
-- Input tokens: 2,079,123
-- Cached input tokens: 472,832
-- Output tokens: 124,945
-- Reasoning output tokens: 107,501
-- Estimated cost: `$1.80243315`
-- Passed tasks: `004-internetarchive-openlibrary-v13642507b4fc1f8d234172bf8129942da2c2ca26`, `007-element-hq-element-web-33e8edb3d508d6eefb354819ca693b7accc695e7`
-- Failed tasks: `001-nodebb-nodebb-vnan`, `002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c`, `003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5`, `005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037`, `006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e`, `008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904`, `009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59`, `010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`
+- Max turns: 240
+- Wall time: 1h 32m 24s; aggregate task duration: 5h 25m 11s
+- Input tokens: 3,418,985
+- Cached input tokens: 602,880
+- Output tokens: 171,385
+- Reasoning output tokens: 148,479
+- Estimated cost: `$2.92852725`
+- Passed tasks: `002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c`, `004-internetarchive-openlibrary-v13642507b4fc1f8d234172bf8129942da2c2ca26`, `007-element-hq-element-web-33e8edb3d508d6eefb354819ca693b7accc695e7`
+- Failed tasks: `001-nodebb-nodebb-vnan`, `003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5`, `005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037`, `006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e`, `008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904`, `009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59`, `010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`
 
 ## Codex gpt-5.4 high, SWE-bench Pro
 
