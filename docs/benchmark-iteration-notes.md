@@ -700,3 +700,42 @@ Classification:
 Decision: plateau. The final rerun confirms two current passes and shows that the retained improvements from this iteration reduced context duplication, fixed a benchmark-container `python` gap, and fixed ordered update-hunk application, but did not move the remaining unresolved tasks to a new general Smith failure class. The remaining failures are either no-`chat_out` investigation loops already covered by existing prompt/memory guidance or task-specific incorrect implementations that reached the verifier. No further small evidence-backed general Smith prompt, memory, documentation, patch, runner, shell, transcript, or harness improvement remains within the current constraints.
 
 Leaderboard update: `LeaderBoard.md` was updated for the Smith `gpt-5.4-mini` high SWE-bench Pro rerun: 2/10, 20.0%, 18m 58s wall, 1h 8m 08s aggregate task duration, `$1.80243315`, and 2,204,068 total tokens.
+
+## 2026-05-18: Project Benchmark Memory Prompt Cache Probe
+
+Task slice: `001-release-note-summary`, `011-parse-port-default`, `041-safe-clean-script`, `061-csv-to-json-report`, and `091-command-router-refactor`.
+
+Baseline command:
+
+```sh
+node bin/smith.js benchmark run /tmp/smith-project-cache-baseline \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 300000 \
+  --concurrency 5 \
+  --log-dir /tmp/smith \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5 \
+  --json
+```
+
+Baseline result: 5 passed, 0 failed in 220,710 ms aggregate task duration. Usage was 84,974 input tokens, 40,448 cached input tokens, 23,324 output tokens, 20,058 reasoning output tokens, 108,298 total tokens, and `$0.14138610` estimated cost. Raw JSON: `/tmp/smith-project-cache-baseline.json`.
+
+Classification:
+
+- context pollution
+- SMITH.md / SMITH.TASK.md memory issue
+- prompt misunderstanding
+
+Evidence summary: `loadSystemPrompt` still inlined `SMITH.md` and `SMITH.TASK.md` contents into the system prompt when present. That made the system prompt depend on mutable workspace memory and conflicted with prompt-cache stability. A first trial that merely told Smith to read memory files in the current directory or a relevant parent avoided inlining, but benchmark logs showed Smith interpreted the parent wording as broad memory-file search work. A second trial constrained the prompt to local files only, but logs still showed Smith spent an extra first turn checking absent memory files in every task.
+
+Decision and Smith change: retain a small prompt/context handling change. `loadSystemPrompt` now returns only the packaged prompt and no longer appends memory-file contents. The packaged prompt says memory contents are not preloaded. `runSmithTask` adds a non-content memory presence note to the initial transcript, reporting only whether local `SMITH.md` or `SMITH.TASK.md` exists; if a memory file exists, Smith must still read it explicitly. This keeps system prompt text stable while avoiding an extra model turn for absent memory files.
+
+Rerun result after retained change: 5 passed, 0 failed in 160,145 ms aggregate task duration. Usage was 77,003 input tokens, 25,600 cached input tokens, 15,343 output tokens, 11,984 reasoning output tokens, 92,346 total tokens, and `$0.10951575` estimated cost. Raw JSON: `/tmp/smith-project-cache-after-memory-presence-note.json`.
+
+Improvement evidence: Total input tokens dropped by 7,971, total tokens dropped by 15,952, aggregate task duration dropped by 60,565 ms, and estimated cost dropped by `$0.03187035` on the same 5-task slice. Cached input tokens dropped from 40,448 to 25,600 and cached share dropped from 47.6% to 33.2%, so this is not evidence of a higher cache-token ratio. The concrete improvement is lower total context/turn use while preserving 5/5 pass rate.

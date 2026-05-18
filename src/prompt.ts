@@ -2,17 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, parse as parsePath, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export function loadSystemPrompt(cwd = process.cwd()): string {
-  const basePrompt = readPackagedPrompt();
-  const projectPrompt = findInstructionFile(cwd, "SMITH.md");
-  const taskPrompt = findInstructionFile(cwd, "SMITH.TASK.md");
-  return [
-    basePrompt,
-    projectPrompt ? `Project memory from SMITH.md:\n\n${projectPrompt}` : undefined,
-    taskPrompt ? `Task memory from SMITH.TASK.md:\n\n${taskPrompt}` : undefined
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+export function loadSystemPrompt(_cwd = process.cwd()): string {
+  return readPackagedPrompt();
 }
 
 export function findProjectInstructions(start: string): string | undefined {

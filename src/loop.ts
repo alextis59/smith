@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { ProfileConfig, RuntimeConfig } from "./config.js";
 import { addUsageCost, formatUsageCost, summarizeUsage, type TokenUsageCost } from "./cost.js";
 import { reviewDangerousCommand } from "./danger-review.js";
@@ -35,7 +37,7 @@ export type SmithRunResult = {
 
 export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunResult> {
   const maxTurns = options.maxTurns ?? options.runtime.maxTurns;
-  let transcript = options.initialTranscript ?? appendChatIn(options.prompt);
+  let transcript = options.initialTranscript ?? initialTranscript(options.cwd, options.prompt);
   let systemPrompt = options.systemPrompt;
   let totalUsage: TokenUsageCost | undefined;
   const shell = await PtyShellRunner.start({
@@ -129,6 +131,22 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   }
 
   throw new Error(`model did not call chat_out within ${maxTurns} turns`);
+}
+
+function initialTranscript(cwd: string, prompt: string): string {
+  return `${appendChatIn(prompt)}\n${memoryFilePresence(cwd)}`;
+}
+
+function memoryFilePresence(cwd: string): string {
+  const projectMemory = existsSync(join(cwd, "SMITH.md"));
+  const taskMemory = existsSync(join(cwd, "SMITH.TASK.md"));
+  if (!projectMemory && !taskMemory) return "smith$ # memory files\nNo local SMITH.md or SMITH.TASK.md found.";
+
+  return [
+    "smith$ # memory files",
+    projectMemory ? "Local SMITH.md exists; read it with cat SMITH.md before broad inspection." : "No local SMITH.md found.",
+    taskMemory ? "Local SMITH.TASK.md exists; read it with cat SMITH.TASK.md before broad inspection." : "No local SMITH.TASK.md found."
+  ].join("\n");
 }
 
 function formatTimeoutOutput(command: string, elapsedMs: number, lastOutput: string): string {

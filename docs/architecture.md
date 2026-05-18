@@ -26,7 +26,7 @@ Adapters normalize response text, token usage when available, HTTP errors, retry
 
 ## Transcript Control
 
-Smith keeps the packaged system prompt and recent terminal transcript. `runtime.max_context_chars` limits the provider context slice. `runtime.transcript_turns` and `runtime.transcript_compaction_chars` compact older terminal turns deterministically once the local transcript grows. Compaction is local transcript maintenance; it is not a model tool.
+Smith keeps the packaged system prompt and recent terminal transcript. `SMITH.md` and `SMITH.TASK.md` contents are not inlined into the system prompt; the transcript reports whether local memory files exist, and the packaged prompt tells the agent to read those files explicitly when present. `runtime.max_context_chars` limits the provider context slice. `runtime.transcript_turns` and `runtime.transcript_compaction_chars` compact older terminal turns deterministically once the local transcript grows. Compaction is local transcript maintenance; it is not a model tool.
 
 ## Safety Boundary
 

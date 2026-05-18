@@ -53,6 +53,7 @@ timeout_ms = 5000
     expect(provider.requests[0].headers.authorization).toBe("Bearer test");
     expect(systemMessage(provider.requests[0].body)).not.toContain("Task memory from SMITH.TASK.md");
     expect(userMessage(provider.requests[0].body)).toContain("inspect README");
+    expect(userMessage(provider.requests[0].body)).toContain("No local SMITH.md or SMITH.TASK.md found.");
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
@@ -91,7 +92,8 @@ transcript_turns = 1
 
     expect(stdout).toContain("done");
     expect(provider.requests).toHaveLength(3);
-    expect(systemMessage(provider.requests[2].body)).toContain("Updated task fact");
+    expect(systemMessage(provider.requests[2].body)).toContain("SMITH.TASK.md");
+    expect(systemMessage(provider.requests[2].body)).not.toContain("Updated task fact");
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
@@ -126,7 +128,9 @@ timeout_ms = 5000
     );
     expect(first.stdout).toBe("need info\n");
     expect(first.stderr).toMatch(/smith remote session saved: [a-z0-9_-]{6}/);
-    expect(systemMessage(provider.requests[0].body)).toContain("Parent task context");
+    expect(systemMessage(provider.requests[0].body)).toContain("SMITH.TASK.md");
+    expect(systemMessage(provider.requests[0].body)).not.toContain("Parent task context");
+    expect(userMessage(provider.requests[0].body)).toContain("Local SMITH.TASK.md exists");
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(true);
     const id = /saved: ([a-z0-9_-]{6})/.exec(first.stderr)?.[1];
     expect(id).toBeTruthy();

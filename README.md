@@ -203,7 +203,7 @@ The detector targets destructive root/home removals, `sudo`, downloaded scripts 
 
 ## Prompts and Project Instructions
 
-The base system prompt is packaged in `prompts/system.txt`. Smith also searches upward from the working directory for the closest `SMITH.md` and appends it as additive project instructions.
+The base system prompt is packaged in `prompts/system.txt`. Smith does not inline `SMITH.md` or `SMITH.TASK.md` into the system prompt; the run transcript only reports whether local memory files exist, and the packaged prompt tells the agent to read those files explicitly when present. This keeps the provider prompt stable for caching while still allowing durable project memory and ephemeral task memory.
 
 ## Traces
 

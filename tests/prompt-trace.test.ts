@@ -8,22 +8,23 @@ import { cleanupTaskMemoryFile, ensureTaskMemoryFile } from "../src/task-memory.
 import { createTraceLogger, runsDir } from "../src/trace.js";
 
 describe("prompt and trace", () => {
-  it("loads packaged prompt with additive SMITH.md instructions", () => {
+  it("does not inline SMITH.md contents into the system prompt", () => {
     const cwd = mkdtempSync(join(tmpdir(), "smith-prompt-"));
     writeFileSync(join(cwd, "SMITH.md"), "Use npm test.", "utf8");
     const prompt = loadSystemPrompt(cwd);
     expect(prompt).toContain("You are Smith");
-    expect(prompt).toContain("Use npm test.");
+    expect(prompt).toContain("read it explicitly");
+    expect(prompt).not.toContain("Use npm test.");
   });
 
-  it("loads task memory from SMITH.TASK.md", () => {
+  it("does not inline SMITH.TASK.md contents into the system prompt", () => {
     const cwd = mkdtempSync(join(tmpdir(), "smith-task-prompt-"));
     writeFileSync(join(cwd, "SMITH.TASK.md"), "Current verifier: npm test.", "utf8");
 
     const prompt = loadSystemPrompt(cwd);
 
-    expect(prompt).toContain("Task memory from SMITH.TASK.md");
-    expect(prompt).toContain("Current verifier: npm test.");
+    expect(prompt).toContain("SMITH.TASK.md");
+    expect(prompt).not.toContain("Current verifier: npm test.");
   });
 
   it("creates and cleans up generated task memory", () => {
@@ -77,7 +78,9 @@ describe("prompt and trace", () => {
     expect(prompt).toContain("SMITH.TASK.md is ephemeral task memory");
     expect(prompt).toContain("current hypothesis");
     expect(prompt).toContain("before broad further searching");
-    expect(prompt).toContain("refreshed after transcript compaction");
+    expect(prompt).toContain("Their contents are not preloaded into this prompt");
+    expect(prompt).toContain("If the note says no local memory files were found");
+    expect(prompt).toContain("read the file explicitly");
   });
 
   it("includes concrete remote delegation guidance", () => {
