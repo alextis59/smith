@@ -51,8 +51,8 @@ timeout_ms = 5000
     expect(stdout).toContain("Read fake project");
     expect(provider.requests).toHaveLength(2);
     expect(provider.requests[0].headers.authorization).toBe("Bearer test");
-    expect(systemMessage(provider.requests[0].body)).toContain("Task memory from SMITH.TASK.md");
-    expect(systemMessage(provider.requests[0].body)).toContain("inspect README");
+    expect(systemMessage(provider.requests[0].body)).not.toContain("Task memory from SMITH.TASK.md");
+    expect(userMessage(provider.requests[0].body)).toContain("inspect README");
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
@@ -210,4 +210,9 @@ async function startFakeProvider(commands: string[]): Promise<{
 function systemMessage(body: unknown): string {
   const messages = (body as { messages?: Array<{ role?: string; content?: string }> }).messages ?? [];
   return messages.find((message) => message.role === "system")?.content ?? "";
+}
+
+function userMessage(body: unknown): string {
+  const messages = (body as { messages?: Array<{ role?: string; content?: string }> }).messages ?? [];
+  return messages.find((message) => message.role === "user")?.content ?? "";
 }

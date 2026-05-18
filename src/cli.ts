@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +8,7 @@ import { runSmithTask } from "./loop.js";
 import { loadSystemPrompt } from "./prompt.js";
 import { runRemoteCommand } from "./remote.js";
 import { summarizeTrace, writeSessionLog } from "./session-log.js";
-import { cleanupTaskMemoryFile, ensureTaskMemoryFile } from "./task-memory.js";
+import { TASK_MEMORY_FILE } from "./task-memory.js";
 import { createTraceLogger } from "./trace.js";
 import {
   runBenchmarkPath,
@@ -126,7 +126,7 @@ async function runCommand(args: string[]): Promise<void> {
   const profile = resolveProfile(config, selectedProfile);
   const reviewerProfile = resolveProfile(config, config.runtime.dangerReviewProfile);
   const prompt = rest.join(" ").trim();
-  const taskMemory = ensureTaskMemoryFile(cwd, prompt);
+  const existingTaskMemory = existsSync(join(cwd, TASK_MEMORY_FILE));
 
   try {
     const systemPrompt = loadSystemPrompt(cwd);
@@ -179,7 +179,7 @@ async function runCommand(args: string[]): Promise<void> {
       process.stdout.write(`${result.chatOut}\n`);
     }
   } finally {
-    cleanupTaskMemoryFile(taskMemory);
+    if (!existingTaskMemory) rmSync(join(cwd, TASK_MEMORY_FILE), { force: true });
   }
 }
 

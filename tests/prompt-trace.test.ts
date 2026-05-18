@@ -32,7 +32,8 @@ describe("prompt and trace", () => {
 
     expect(handle.created).toBe(true);
     const memory = readFileSync(join(cwd, "SMITH.TASK.md"), "utf8");
-    expect(memory).toContain("Fix parser");
+    expect(memory).not.toContain("Fix parser");
+    expect(memory).toContain("initial request is preserved in the first chat_in transcript");
     expect(memory).toContain("## Working Set");
     expect(memory).toContain("Important files/functions: (unknown yet)");
     expect(memory).toContain("Current hypothesis: (unknown yet)");
@@ -42,15 +43,16 @@ describe("prompt and trace", () => {
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
-  it("caps long generated task memory instead of duplicating entire prompts", () => {
+  it("does not duplicate long initial prompts in generated task memory", () => {
     const cwd = mkdtempSync(join(tmpdir(), "smith-task-memory-long-"));
     const handle = ensureTaskMemoryFile(cwd, `Fix parser\n${"details\n".repeat(500)}`);
 
     const memory = readFileSync(join(cwd, "SMITH.TASK.md"), "utf8");
 
-    expect(memory.length).toBeLessThan(2600);
-    expect(memory).toContain("initial task truncated in SMITH.TASK.md");
-    expect(memory).toContain("preserved initial chat_in");
+    expect(memory.length).toBeLessThan(900);
+    expect(memory).not.toContain("Fix parser");
+    expect(memory).not.toContain("details");
+    expect(memory).toContain("initial request is preserved in the first chat_in transcript");
 
     cleanupTaskMemoryFile(handle);
   });

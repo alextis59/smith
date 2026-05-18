@@ -2,7 +2,6 @@ import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const TASK_MEMORY_FILE = "SMITH.TASK.md";
-const MAX_INITIAL_TASK_CHARS = 1600;
 
 export type TaskMemoryHandle = {
   path: string;
@@ -23,14 +22,13 @@ export function cleanupTaskMemoryFile(handle: TaskMemoryHandle | undefined): voi
 }
 
 function initialTaskMemory(task?: string): string {
-  const taskSummary = summarizeInitialTask(task);
   return [
     "# SMITH.TASK.md",
     "",
     "Ephemeral task memory for this Smith run. Keep it concise and factual.",
     "",
     "## Current Task",
-    taskSummary,
+    summarizeInitialTask(task),
     "",
     "## Working Set",
     "- Important files/functions: (unknown yet)",
@@ -41,17 +39,16 @@ function initialTaskMemory(task?: string): string {
     "- Keep durable project guidance in SMITH.md; keep task-specific state here.",
     "",
     "## Next Steps",
-    "- Inspect the task, identify likely source files, then replace the unknown entries above before broad further investigation."
+    "- Inspect the task and workspace first.",
+    "- For long or broad investigations, update the Working Set with important files, the current hypothesis, verifier status, and next edit."
   ].join("\n") + "\n";
 }
 
 function summarizeInitialTask(task?: string): string {
   const trimmedTask = task?.trim();
   if (!trimmedTask) return "(interactive Smith session)";
-  if (trimmedTask.length <= MAX_INITIAL_TASK_CHARS) return trimmedTask;
   return [
-    trimmedTask.slice(0, MAX_INITIAL_TASK_CHARS).trimEnd(),
-    "",
-    `(...initial task truncated in SMITH.TASK.md; continue using the preserved initial chat_in for the full request.)`
+    "(initial request is preserved in the first chat_in transcript; do not copy it here)",
+    "If this run becomes long enough to need task memory, replace this with a one-line objective."
   ].join("\n");
 }
