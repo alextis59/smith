@@ -1034,3 +1034,26 @@ Evidence after UUID-shaped auto key:
 - The request key never matched the response key, and cached-token share did not materially improve. This suggests the ChatGPT Codex backend currently ignores or replaces caller-supplied `prompt_cache_key`.
 
 Interpretation: the suspicious cache sequence is real provider behavior, not a Smith cost parser issue. Smith receives per-response usage with cached-token counts that intermittently drop to zero despite stable append-like request prefixes and a stable requested prompt cache key. `previous_response_id` is rejected, and `prompt_cache_key` does not appear to be honored by this backend. Further Codex-like cache gains likely require a backend/session interface that actually supports stateful continuation, not only request-shaping changes.
+
+## 2026-05-19: Provider Debug Prefix Analyzer
+
+Follow-up question: verify that the suspicious cache misses are not caused by Smith mutating the message prefix.
+
+Retained Smith change:
+
+- Added `scripts/analyze-provider-debug.mjs`.
+- Added `npm run analyze:provider-debug -- <trace.provider-debug.jsonl>`.
+- The analyzer reads the exact JSONL provider debug artifact, pairs request/response records, compares exact request-body prefixes, compares logical `instructions + input` message prefixes, estimates potential prefix tokens from provider-reported input tokens, and reports cached-token contradictions.
+
+Commands:
+
+```sh
+npm run analyze:provider-debug -- .smith-bench/run-x4B1cI/home/.smith/runs/2026-05-19T18-31-58-589Z.trace.provider-debug.jsonl
+npm run analyze:provider-debug -- .smith-bench/run-HGcEOH/home/.smith/runs/2026-05-19T18-28-35-331Z.trace.provider-debug.jsonl
+```
+
+Result for `.smith-bench/run-x4B1cI/home/.smith/runs/2026-05-19T18-31-58-589Z.trace.provider-debug.jsonl`: 26 records, 13 provider calls, 53,384 input tokens, 25,600 cached input tokens, 48.0% cached share, 9,754 output tokens, 7,951 reasoning output tokens, and 63,138 total tokens. The analyzer found 12 comparable message calls, 11 append-only prefixes, and calls 3, 5, and 7 had zero cached input tokens despite exact append-only input prefixes. Estimated stable body-prefix tokens on those zero-cache calls were about 1,633, 2,147, and 3,622 respectively. Call 2 was the expected stateful failure with `Unsupported parameter: previous_response_id`. All successful responses reported prompt cache keys different from the request key.
+
+Result for `.smith-bench/run-HGcEOH/home/.smith/runs/2026-05-19T18-28-35-331Z.trace.provider-debug.jsonl`: 28 records, 14 provider calls, 42,338 input tokens, 20,992 cached input tokens, 49.6% cached share, 11,776 output tokens, 10,191 reasoning output tokens, and 54,114 total tokens. The analyzer found 13 comparable message calls, 12 append-only prefixes, and calls 3, 5, 11, and 13 had zero cached input tokens despite exact append-only input prefixes. Estimated stable body-prefix tokens on those zero-cache calls were about 1,636, 1,972, 3,766, and 4,436 respectively. Call 2 was again the expected stateful failure, and successful response cache keys still differed from the request key.
+
+Classification: retained diagnostic tooling. The message-chain payloads are append-only after the stateful fallback, so the low/intermittent cache behavior is not explained by Smith reordering or rewriting prior messages in these debug runs. The remaining uncertainty is provider-side cache policy and provider-side tokenization or canonicalization, not Smith's sent message order.
