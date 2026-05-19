@@ -893,3 +893,49 @@ Comparable Codex evidence: `/tmp/smith/2026-05-17T18-27-37-035Z-codex-008-future
 Interpretation: Smith's low cache share is not only a compaction-summary problem. Even before compaction, cache usage was intermittent. Smith sends a stateless provider request with a full mutable transcript as one user message each turn. Long terminal output, repeated appended turns, task-memory reads, and compaction summaries all change the user-message prefix shape. Codex CLI appears to preserve much more provider-visible prefix state across turns, so its cached-token ratio can remain very high even as total input grows. Hysteresis helps by reducing explicit transcript rewrites, but it does not make Smith's interaction shape equivalent to Codex CLI's stateful shape.
 
 Decision: retain the runner accounting and cleanup fixes. Further cache work should focus on larger interaction-shape changes only if complexity is acceptable, such as separating stable task/system/memory context from volatile terminal tail in provider messages, or using provider state/session features when available. Those are larger than the current small compaction change.
+
+## 2026-05-19: Provider Transcript Splitting Experiments
+
+Goal: improve cache behavior after compaction by keeping the initial user request and memory-file presence note in stable provider message positions while allowing the recent terminal tail to change independently.
+
+Retained Smith change:
+
+- Short transcripts keep the existing single-user-message provider shape.
+- Budget-truncated transcripts also keep the existing single-user-message provider shape because the full project benchmark showed that splitting only on size pressure increased total cost.
+- Once the transcript contains a compaction summary, provider context is shaped as separate user messages for the initial request, stable memory-file presence note, compaction summary, and bounded recent terminal tail.
+- The local transcript format and compaction algorithm remain simple; this is only provider-view shaping for already-compacted transcripts.
+
+Rejected experiment: always split provider transcript messages.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run benchmarks \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --concurrency 10 \
+  --log-dir /tmp/smith \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5 \
+  --json
+```
+
+Result: 100/100 passed, 3,462,260 ms aggregate duration, 1,788,721 input tokens, 722,944 cached input tokens, 40.4% cached share, 300,338 output tokens, 238,139 reasoning output tokens, 2,089,059 total tokens, and `$2.20507455` estimated cost. Raw result: `.smith-bench/smith-gpt-5.4-mini-high-project-split-messages.json`. Classification: rejected. Compared with the 2026-05-18 Smith project baseline, this raised total tokens and cost while lowering cached-token share.
+
+Rejected experiment: split provider transcript messages whenever the transcript exceeded the provider context budget or was compacted.
+
+Result: 100/100 passed, 3,552,429 ms aggregate duration, 1,851,694 input tokens, 818,176 cached input tokens, 44.2% cached share, 332,729 output tokens, 265,634 reasoning output tokens, 2,184,423 total tokens, and `$2.33378220` estimated cost. Raw result: `.smith-bench/smith-gpt-5.4-mini-high-project-conditional-split.json`. Classification: rejected. Absolute cached input improved, but total input, output, reasoning output, runtime, and cost all increased enough that the tradeoff was worse.
+
+Retained experiment: split provider transcript messages only after local transcript compaction.
+
+Result: 100/100 passed, 3,088,440 ms aggregate duration, 1,747,723 input tokens, 763,392 cached input tokens, 43.7% cached share, 284,439 output tokens, 222,409 reasoning output tokens, 2,032,162 total tokens, and `$2.07547815` estimated cost. Raw result: `.smith-bench/smith-gpt-5.4-mini-high-project-compacted-split.json`. Per-task logs, traces, and sandboxes are recorded in that raw result; logs are under `/tmp/smith` and retained sandboxes are under `.smith-bench/run-*`.
+
+Compaction/prompt-refresh evidence for the retained full project rerun: 0 transcript compaction events and 0 prompt refresh events. First compaction turn: not applicable. Cache behavior after compaction: not applicable on this suite because no task compacted. Classification: retained for long compacted contexts, project benchmark neutral/slightly worse. Compared with the 2026-05-18 Smith project baseline, pass rate stayed 100/100 and cached input increased by 11,776 tokens, but input tokens increased by 95,341, output tokens increased by 8,880, reasoning output increased by 6,515, total tokens increased by 104,221, and estimated cost increased by `$0.10351695`. The retained implementation avoids perturbing non-compacted provider views, so this project movement is treated as benchmark/model variance rather than evidence that split provider messages improve short tasks.
+
+Decision: keep compaction-only provider splitting because it targets the observed SWE-bench Pro cache-collapse mode without changing normal project-task prompt shape. Do not keep always-split or size-pressure splitting. `LeaderBoard.md` was updated because the retained comparison was a full `benchmarks/` rerun.

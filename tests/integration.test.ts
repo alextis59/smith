@@ -52,8 +52,8 @@ timeout_ms = 5000
     expect(provider.requests).toHaveLength(2);
     expect(provider.requests[0].headers.authorization).toBe("Bearer test");
     expect(systemMessage(provider.requests[0].body)).not.toContain("Task memory from SMITH.TASK.md");
-    expect(userMessage(provider.requests[0].body)).toContain("inspect README");
-    expect(userMessage(provider.requests[0].body)).toContain("No local SMITH.md or SMITH.TASK.md found.");
+    expect(userMessages(provider.requests[0].body)).toContain("inspect README");
+    expect(userMessages(provider.requests[0].body)).toContain("No local SMITH.md or SMITH.TASK.md found.");
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
@@ -136,7 +136,7 @@ timeout_ms = 5000
     expect(first.stderr).toMatch(/smith remote session saved: [a-z0-9_-]{6}/);
     expect(systemMessage(provider.requests[0].body)).toContain("SMITH.TASK.md");
     expect(systemMessage(provider.requests[0].body)).not.toContain("Parent task context");
-    expect(userMessage(provider.requests[0].body)).toContain("Local SMITH.TASK.md exists");
+    expect(userMessages(provider.requests[0].body)).toContain("Local SMITH.TASK.md exists");
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(true);
     const id = /saved: ([a-z0-9_-]{6})/.exec(first.stderr)?.[1];
     expect(id).toBeTruthy();
@@ -222,7 +222,10 @@ function systemMessage(body: unknown): string {
   return messages.find((message) => message.role === "system")?.content ?? "";
 }
 
-function userMessage(body: unknown): string {
+function userMessages(body: unknown): string {
   const messages = (body as { messages?: Array<{ role?: string; content?: string }> }).messages ?? [];
-  return messages.find((message) => message.role === "user")?.content ?? "";
+  return messages
+    .filter((message) => message.role === "user")
+    .map((message) => message.content ?? "")
+    .join("\n");
 }

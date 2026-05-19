@@ -41,8 +41,44 @@ describe("transcript helpers", () => {
 
     const messages = transcriptToMessages("system", transcript, 180);
     expect(messages[1].content).toContain("Fix the benchmark bug.");
-    expect(messages[1].content).toContain("Earlier terminal transcript omitted");
-    expect(messages[1].content).toContain("yyyy");
+    expect(messages.at(-1)?.content).toContain("Earlier terminal transcript omitted");
+    expect(messages.at(-1)?.content).toContain("yyyy");
+  });
+
+  it("keeps short provider transcripts in one user message", () => {
+    const transcript = [
+      appendChatIn("Fix the benchmark bug."),
+      "smith$ # memory files\nNo local SMITH.md or SMITH.TASK.md found.",
+      appendTerminalTurn("", "cat README.md", "small project")
+    ].join("\n");
+
+    const messages = transcriptToMessages("system", transcript, 10_000);
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toEqual({ role: "system", content: "system" });
+    expect(messages[1].content).toContain("Fix the benchmark bug.");
+    expect(messages[1].content).toContain("No local SMITH.md or SMITH.TASK.md found.");
+    expect(messages[1].content).toContain("smith$ cat README.md");
+  });
+
+  it("splits compacted stable transcript prefix from the volatile terminal tail", () => {
+    const transcript = [
+      appendChatIn("Fix the benchmark bug."),
+      "smith$ # memory files\nNo local SMITH.md or SMITH.TASK.md found.",
+      "smith$ # transcript compacted\nEarlier transcript compacted: 2 entries omitted.\nRecent omitted tail:\nold output",
+      appendTerminalTurn("", "sed -n '1,200p' big.go", "x".repeat(200)),
+      appendTerminalTurn("", "sed -n '200,400p' big.go", "y".repeat(200))
+    ].join("\n");
+
+    const messages = transcriptToMessages("system", transcript, 700);
+
+    expect(messages[0]).toEqual({ role: "system", content: "system" });
+    expect(messages[1].content).toContain("Fix the benchmark bug.");
+    expect(messages[2].content).toContain("No local SMITH.md or SMITH.TASK.md found.");
+    expect(messages[3].content).toContain("Earlier transcript compacted: 2 entries omitted.");
+    expect(messages[4].content).toContain("Earlier terminal transcript omitted from provider context.");
+    expect(messages[4].content).toContain("smith$ sed -n '200,400p' big.go");
+    expect(messages[4].content).not.toContain("smith$ sed -n '1,200p' big.go");
   });
 
   it("compacts old terminal turns deterministically", () => {
