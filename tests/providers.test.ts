@@ -46,9 +46,37 @@ describe("provider adapters", () => {
 
     expect(calls.first.url).toBe("https://gateway.example/v1/responses");
     expect(calls.first.body.instructions).toBe("system");
-    expect(calls.first.body.input).toContain("user: task");
+    expect(calls.first.body.input).toEqual([
+      { role: "user", content: [{ type: "input_text", text: "task" }] },
+      { role: "assistant", content: [{ type: "output_text", text: "prior" }] }
+    ]);
     expect(calls.first.body.max_output_tokens).toBe(64);
     expect(calls.first.body.reasoning).toEqual({ effort: "low" });
+  });
+
+  it("maps openai-responses stateful requests", async () => {
+    const calls = captureFetch({ id: "resp_2", output_text: "done" });
+    const response = await completeWithProfile(
+      {
+        ...baseRequest(),
+        providerState: {
+          statefulResponses: true,
+          previousResponseId: "resp_1",
+          promptCacheKey: "smith-test",
+          promptCacheRetention: "24h"
+        }
+      },
+      profile("openai-responses"),
+      { fetch: calls.fetch }
+    );
+
+    expect(calls.first.body).toMatchObject({
+      store: true,
+      previous_response_id: "resp_1",
+      prompt_cache_key: "smith-test",
+      prompt_cache_retention: "24h"
+    });
+    expect(response.providerState?.previousResponseId).toBe("resp_2");
   });
 
   it("maps chatgpt-codex requests using Codex auth storage", async () => {
@@ -103,6 +131,59 @@ describe("provider adapters", () => {
       reasoningOutputTokens: 4,
       totalTokens: 11
     });
+  });
+
+  it("maps chatgpt-codex stateful tool output requests", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "smith-codex-auth-"));
+    const authPath = join(dir, "auth.json");
+    writeFileSync(
+      authPath,
+      JSON.stringify({
+        auth_mode: "chatgpt",
+        tokens: {
+          access_token: fakeJwt({ exp: Math.floor(Date.now() / 1000) + 3600 }),
+          refresh_token: "refresh-token"
+        }
+      }),
+      "utf8"
+    );
+    const calls = captureFetch(
+      [
+        'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"id":"fc_2","call_id":"call_2","type":"function_call","name":"shell_command","arguments":"{\\"command\\":\\"pwd\\"}"}}',
+        'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_2","usage":{"input_tokens":5}}}'
+      ].join("\n\n"),
+      "text/event-stream"
+    );
+    const chatgptProfile = { ...profile("chatgpt-codex", "https://chatgpt.example/backend-api/codex"), codexAuthPath: authPath };
+
+    const response = await completeWithProfile(
+      {
+        ...baseRequest(),
+        messages: [
+          { role: "system", content: "system" },
+          { role: "user", content: "terminal output" }
+        ],
+        providerState: {
+          statefulResponses: true,
+          previousResponseId: "resp_1",
+          previousToolCallId: "call_1",
+          toolOutput: "terminal output",
+          promptCacheKey: "smith-test"
+        }
+      },
+      chatgptProfile,
+      { fetch: calls.fetch }
+    );
+
+    expect(calls.first.body).toMatchObject({
+      store: false,
+      previous_response_id: "resp_1",
+      prompt_cache_key: "smith-test",
+      input: [{ type: "function_call_output", call_id: "call_1", output: "terminal output" }]
+    });
+    expect(response.text).toBe("pwd");
+    expect(response.providerState?.previousResponseId).toBe("resp_2");
+    expect(response.providerState?.previousToolCallId).toBe("call_2");
   });
 
   it("retries chatgpt-codex response stream failures", async () => {
@@ -234,7 +315,7 @@ describe("provider adapters", () => {
           'event: response.function_call_arguments.done\ndata: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"npm test\\"}"}'
         ].join("\n\n")
       )
-    ).toMatchObject({ text: "npm test" });
+    ).toMatchObject({ text: "npm test", toolCallId: "fc_1" });
   });
 
   it("normalizes malformed provider responses", async () => {
@@ -305,6 +386,7 @@ function profile(adapter: ProfileConfig["adapter"], baseUrl = "https://gateway.e
     baseUrl,
     apiKeyEnv: "TEST_KEY",
     model: "test-model",
+    statefulResponses: false,
     temperature: 0,
     maxOutputTokens: 64,
     reasoningEffort: "low",

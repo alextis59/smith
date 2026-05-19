@@ -52,6 +52,90 @@ export function transcriptToMessages(
   return [{ role: "system", content: systemPrompt }, ...transcriptToUserMessages(transcript, budget)];
 }
 
+export function transcriptToMessageChain(
+  systemPrompt: string,
+  transcript: string,
+  maxContextChars: number
+): TranscriptEntry[] {
+  return providerMessagesToMessages(systemPrompt, transcriptToProviderMessages(transcript), maxContextChars);
+}
+
+export function providerMessagesToMessages(
+  systemPrompt: string,
+  providerMessages: TranscriptEntry[],
+  maxContextChars: number
+): TranscriptEntry[] {
+  const budget = Math.max(0, maxContextChars - systemPrompt.length);
+  return [{ role: "system", content: systemPrompt }, ...truncateProviderMessages(providerMessages, budget)];
+}
+
+export function transcriptToProviderMessages(transcript: string): TranscriptEntry[] {
+  const entries = transcript.split(/\n(?=smith\$ )/).filter((entry) => entry.length > 0);
+  const messages: TranscriptEntry[] = [];
+  for (const entry of entries) {
+    if (isUserTranscriptEntry(entry)) {
+      appendUserMessage(messages, entry);
+      continue;
+    }
+
+    const parsed = parseTerminalEntry(entry);
+    if (!parsed) {
+      appendUserMessage(messages, entry);
+      continue;
+    }
+    messages.push({ role: "assistant", content: parsed.command });
+    messages.push({ role: "user", content: terminalOutputMessage(parsed.output) });
+  }
+  return messages;
+}
+
+export function appendProviderTerminalTurn(
+  messages: TranscriptEntry[],
+  command: string,
+  output: string
+): TranscriptEntry[] {
+  return [
+    ...messages,
+    { role: "assistant", content: command.trimEnd() },
+    { role: "user", content: terminalOutputMessage(output) }
+  ];
+}
+
+export function appendProviderUserObservation(messages: TranscriptEntry[], output: string): TranscriptEntry[] {
+  return [...messages, { role: "user", content: terminalOutputMessage(output) }];
+}
+
+export function compactProviderMessages(
+  messages: TranscriptEntry[],
+  options: {
+    keepTurns: number;
+    maxSummaryChars: number;
+  }
+): TranscriptEntry[] {
+  const firstAssistant = messages.findIndex((message) => message.role === "assistant");
+  if (firstAssistant === -1) return messages;
+
+  const stablePrefix = messages.slice(0, firstAssistant);
+  const turns = terminalTurns(messages.slice(firstAssistant));
+  if (turns.length <= options.keepTurns) return messages;
+
+  const removed = turns.slice(0, Math.max(0, turns.length - options.keepTurns));
+  const kept = turns.slice(turns.length - options.keepTurns).flat();
+  const summaryTail = removed
+    .flat()
+    .map((message) => `${message.role}: ${message.content}`)
+    .join("\n")
+    .slice(-options.maxSummaryChars);
+  const summary = [
+    "smith$ # transcript compacted",
+    `Earlier transcript compacted: ${removed.length} entries omitted.`,
+    summaryTail ? `Recent omitted tail:\n${summaryTail}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return [...stablePrefix, { role: "user", content: summary }, ...kept];
+}
+
 export function appendTerminalTurn(transcript: string, command: string, output: string): string {
   const entry = `smith$ ${command.trimEnd()}\n${output.trimEnd()}`;
   return transcript ? `${transcript}\n${entry}` : entry;
@@ -161,15 +245,106 @@ function truncateTranscriptPreservingRequest(transcript: string, budget: number)
   if (transcript.length <= budget) return transcript;
   const parts = transcript.split(/\n(?=smith\$ )/);
   const initialRequest = parts[0]?.startsWith("smith$ chat_in ") ? parts[0] : undefined;
-  if (!initialRequest || initialRequest.length >= budget) return transcript.slice(transcript.length - budget);
+  if (!initialRequest || initialRequest.length >= budget) return truncateTail(transcript, budget);
 
   const marker = "\nsmith$ # context truncated\nEarlier terminal transcript omitted to preserve the active user request.\n";
   const tailBudget = budget - initialRequest.length - marker.length;
-  if (tailBudget <= 0) return transcript.slice(transcript.length - budget);
-  return `${initialRequest}${marker}${transcript.slice(transcript.length - tailBudget)}`;
+  if (tailBudget <= 0) return truncateTail(transcript, budget);
+  return `${initialRequest}${marker}${truncateTail(transcript, tailBudget)}`;
+}
+
+function truncateProviderMessages(messages: TranscriptEntry[], budget: number): TranscriptEntry[] {
+  if (messageChars(messages) <= budget) return messages;
+  if (budget <= 0) return [];
+
+  const first = messages[0];
+  if (!first || first.content.length >= budget) {
+    const tail = messages.at(-1);
+    return tail ? [{ role: tail.role, content: tail.content.slice(tail.content.length - budget) }] : [];
+  }
+
+  const marker: TranscriptEntry = {
+    role: "user",
+    content: "smith$ # context truncated\nEarlier terminal transcript omitted to preserve the active user request."
+  };
+  const remainingBudget = budget - first.content.length - marker.content.length;
+  if (remainingBudget <= 0) return [{ role: first.role, content: first.content.slice(0, budget) }];
+
+  const tail: TranscriptEntry[] = [];
+  let used = 0;
+  for (let index = messages.length - 1; index >= 1; index -= 1) {
+    const message = messages[index];
+    const cost = message.content.length;
+    if (used + cost > remainingBudget) break;
+    tail.unshift(message);
+    used += cost;
+  }
+  return [first, marker, ...tail];
 }
 
 function truncateTail(content: string, budget: number): string {
   if (content.length <= budget) return content;
   return budget <= 0 ? "" : content.slice(content.length - budget);
+}
+
+function messageChars(messages: TranscriptEntry[]): number {
+  return messages.reduce((sum, message) => sum + message.content.length, 0);
+}
+
+function appendUserMessage(messages: TranscriptEntry[], content: string): void {
+  const last = messages.at(-1);
+  if (last?.role === "user") {
+    last.content = `${last.content}\n${content}`;
+  } else {
+    messages.push({ role: "user", content });
+  }
+}
+
+function isUserTranscriptEntry(entry: string): boolean {
+  return (
+    entry.startsWith("smith$ chat_in ") ||
+    entry.startsWith("smith$ # memory files") ||
+    entry.startsWith("smith$ # transcript compacted") ||
+    entry.startsWith("smith$ # context truncated") ||
+    entry.startsWith("smith$ # recent terminal transcript") ||
+    entry.startsWith("smith$ # timeout")
+  );
+}
+
+function parseTerminalEntry(entry: string): { command: string; output: string } | undefined {
+  if (!entry.startsWith("smith$ ")) return undefined;
+  const body = entry.slice("smith$ ".length);
+  const firstNewline = body.indexOf("\n");
+  if (firstNewline === -1) return { command: body, output: "" };
+  return {
+    command: body.slice(0, firstNewline).trimEnd(),
+    output: body.slice(firstNewline + 1).trimEnd()
+  };
+}
+
+function terminalOutputMessage(output: string): string {
+  const trimmed = output.trimEnd();
+  return trimmed.length > 0 ? trimmed : "(no terminal output)";
+}
+
+function terminalTurns(messages: TranscriptEntry[]): TranscriptEntry[][] {
+  const turns: TranscriptEntry[][] = [];
+  let index = 0;
+  while (index < messages.length) {
+    const current = messages[index];
+    if (current.role !== "assistant") {
+      turns.push([current]);
+      index += 1;
+      continue;
+    }
+    const next = messages[index + 1];
+    if (next?.role === "user") {
+      turns.push([current, next]);
+      index += 2;
+    } else {
+      turns.push([current]);
+      index += 1;
+    }
+  }
+  return turns;
 }

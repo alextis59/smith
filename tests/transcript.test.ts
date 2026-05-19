@@ -5,6 +5,7 @@ import {
   compactTranscript,
   parseChatOutSentinel,
   stripShellFence,
+  transcriptToMessageChain,
   transcriptToMessages
 } from "../src/transcript.js";
 
@@ -39,26 +40,31 @@ describe("transcript helpers", () => {
       appendTerminalTurn("", "sed -n '200,400p' big.go", "y".repeat(200))
     ].join("\n");
 
-    const messages = transcriptToMessages("system", transcript, 180);
+    const messages = transcriptToMessages("system", transcript, 420);
     expect(messages[1].content).toContain("Fix the benchmark bug.");
-    expect(messages.at(-1)?.content).toContain("Earlier terminal transcript omitted");
+    expect(messages.some((message) => message.content.includes("Earlier terminal transcript omitted"))).toBe(true);
     expect(messages.at(-1)?.content).toContain("yyyy");
   });
 
-  it("keeps short provider transcripts in one user message", () => {
+  it("renders terminal turns as assistant commands followed by user terminal output", () => {
     const transcript = [
       appendChatIn("Fix the benchmark bug."),
       "smith$ # memory files\nNo local SMITH.md or SMITH.TASK.md found.",
       appendTerminalTurn("", "cat README.md", "small project")
     ].join("\n");
 
-    const messages = transcriptToMessages("system", transcript, 10_000);
+    const defaultMessages = transcriptToMessages("system", transcript, 10_000);
+    expect(defaultMessages).toHaveLength(2);
+    expect(defaultMessages[1].content).toContain("smith$ cat README.md");
 
-    expect(messages).toHaveLength(2);
+    const messages = transcriptToMessageChain("system", transcript, 10_000);
+
+    expect(messages).toHaveLength(4);
     expect(messages[0]).toEqual({ role: "system", content: "system" });
     expect(messages[1].content).toContain("Fix the benchmark bug.");
     expect(messages[1].content).toContain("No local SMITH.md or SMITH.TASK.md found.");
-    expect(messages[1].content).toContain("smith$ cat README.md");
+    expect(messages[2]).toEqual({ role: "assistant", content: "cat README.md" });
+    expect(messages[3]).toEqual({ role: "user", content: "small project" });
   });
 
   it("splits compacted stable transcript prefix from the volatile terminal tail", () => {
@@ -70,15 +76,16 @@ describe("transcript helpers", () => {
       appendTerminalTurn("", "sed -n '200,400p' big.go", "y".repeat(200))
     ].join("\n");
 
-    const messages = transcriptToMessages("system", transcript, 700);
+    const messages = transcriptToMessageChain("system", transcript, 650);
 
     expect(messages[0]).toEqual({ role: "system", content: "system" });
     expect(messages[1].content).toContain("Fix the benchmark bug.");
-    expect(messages[2].content).toContain("No local SMITH.md or SMITH.TASK.md found.");
-    expect(messages[3].content).toContain("Earlier transcript compacted: 2 entries omitted.");
-    expect(messages[4].content).toContain("Earlier terminal transcript omitted from provider context.");
-    expect(messages[4].content).toContain("smith$ sed -n '200,400p' big.go");
-    expect(messages[4].content).not.toContain("smith$ sed -n '1,200p' big.go");
+    expect(messages[1].content).toContain("No local SMITH.md or SMITH.TASK.md found.");
+    expect(messages[1].content).toContain("Earlier transcript compacted: 2 entries omitted.");
+    expect(messages.some((message) => message.content.includes("Earlier terminal transcript omitted"))).toBe(true);
+    expect(messages.at(-2)).toEqual({ role: "assistant", content: "sed -n '200,400p' big.go" });
+    expect(messages.at(-1)?.content).toContain("yyyy");
+    expect(messages.some((message) => message.content.includes("sed -n '1,200p' big.go"))).toBe(false);
   });
 
   it("compacts old terminal turns deterministically", () => {

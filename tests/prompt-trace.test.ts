@@ -118,6 +118,7 @@ function profile(): ProfileConfig {
     adapter: "openai-chat",
     baseUrl: "https://fake.test/v1",
     model: "fake",
+    statefulResponses: false,
     headers: {},
     body: {},
     strictProviderOptions: false

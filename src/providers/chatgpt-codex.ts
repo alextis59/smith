@@ -67,7 +67,8 @@ export const chatGptCodexAdapter: ProviderAdapter = {
     return {
       text: requireText("chatgpt-codex", parsed.text),
       raw: parsed.events,
-      usage: parsed.usage
+      usage: parsed.usage,
+      providerState: responseProviderState(request, parsed.responseId, parsed.toolCallId)
     };
   }
 };
@@ -77,10 +78,9 @@ function buildBody(request: SmithModelRequest, profile: ProfileConfig): Record<s
     .filter((message) => message.role === "system")
     .map((message) => message.content)
     .join("\n\n");
-  const input = request.messages
-    .filter((message) => message.role !== "system")
-    .map(toResponseInputMessage);
+  const input = responseInput(request);
   const reasoning = request.reasoningEffort ? { effort: request.reasoningEffort } : undefined;
+  const state = request.providerState;
 
   return {
     model: request.model,
@@ -91,11 +91,42 @@ function buildBody(request: SmithModelRequest, profile: ProfileConfig): Record<s
     parallel_tool_calls: false,
     ...(reasoning ? { reasoning } : {}),
     store: false,
+    ...(state?.previousResponseId ? { previous_response_id: state.previousResponseId } : {}),
+    ...(state?.promptCacheKey ? { prompt_cache_key: state.promptCacheKey } : {}),
+    ...(state?.promptCacheRetention ? { prompt_cache_retention: state.promptCacheRetention } : {}),
     stream: true,
     include: reasoning ? ["reasoning.encrypted_content"] : [],
     text: { format: { type: "text" } },
     ...profile.body,
     ...request.extra
+  };
+}
+
+function responseInput(request: SmithModelRequest): Record<string, unknown>[] {
+  const state = request.providerState;
+  if (state?.previousResponseId && state.previousToolCallId && state.toolOutput !== undefined) {
+    return [
+      {
+        type: "function_call_output",
+        call_id: state.previousToolCallId,
+        output: state.toolOutput
+      }
+    ];
+  }
+  return request.messages.filter((message) => message.role !== "system").map(toResponseInputMessage);
+}
+
+function responseProviderState(
+  request: SmithModelRequest,
+  previousResponseId: string | undefined,
+  previousToolCallId: string | undefined
+): SmithModelRequest["providerState"] {
+  if (!request.providerState?.statefulResponses || !previousResponseId) return undefined;
+  return {
+    ...request.providerState,
+    previousResponseId,
+    previousToolCallId,
+    toolOutput: undefined
   };
 }
 
@@ -151,12 +182,15 @@ export function parseResponsesSse(raw: string): {
   text: string;
   events: unknown[];
   usage?: SmithModelResponse["usage"];
+  responseId?: string;
+  toolCallId?: string;
 } {
   const events: unknown[] = [];
   const chunks: string[] = [];
-  const functionCalls = new Map<string, { name?: string; arguments: string }>();
+  const functionCalls = new Map<string, { name?: string; arguments: string; callId?: string }>();
   let doneText: string | undefined;
   let usage: SmithModelResponse["usage"] | undefined;
+  let responseId: string | undefined;
 
   for (const block of raw.split(/\r?\n\r?\n/)) {
     const dataLines = block
@@ -192,30 +226,41 @@ export function parseResponsesSse(raw: string): {
       const text = textValue(event.text);
       if (text && text.trim().length > 0) doneText = text;
     } else if (event.type === "response.completed" && isRecord(event.response)) {
+      responseId = textValue(event.response.id) ?? responseId;
       usage = usageFromResponse(event.response);
       const completedText = extractCompletedResponseText(event.response);
       if (!doneText && completedText && completedText.trim().length > 0) doneText = completedText;
     }
   }
 
-  return { text: extractShellCommand(functionCalls) ?? doneText ?? chunks.join(""), events, usage };
+  const shellCommand = extractShellCommand(functionCalls);
+  return {
+    text: shellCommand?.command ?? doneText ?? chunks.join(""),
+    events,
+    usage,
+    responseId,
+    toolCallId: shellCommand?.callId
+  };
 }
 
-function captureFunctionCall(calls: Map<string, { name?: string; arguments: string }>, item: unknown): void {
+function captureFunctionCall(calls: Map<string, { name?: string; arguments: string; callId?: string }>, item: unknown): void {
   if (!isRecord(item) || item.type !== "function_call") return;
   const id = textValue(item.id) ?? textValue(item.call_id);
   if (!id) return;
   calls.set(id, {
     name: textValue(item.name),
+    callId: textValue(item.call_id) ?? id,
     arguments: textValue(item.arguments) ?? calls.get(id)?.arguments ?? ""
   });
 }
 
-function extractShellCommand(calls: Map<string, { name?: string; arguments: string }>): string | undefined {
+function extractShellCommand(
+  calls: Map<string, { name?: string; arguments: string; callId?: string }>
+): { command: string; callId?: string } | undefined {
   for (const call of calls.values()) {
     if (call.name !== "shell_command") continue;
     const command = shellCommandFromArguments(call.arguments);
-    if (command && command.trim().length > 0) return command;
+    if (command && command.trim().length > 0) return { command, callId: call.callId };
   }
   return undefined;
 }

@@ -13,6 +13,9 @@ export type ProfileConfig = {
   apiKeyEnv?: string;
   codexAuthPath?: string;
   model: string;
+  statefulResponses: boolean;
+  promptCacheKey?: string;
+  promptCacheRetention?: "in_memory" | "24h";
   temperature?: number;
   maxOutputTokens?: number;
   reasoningEffort?: ReasoningEffort;
@@ -40,6 +43,7 @@ export type RuntimeConfig = {
   providerRetries: number;
   providerRetryDelayMs: number;
   providerDebug: boolean;
+  providerMessageChain: boolean;
   remoteSessionTtlDays: number;
   logDir?: string;
 };
@@ -69,6 +73,9 @@ export type CliConfigOverrides = {
   apiKeyEnv?: string;
   codexAuthPath?: string;
   model?: string;
+  statefulResponses?: boolean;
+  promptCacheKey?: string;
+  promptCacheRetention?: "in_memory" | "24h";
   temperature?: number;
   maxOutputTokens?: number;
   reasoningEffort?: ReasoningEffort;
@@ -90,6 +97,7 @@ export type CliConfigOverrides = {
   providerRetries?: number;
   providerRetryDelayMs?: number;
   providerDebug?: boolean;
+  providerMessageChain?: boolean;
   remoteSessionTtlDays?: number;
   logDir?: string;
 };
@@ -105,6 +113,7 @@ const DEFAULT_CONFIG: SmithConfig = {
       baseUrl: "https://api.openai.com/v1",
       apiKeyEnv: "OPENAI_API_KEY",
       model: "gpt-5.4",
+      statefulResponses: false,
       temperature: 0.2,
       maxOutputTokens: 4096,
       reasoningEffort: "medium",
@@ -117,6 +126,7 @@ const DEFAULT_CONFIG: SmithConfig = {
       baseUrl: "https://api.openai.com/v1",
       apiKeyEnv: "OPENAI_API_KEY",
       model: "gpt-5.4-mini",
+      statefulResponses: false,
       temperature: 0,
       headers: {},
       body: {},
@@ -139,6 +149,7 @@ const DEFAULT_CONFIG: SmithConfig = {
     providerRetries: 2,
     providerRetryDelayMs: 250,
     providerDebug: false,
+    providerMessageChain: false,
     remoteSessionTtlDays: 30
   },
   files: []
@@ -239,6 +250,15 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--model":
         overrides.model = readValue();
         break;
+      case "--stateful-responses":
+        overrides.statefulResponses = true;
+        break;
+      case "--prompt-cache-key":
+        overrides.promptCacheKey = readValue();
+        break;
+      case "--prompt-cache-retention":
+        overrides.promptCacheRetention = parsePromptCacheRetention(readValue());
+        break;
       case "--temperature":
         overrides.temperature = Number(readValue());
         break;
@@ -301,6 +321,9 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
         break;
       case "--provider-debug":
         overrides.providerDebug = true;
+        break;
+      case "--provider-message-chain":
+        overrides.providerMessageChain = true;
         break;
       case "--remote-session-ttl-days":
         overrides.remoteSessionTtlDays = Number.parseInt(readValue(), 10);
@@ -373,6 +396,7 @@ function mergeRawConfig(config: SmithConfig, raw: RawConfig): SmithConfig {
         adapter: "openai-chat",
         baseUrl: "https://api.openai.com/v1",
         model: "",
+        statefulResponses: false,
         headers: {},
         body: {},
         strictProviderOptions: false
@@ -410,6 +434,9 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.apiKeyEnv ? { apiKeyEnv: cli.apiKeyEnv } : {}),
     ...(cli.codexAuthPath ? { codexAuthPath: cli.codexAuthPath } : {}),
     ...(cli.model ? { model: cli.model } : {}),
+    ...(cli.statefulResponses !== undefined ? { statefulResponses: cli.statefulResponses } : {}),
+    ...(cli.promptCacheKey !== undefined ? { promptCacheKey: cli.promptCacheKey } : {}),
+    ...(cli.promptCacheRetention !== undefined ? { promptCacheRetention: cli.promptCacheRetention } : {}),
     ...(cli.temperature !== undefined ? { temperature: cli.temperature } : {}),
     ...(cli.maxOutputTokens !== undefined ? { maxOutputTokens: cli.maxOutputTokens } : {}),
     ...(cli.reasoningEffort ? { reasoningEffort: cli.reasoningEffort } : {}),
@@ -445,6 +472,7 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.providerRetries !== undefined ? { providerRetries: cli.providerRetries } : {}),
     ...(cli.providerRetryDelayMs !== undefined ? { providerRetryDelayMs: cli.providerRetryDelayMs } : {}),
     ...(cli.providerDebug !== undefined ? { providerDebug: cli.providerDebug } : {}),
+    ...(cli.providerMessageChain !== undefined ? { providerMessageChain: cli.providerMessageChain } : {}),
     ...(cli.remoteSessionTtlDays !== undefined ? { remoteSessionTtlDays: cli.remoteSessionTtlDays } : {}),
     ...(cli.logDir !== undefined ? { logDir: cli.logDir } : {})
   };
@@ -460,6 +488,11 @@ function mergeProfile(previous: ProfileConfig, raw: RawConfig): ProfileConfig {
     ...(typeof raw.api_key_env === "string" ? { apiKeyEnv: raw.api_key_env } : {}),
     ...(typeof raw.codex_auth_path === "string" ? { codexAuthPath: raw.codex_auth_path } : {}),
     ...(typeof raw.model === "string" ? { model: raw.model } : {}),
+    ...(typeof raw.stateful_responses === "boolean" ? { statefulResponses: raw.stateful_responses } : {}),
+    ...(typeof raw.prompt_cache_key === "string" ? { promptCacheKey: raw.prompt_cache_key } : {}),
+    ...(typeof raw.prompt_cache_retention === "string"
+      ? { promptCacheRetention: parsePromptCacheRetention(raw.prompt_cache_retention) }
+      : {}),
     ...(typeof raw.temperature === "number" ? { temperature: raw.temperature } : {}),
     ...(typeof raw.max_output_tokens === "number" ? { maxOutputTokens: raw.max_output_tokens } : {}),
     ...(typeof raw.reasoning_effort === "string"
@@ -504,6 +537,7 @@ function mergeRuntime(previous: RuntimeConfig, raw: RawConfig): RuntimeConfig {
     ...(typeof raw.provider_retries === "number" ? { providerRetries: raw.provider_retries } : {}),
     ...(typeof raw.provider_retry_delay_ms === "number" ? { providerRetryDelayMs: raw.provider_retry_delay_ms } : {}),
     ...(typeof raw.provider_debug === "boolean" ? { providerDebug: raw.provider_debug } : {}),
+    ...(typeof raw.provider_message_chain === "boolean" ? { providerMessageChain: raw.provider_message_chain } : {}),
     ...(typeof raw.remote_session_ttl_days === "number" ? { remoteSessionTtlDays: raw.remote_session_ttl_days } : {}),
     ...(typeof raw.log_dir === "string" ? { logDir: raw.log_dir } : {})
   };
@@ -530,6 +564,11 @@ function parseAdapter(value: string): AdapterName {
 function parseReasoningEffort(value: string): ReasoningEffort {
   if (value === "low" || value === "medium" || value === "high") return value;
   throw new Error(`unknown reasoning effort '${value}'`);
+}
+
+function parsePromptCacheRetention(value: string): "in_memory" | "24h" {
+  if (value === "in_memory" || value === "24h") return value;
+  throw new Error(`unknown prompt cache retention '${value}'`);
 }
 
 function parseDangerReview(value: string): DangerReviewMode {
@@ -578,6 +617,9 @@ export function validateConfig(config: SmithConfig): void {
     validateRange(`${prefix}.output_cost_per_million_tokens`, profile.outputCostPerMillionTokens, 0, Number.MAX_SAFE_INTEGER);
     if (profile.apiKeyEnv !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(profile.apiKeyEnv)) {
       throw new Error(`${prefix}.api_key_env must be an environment variable name`);
+    }
+    if (profile.promptCacheKey !== undefined && !profile.promptCacheKey.trim()) {
+      throw new Error(`${prefix}.prompt_cache_key must not be empty`);
     }
     if (profile.stop?.some((value) => !value)) throw new Error(`${prefix}.stop must not contain empty values`);
   }

@@ -12,7 +12,12 @@ export const openAiResponsesAdapter: ProviderAdapter = {
       options.fetch,
       options.debugLog
     );
-    return { text: requireText("openai-responses", extractOpenAiResponsesText(raw)), raw, usage: isRecord(raw) ? usageFromOpenAi(raw) : undefined };
+    return {
+      text: requireText("openai-responses", extractOpenAiResponsesText(raw)),
+      raw,
+      usage: isRecord(raw) ? usageFromOpenAi(raw) : undefined,
+      providerState: responseProviderState(request, raw)
+    };
   }
 };
 
@@ -23,18 +28,38 @@ function buildBody(request: SmithModelRequest): Record<string, unknown> {
     .join("\n\n");
   const input = request.messages
     .filter((message) => message.role !== "system")
-    .map((message) => `${message.role}: ${message.content}`)
-    .join("\n\n");
+    .map((message) => ({
+      role: message.role,
+      content: [{ type: message.role === "assistant" ? "output_text" : "input_text", text: message.content }]
+    }));
+  const state = request.providerState;
 
   return {
     model: request.model,
     ...(instructions ? { instructions } : {}),
     input,
+    ...(state?.statefulResponses ? { store: true } : {}),
+    ...(state?.previousResponseId ? { previous_response_id: state.previousResponseId } : {}),
+    ...(state?.promptCacheKey ? { prompt_cache_key: state.promptCacheKey } : {}),
+    ...(state?.promptCacheRetention ? { prompt_cache_retention: state.promptCacheRetention } : {}),
     ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
     ...(request.maxOutputTokens !== undefined ? { max_output_tokens: request.maxOutputTokens } : {}),
     ...(request.reasoningEffort ? { reasoning: { effort: request.reasoningEffort } } : {}),
     ...(request.stop ? { stop: request.stop } : {})
   };
+}
+
+function responseProviderState(request: SmithModelRequest, raw: unknown): SmithModelRequest["providerState"] {
+  if (!request.providerState?.statefulResponses || !isRecord(raw)) return undefined;
+  const previousResponseId = textValue(raw.id);
+  return previousResponseId
+    ? {
+        ...request.providerState,
+        previousResponseId,
+        previousToolCallId: undefined,
+        toolOutput: undefined
+      }
+    : undefined;
 }
 
 export function extractOpenAiResponsesText(raw: unknown): string {

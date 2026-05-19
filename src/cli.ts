@@ -88,6 +88,9 @@ Options:
   --json
   --profile <name>
   --model <model>
+  --stateful-responses
+  --prompt-cache-key <key|auto>
+  --prompt-cache-retention <in_memory|24h>
   --adapter <openai-chat|openai-responses|chatgpt-codex|gemini|anthropic-messages>
   --base-url <url>
   --api-key-env <name>
@@ -103,6 +106,7 @@ Options:
   --transcript-compaction-hysteresis-turns <count>
   --danger-review <off|ask|deterministic|llm>
   --read-only
+  --provider-message-chain
   --log-dir <dir>
   --agent <smith|codex>
   --concurrency <count>

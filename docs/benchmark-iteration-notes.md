@@ -185,6 +185,7 @@ node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan \
   --base-url https://chatgpt.com/backend-api/codex \
   --model gpt-5.4-mini \
   --reasoning-effort high \
+  --provider-message-chain \
   --danger-review off \
   --max-turns 60 \
   --timeout-ms 900000 \
@@ -939,3 +940,45 @@ Result: 100/100 passed, 3,088,440 ms aggregate duration, 1,747,723 input tokens,
 Compaction/prompt-refresh evidence for the retained full project rerun: 0 transcript compaction events and 0 prompt refresh events. First compaction turn: not applicable. Cache behavior after compaction: not applicable on this suite because no task compacted. Classification: retained for long compacted contexts, project benchmark neutral/slightly worse. Compared with the 2026-05-18 Smith project baseline, pass rate stayed 100/100 and cached input increased by 11,776 tokens, but input tokens increased by 95,341, output tokens increased by 8,880, reasoning output increased by 6,515, total tokens increased by 104,221, and estimated cost increased by `$0.10351695`. The retained implementation avoids perturbing non-compacted provider views, so this project movement is treated as benchmark/model variance rather than evidence that split provider messages improve short tasks.
 
 Decision: keep compaction-only provider splitting because it targets the observed SWE-bench Pro cache-collapse mode without changing normal project-task prompt shape. Do not keep always-split or size-pressure splitting. `LeaderBoard.md` was updated because the retained comparison was a full `benchmarks/` rerun.
+
+## 2026-05-19: Assistant/User Message Chain And Responses State Experiments
+
+Goal: test whether rendering Smith history as assistant command messages followed by user terminal-output messages, plus Responses-style provider state, can move cache behavior closer to Codex.
+
+Smith changes tested:
+
+- Added an experimental provider message-chain view. Local transcripts remain unchanged, but provider rendering can represent model commands as assistant messages and terminal outputs as user messages.
+- Added profile/CLI options for `stateful_responses`, `prompt_cache_key`, and `prompt_cache_retention`.
+- `chatgpt-codex` and `openai-responses` adapters can send prompt-cache hints. `openai-responses` can use `store: true` with `previous_response_id`; `chatgpt-codex` keeps `store: false` because that backend rejects stored responses.
+- If a stateful turn is rejected with 400 or 404, Smith writes `provider state disabled` and retries the turn stateless.
+
+Command used for the single-task stateless message-chain run. This was collected before message-chain rendering was gated; the current equivalent command adds `--provider-message-chain`.
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5 \
+  --json
+```
+
+Result: passed in 119,701 ms and 12 turns. Usage was 34,991 input tokens, 12,288 cached input tokens, 35.1% cached share, 12,848 output tokens, 11,693 reasoning output tokens, 47,839 total tokens, and `$0.07576485` estimated cost. Raw result: `.smith-bench/smith-091-message-chain-stateless.json`. Trace: `.smith-bench/run-MtjnMJ/home/.smith/runs/2026-05-19T13-51-53-464Z.trace`. Log: `/tmp/smith/2026-05-19T13-53-52-849Z-smith-091-command-router-refactor.json`. Sandbox: `.smith-bench/run-MtjnMJ`.
+
+Stateful attempt command: same task and options with `--stateful-responses`. The first attempt with `store: true` failed immediately because the ChatGPT Codex backend returned `Store must be set to false`. After changing the adapter to keep `store: false`, the backend accepted the first response but rejected the second request with `Unsupported parameter: previous_response_id`; Smith then disabled provider state and retried stateless.
+
+Final `--stateful-responses` rerun result: passed in 132,989 ms and 17 turns. Usage was 53,586 input tokens, 26,368 cached input tokens, 49.2% cached share, 12,858 output tokens, 11,221 reasoning output tokens, 66,444 total tokens, and `$0.08025210` estimated cost. Raw result: `.smith-bench/smith-091-message-chain-stateful.json`. Trace: `.smith-bench/run-DkL4gG/home/.smith/runs/2026-05-19T13-58-03-359Z.trace`. Log: `/tmp/smith/2026-05-19T14-00-16-117Z-smith-091-command-router-refactor.json`. Sandbox: `.smith-bench/run-DkL4gG`.
+
+Prompt-cache-key-only run: passed in 115,674 ms and 20 turns. Usage was 59,544 input tokens, 27,904 cached input tokens, 46.9% cached share, 11,044 output tokens, 9,521 reasoning output tokens, 70,588 total tokens, and `$0.07552080` estimated cost. Raw result: `.smith-bench/smith-091-message-chain-cache-key.json`. Trace: `.smith-bench/run-bIr5U3/home/.smith/runs/2026-05-19T14-01-07-321Z.trace`. Log: `/tmp/smith/2026-05-19T14-03-02-573Z-smith-091-command-router-refactor.json`. Sandbox: `.smith-bench/run-bIr5U3`.
+
+Comparison to prior retained project-suite 091 result from `.smith-bench/smith-gpt-5.4-mini-high-project-compacted-split.json`: prior 091 passed in 88,661 ms with 27,980 input tokens, 8,192 cached input tokens, 29.3% cached share, 9,849 output tokens, 8,621 reasoning output tokens, 37,829 total tokens, and `$0.05977590` estimated cost.
+
+Classification: mixed/rejected as a default. Message chaining and prompt-cache hints raised cached-token share on some runs, but they did not produce a lower-cost or lower-token result on this task. `previous_response_id` is not usable with the current ChatGPT Codex backend. Decision: keep the message-chain provider view and prompt/state knobs as explicit experimental options, not as default behavior. Do not claim Codex-like cache behavior from this experiment.

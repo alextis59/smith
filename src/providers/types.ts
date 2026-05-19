@@ -13,6 +13,16 @@ export type SmithModelRequest = {
   reasoningEffort?: "low" | "medium" | "high";
   stop?: string[];
   extra?: Record<string, unknown>;
+  providerState?: SmithProviderState;
+};
+
+export type SmithProviderState = {
+  statefulResponses?: boolean;
+  previousResponseId?: string;
+  previousToolCallId?: string;
+  toolOutput?: string;
+  promptCacheKey?: string;
+  promptCacheRetention?: "in_memory" | "24h";
 };
 
 export type SmithModelResponse = {
@@ -25,6 +35,7 @@ export type SmithModelResponse = {
     reasoningOutputTokens?: number;
     totalTokens?: number;
   };
+  providerState?: SmithProviderState;
 };
 
 export type ProviderFetch = typeof fetch;

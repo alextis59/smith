@@ -98,6 +98,11 @@ timeout_ms = 20
       "GATEWAY_KEY",
       "--model",
       "gemini-test",
+      "--stateful-responses",
+      "--prompt-cache-key",
+      "auto",
+      "--prompt-cache-retention",
+      "24h",
       "--temperature",
       "0",
       "--max-output-tokens",
@@ -119,6 +124,7 @@ timeout_ms = 20
       "--provider-retries",
       "3",
       "--provider-debug",
+      "--provider-message-chain",
       "--log-dir",
       "/tmp/smith",
       "--danger-review",
@@ -133,6 +139,9 @@ timeout_ms = 20
       baseUrl: "https://gateway",
       apiKeyEnv: "GATEWAY_KEY",
       model: "gemini-test",
+      statefulResponses: true,
+      promptCacheKey: "auto",
+      promptCacheRetention: "24h",
       temperature: 0,
       maxOutputTokens: 64,
       reasoningEffort: "low",
@@ -146,6 +155,7 @@ timeout_ms = 20
       readOnly: true,
       providerRetries: 3,
       providerDebug: true,
+      providerMessageChain: true,
       logDir: "/tmp/smith",
       dangerReview: "deterministic"
     });
@@ -185,6 +195,9 @@ adapter = "chatgpt-codex"
 base_url = "https://chatgpt.com/backend-api/codex"
 model = "gpt-5.4-mini"
 codex_auth_path = "/tmp/codex-auth.json"
+stateful_responses = true
+prompt_cache_key = "auto"
+prompt_cache_retention = "24h"
 `,
       "utf8"
     );
@@ -192,6 +205,9 @@ codex_auth_path = "/tmp/codex-auth.json"
     const profile = resolveProfile(loadConfig({ homeDir: tempDir(), cwd }), "codex-chatgpt");
     expect(profile.adapter).toBe("chatgpt-codex");
     expect(profile.codexAuthPath).toBe("/tmp/codex-auth.json");
+    expect(profile.statefulResponses).toBe(true);
+    expect(profile.promptCacheKey).toBe("auto");
+    expect(profile.promptCacheRetention).toBe("24h");
   });
 
   it("loads per-project default benchmark profile", () => {

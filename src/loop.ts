@@ -1,12 +1,25 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ProfileConfig, RuntimeConfig } from "./config.js";
 import { addUsageCost, formatUsageCost, summarizeUsage, type TokenUsageCost } from "./cost.js";
 import { reviewDangerousCommand } from "./danger-review.js";
-import { completeWithProfile, type ProviderFetch } from "./providers/index.js";
+import { completeWithProfile, ProviderError, type ProviderFetch } from "./providers/index.js";
+import type { SmithModelResponse, SmithProviderState } from "./providers/types.js";
 import { PtyShellRunner } from "./pty.js";
 import { summarizeProviderEvents } from "./session-log.js";
-import { appendChatIn, appendTerminalTurn, compactTranscript, transcriptToMessages } from "./transcript.js";
+import {
+  appendChatIn,
+  appendProviderTerminalTurn,
+  appendProviderUserObservation,
+  appendTerminalTurn,
+  compactProviderMessages,
+  compactTranscript,
+  providerMessagesToMessages,
+  transcriptToProviderMessages,
+  transcriptToMessages,
+  type TranscriptEntry
+} from "./transcript.js";
 import type { TraceLogger } from "./trace.js";
 
 export type RunMode = "single" | "remote" | "interactive";
@@ -38,8 +51,15 @@ export type SmithRunResult = {
 export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunResult> {
   const maxTurns = options.maxTurns ?? options.runtime.maxTurns;
   let transcript = options.initialTranscript ?? initialTranscript(options.cwd, options.prompt);
+  let providerMessages = transcriptToProviderMessages(transcript);
   let systemPrompt = options.systemPrompt;
   let totalUsage: TokenUsageCost | undefined;
+  let statefulResponses = options.profile.statefulResponses;
+  let previousResponseId: string | undefined;
+  let previousToolCallId: string | undefined;
+  let pendingStatefulOutput: string | undefined;
+  const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
+  const providerMessageChain = options.runtime.providerMessageChain;
   const shell = await PtyShellRunner.start({
     cwd: options.cwd,
     shell: options.runtime.shell,
@@ -52,22 +72,65 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
 
   try {
     for (let turn = 1; turn <= maxTurns; turn += 1) {
-      const response = await completeWithProfile(
-        {
-          model: options.profile.model,
-          messages: transcriptToMessages(systemPrompt, transcript, options.runtime.maxContextChars)
-        },
-        options.profile,
-        {
-          env: options.env,
-          fetch: options.fetch,
-          retries: options.runtime.providerRetries,
-          retryDelayMs: options.runtime.providerRetryDelayMs,
-          debugLog: options.runtime.providerDebug
-            ? (section, content) => options.trace?.write(section, content)
-            : undefined
+      const statefulTurn = Boolean(statefulResponses && previousResponseId);
+      const providerState = providerStateForTurn({
+        statefulResponses,
+        previousResponseId,
+        previousToolCallId,
+        pendingStatefulOutput,
+        promptCacheKey,
+        promptCacheRetention: options.profile.promptCacheRetention
+      });
+      const response = await completeModelTurn({
+        options,
+        systemPrompt,
+        transcript,
+        providerMessages,
+        providerMessageChain,
+        statefulTurn,
+        providerState
+      }).catch(async (error: unknown) => {
+        if (!statefulTurn || !isProviderStateFallbackError(error)) throw error;
+        statefulResponses = false;
+        previousResponseId = undefined;
+        previousToolCallId = undefined;
+        pendingStatefulOutput = undefined;
+        options.trace?.write("provider state disabled", `turn: ${turn}\nreason: ${errorMessage(error)}`);
+        return completeModelTurn({
+          options,
+          systemPrompt,
+          transcript,
+          providerMessages,
+          providerMessageChain,
+          statefulTurn: false,
+          providerState: providerStateForTurn({
+            statefulResponses: false,
+            promptCacheKey,
+            promptCacheRetention: options.profile.promptCacheRetention
+          })
+        });
+      });
+      if (statefulResponses) {
+        const nextState = response.providerState;
+        if (nextState?.previousResponseId) {
+          previousResponseId = nextState.previousResponseId;
+          previousToolCallId = nextState.previousToolCallId;
+          options.trace?.write(
+            "provider state",
+            [
+              `turn: ${turn}`,
+              `previous_response_id: ${previousResponseId}`,
+              previousToolCallId ? `previous_tool_call_id: ${previousToolCallId}` : "previous_tool_call_id: (none)"
+            ].join("\n")
+          );
+        } else {
+          statefulResponses = false;
+          previousResponseId = undefined;
+          previousToolCallId = undefined;
+          pendingStatefulOutput = undefined;
+          options.trace?.write("provider state disabled", `turn: ${turn}\nreason: provider response did not include id`);
         }
-      );
+      }
       const responseUsage = summarizeUsage(response.usage, options.profile);
       totalUsage = addUsageCost(totalUsage, responseUsage);
       if (responseUsage) options.trace?.write("model usage", formatUsageCost(responseUsage));
@@ -89,6 +152,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       if (!review.allowed) {
         const blockedOutput = "Command too dangerous";
         transcript = appendTerminalTurn(transcript, response.text, blockedOutput);
+        providerMessages = appendProviderTerminalTurn(providerMessages, response.text, blockedOutput);
+        pendingStatefulOutput = blockedOutput;
         options.trace?.write("terminal output", blockedOutput);
         options.onTerminalOutput?.(blockedOutput);
         continue;
@@ -97,6 +162,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       const result = await shell.run(response.text, options.runtime.timeoutMs);
       const terminalOutput = formatTerminalOutput(result.output, result.exitCode);
       transcript = appendTerminalTurn(transcript, result.command, terminalOutput);
+      providerMessages = appendProviderTerminalTurn(providerMessages, result.command, terminalOutput);
+      pendingStatefulOutput = terminalOutput;
       options.trace?.write("terminal output", terminalOutput);
       if (terminalOutput) options.onTerminalOutput?.(terminalOutput);
       if (result.chatOut !== undefined) {
@@ -107,6 +174,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       if (result.timedOut) {
         const timeoutOutput = formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput);
         transcript = appendTerminalTurn(transcript, "# timeout", timeoutOutput);
+        providerMessages = appendProviderUserObservation(providerMessages, timeoutOutput);
+        pendingStatefulOutput = [pendingStatefulOutput, timeoutOutput].filter(Boolean).join("\n");
         options.trace?.write("timeout", timeoutOutput);
         options.onTerminalOutput?.(timeoutOutput);
       }
@@ -119,6 +188,10 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       if (compactedTranscript !== transcript) {
         const beforeChars = transcript.length;
         transcript = compactedTranscript;
+        providerMessages = compactProviderMessages(providerMessages, {
+          keepTurns: options.runtime.transcriptTurns,
+          maxSummaryChars: options.runtime.transcriptCompactionChars
+        });
         options.trace?.write(
           "transcript compacted",
           [
@@ -141,6 +214,86 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   }
 
   throw new Error(`model did not call chat_out within ${maxTurns} turns`);
+}
+
+async function completeModelTurn(context: {
+  options: SmithRunOptions;
+  systemPrompt: string;
+  transcript: string;
+  providerMessages: TranscriptEntry[];
+  providerMessageChain: boolean;
+  statefulTurn: boolean;
+  providerState?: SmithProviderState;
+}): Promise<SmithModelResponse> {
+  const messages =
+    context.statefulTurn && context.providerState?.previousResponseId
+      ? providerMessagesToMessages(
+          context.systemPrompt,
+          [{ role: "user", content: context.providerState.toolOutput || "(no terminal output)" }],
+          context.options.runtime.maxContextChars
+        )
+      : context.providerMessageChain
+        ? providerMessagesToMessages(
+            context.systemPrompt,
+            context.providerMessages,
+            context.options.runtime.maxContextChars
+          )
+        : transcriptToMessages(context.systemPrompt, context.transcript, context.options.runtime.maxContextChars);
+  return completeWithProfile(
+    {
+      model: context.options.profile.model,
+      messages,
+      providerState: context.providerState
+    },
+    context.options.profile,
+    {
+      env: context.options.env,
+      fetch: context.options.fetch,
+      retries: context.options.runtime.providerRetries,
+      retryDelayMs: context.options.runtime.providerRetryDelayMs,
+      debugLog: context.options.runtime.providerDebug
+        ? (section, content) => context.options.trace?.write(section, content)
+        : undefined
+    }
+  );
+}
+
+function isProviderStateFallbackError(error: unknown): boolean {
+  return error instanceof ProviderError && (error.status === 400 || error.status === 404);
+}
+
+function providerStateForTurn(options: {
+  statefulResponses: boolean;
+  previousResponseId?: string;
+  previousToolCallId?: string;
+  pendingStatefulOutput?: string;
+  promptCacheKey?: string;
+  promptCacheRetention?: "in_memory" | "24h";
+}): SmithProviderState | undefined {
+  if (!options.statefulResponses && !options.promptCacheKey && !options.promptCacheRetention) return undefined;
+  return {
+    statefulResponses: options.statefulResponses || undefined,
+    previousResponseId: options.previousResponseId,
+    previousToolCallId: options.previousToolCallId,
+    toolOutput: options.pendingStatefulOutput,
+    promptCacheKey: options.promptCacheKey,
+    promptCacheRetention: options.promptCacheRetention
+  };
+}
+
+function resolvePromptCacheKey(profile: ProfileConfig, cwd: string, prompt: string): string | undefined {
+  if (profile.promptCacheKey && profile.promptCacheKey !== "auto") return profile.promptCacheKey;
+  if (profile.promptCacheKey === "auto" || profile.statefulResponses) return promptCacheKeyForRun(profile, cwd, prompt);
+  return undefined;
+}
+
+function promptCacheKeyForRun(profile: ProfileConfig, cwd: string, prompt: string): string {
+  const hash = createHash("sha256").update([profile.adapter, profile.model, cwd, prompt].join("\0")).digest("hex");
+  return `smith-${hash.slice(0, 32)}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function initialTranscript(cwd: string, prompt: string): string {
