@@ -30,6 +30,8 @@ Smith keeps the packaged system prompt and recent terminal transcript. `SMITH.md
 
 Profiles can set `prompt_cache_key = "auto"` or pass `--prompt-cache-key auto` to send a deterministic per-run prompt cache key where the adapter supports it. Profiles can also opt into `stateful_responses = true` or `--stateful-responses`; Smith will attempt Responses-style `previous_response_id` chaining, then fall back to stateless requests if the selected backend rejects that parameter.
 
+`--provider-debug` writes normal provider request/response sections to the trace and also writes an exact JSONL provider debug artifact next to the trace at `<trace>.provider-debug.jsonl`. For `chatgpt-codex`, each request record includes the exact JSON request body string sent to the provider, and each response record includes the status, raw SSE/error payload, and parsed SSE events when available. Authorization-like headers are redacted.
+
 ## Safety Boundary
 
 Smith can run commands as the current user. Safety modes are backstops, not a sandbox:

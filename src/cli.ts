@@ -106,6 +106,7 @@ Options:
   --transcript-compaction-hysteresis-turns <count>
   --danger-review <off|ask|deterministic|llm>
   --read-only
+  --provider-debug
   --provider-message-chain
   --log-dir <dir>
   --agent <smith|codex>

@@ -6,7 +6,14 @@ import { geminiAdapter } from "./gemini.js";
 import { openAiChatAdapter } from "./openai-chat.js";
 import { openAiResponsesAdapter } from "./openai-responses.js";
 import { ProviderError } from "./types.js";
-import type { ProviderAdapter, ProviderDebugLog, ProviderFetch, SmithModelRequest, SmithModelResponse } from "./types.js";
+import type {
+  ProviderAdapter,
+  ProviderDebugJsonLog,
+  ProviderDebugLog,
+  ProviderFetch,
+  SmithModelRequest,
+  SmithModelResponse
+} from "./types.js";
 
 const adapters: Record<ProfileConfig["adapter"], ProviderAdapter> = {
   "openai-chat": openAiChatAdapter,
@@ -29,6 +36,7 @@ export async function completeWithProfile(
     retries?: number;
     retryDelayMs?: number;
     debugLog?: ProviderDebugLog;
+    debugJson?: ProviderDebugJsonLog;
   } = {}
 ): Promise<SmithModelResponse> {
   const normalizedRequest = {
@@ -47,7 +55,8 @@ export async function completeWithProfile(
       return await getAdapter(profile.adapter).complete(normalizedRequest, profile, {
         apiKey: resolveApiKey(profile, options.env),
         fetch: options.fetch,
-        debugLog: options.debugLog
+        debugLog: options.debugLog,
+        debugJson: options.debugJson
       });
     } catch (error) {
       lastError = error;

@@ -33,16 +33,27 @@ export const chatGptCodexAdapter: ProviderAdapter = {
       version: "0.130.0",
       ...profile.headers
     };
+    const url = joinUrl(profile.baseUrl, "responses");
+    const requestBodyJson = JSON.stringify(body);
     options.debugLog?.(
       "provider request",
-      JSON.stringify({ url: joinUrl(profile.baseUrl, "responses"), headers: redactHeaders(headers), body }, null, 2)
+      JSON.stringify({ url, headers: redactHeaders(headers), body }, null, 2)
     );
+    options.debugJson?.({
+      adapter: "chatgpt-codex",
+      direction: "request",
+      method: "POST",
+      url,
+      headers: redactHeaders(headers),
+      body,
+      body_json: requestBodyJson
+    });
     let response: Response;
     try {
-      response = await (options.fetch ?? fetch)(joinUrl(profile.baseUrl, "responses"), {
+      response = await (options.fetch ?? fetch)(url, {
         method: "POST",
         headers,
-        body: JSON.stringify(body)
+        body: requestBodyJson
       });
     } catch (error) {
       throw new ProviderError(`provider request failed: ${errorMessage(error)}`, { transient: true, cause: error });
@@ -57,6 +68,19 @@ export const chatGptCodexAdapter: ProviderAdapter = {
       });
     }
     options.debugLog?.("provider response", raw);
+    const responseHeaders = Object.fromEntries(response.headers.entries());
+    options.debugJson?.({
+      adapter: "chatgpt-codex",
+      direction: "response",
+      method: "POST",
+      url,
+      status: response.status,
+      ok: response.ok,
+      headers: responseHeaders,
+      raw_sse: raw,
+      events: response.ok ? parseResponsesSse(raw).events : undefined,
+      error_json: response.ok ? undefined : parseJson(raw)
+    });
     if (!response.ok) {
       throw new ProviderError(`provider request failed (${response.status}): ${raw.trim() || "empty response body"}`, {
         status: response.status,
@@ -100,6 +124,14 @@ function buildBody(request: SmithModelRequest, profile: ProfileConfig): Record<s
     ...profile.body,
     ...request.extra
   };
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function responseInput(request: SmithModelRequest): Record<string, unknown>[] {

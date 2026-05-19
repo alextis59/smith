@@ -982,3 +982,55 @@ Prompt-cache-key-only run: passed in 115,674 ms and 20 turns. Usage was 59,544 i
 Comparison to prior retained project-suite 091 result from `.smith-bench/smith-gpt-5.4-mini-high-project-compacted-split.json`: prior 091 passed in 88,661 ms with 27,980 input tokens, 8,192 cached input tokens, 29.3% cached share, 9,849 output tokens, 8,621 reasoning output tokens, 37,829 total tokens, and `$0.05977590` estimated cost.
 
 Classification: mixed/rejected as a default. Message chaining and prompt-cache hints raised cached-token share on some runs, but they did not produce a lower-cost or lower-token result on this task. `previous_response_id` is not usable with the current ChatGPT Codex backend. Decision: keep the message-chain provider view and prompt/state knobs as explicit experimental options, not as default behavior. Do not claim Codex-like cache behavior from this experiment.
+
+## 2026-05-19: Provider Debug Artifact And Cache-Key Follow-Up
+
+Follow-up question: the cached-token sequence in `.smith-bench/run-DkL4gG/home/.smith/runs/2026-05-19T13-58-03-359Z.trace` looked suspicious, so Smith now writes a JSONL provider debug artifact when `--provider-debug` is enabled.
+
+Retained Smith change:
+
+- Added `<trace>.provider-debug.jsonl` for exact provider payload auditing.
+- For `chatgpt-codex`, every request record includes the exact request body JSON string sent to the backend. Every response record includes status, raw SSE or error body, and parsed SSE events for successful responses. Authorization-like headers are redacted.
+- `--provider-debug` is now listed in CLI help.
+- `prompt_cache_key = "auto"` now emits a deterministic UUID-shaped key rather than the previous `smith-...` value, because the ChatGPT Codex response objects report UUID-shaped prompt cache keys.
+
+Debug rerun command:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --provider-message-chain \
+  --stateful-responses \
+  --provider-debug \
+  --danger-review off \
+  --max-turns 60 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5 \
+  --json
+```
+
+Debug artifact before UUID-shaped auto key: `.smith-bench/run-HGcEOH/home/.smith/runs/2026-05-19T18-28-35-331Z.trace.provider-debug.jsonl`. Result: passed in 98,973 ms and 13 turns with 42,338 input tokens, 20,992 cached input tokens, 49.6% cached share, 11,776 output tokens, 10,191 reasoning output tokens, 54,114 total tokens, and `$0.07057590` estimated cost. Raw result: `.smith-bench/smith-091-message-chain-stateful-provider-debug.json`.
+
+Evidence from that debug file:
+
+- Call 1 sent `prompt_cache_key: smith-d9ea9899c5f5bae21113d623a27f03ed`, but the successful response reported `prompt_cache_key: cd94aaf2-5fef-4276-9c85-a0681937741d`.
+- Every later successful response reported a different UUID-shaped prompt cache key even though Smith sent the same request key.
+- Call 2 sent `previous_response_id` plus a `function_call_output` item and got status 400 with `Unsupported parameter: previous_response_id`; Smith then retried stateless. Therefore there is no successful provider-state chain in this backend.
+- Successful request bodies were append-like and had high byte-prefix stability with the previous request, commonly above 90% after warmup, but cache hits still alternated between high values and zero.
+
+Debug artifact after UUID-shaped auto key: `.smith-bench/run-x4B1cI/home/.smith/runs/2026-05-19T18-31-58-589Z.trace.provider-debug.jsonl`. Result: passed in 81,399 ms and 12 turns with 53,384 input tokens, 25,600 cached input tokens, 48.0% cached share, 9,754 output tokens, 7,951 reasoning output tokens, 63,138 total tokens, and `$0.06665100` estimated cost. Raw result: `.smith-bench/smith-091-message-chain-stateful-provider-debug-uuid-key.json`.
+
+Evidence after UUID-shaped auto key:
+
+- Smith sent `prompt_cache_key: d9ea9899-c5f5-4ae2-9113-d623a27f03ed` on every request.
+- Successful responses still reported unrelated prompt cache keys, such as `a35a1b16-8175-4860-a1a1-3e264a54a772`, `e08c3779-5ad1-4b0d-8045-9fdd28a13b12`, and others.
+- The request key never matched the response key, and cached-token share did not materially improve. This suggests the ChatGPT Codex backend currently ignores or replaces caller-supplied `prompt_cache_key`.
+
+Interpretation: the suspicious cache sequence is real provider behavior, not a Smith cost parser issue. Smith receives per-response usage with cached-token counts that intermittently drop to zero despite stable append-like request prefixes and a stable requested prompt cache key. `previous_response_id` is rejected, and `prompt_cache_key` does not appear to be honored by this backend. Further Codex-like cache gains likely require a backend/session interface that actually supports stateful continuation, not only request-shaping changes.

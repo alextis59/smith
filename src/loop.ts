@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ProfileConfig, RuntimeConfig } from "./config.js";
 import { addUsageCost, formatUsageCost, summarizeUsage, type TokenUsageCost } from "./cost.js";
 import { reviewDangerousCommand } from "./danger-review.js";
+import { createProviderDebugJsonLogger } from "./provider-debug.js";
 import { completeWithProfile, ProviderError, type ProviderFetch } from "./providers/index.js";
 import type { SmithModelResponse, SmithProviderState } from "./providers/types.js";
 import { PtyShellRunner } from "./pty.js";
@@ -60,6 +61,9 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let pendingStatefulOutput: string | undefined;
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
   const providerMessageChain = options.runtime.providerMessageChain;
+  const providerDebugJson =
+    options.runtime.providerDebug && options.trace ? createProviderDebugJsonLogger(options.trace.path) : undefined;
+  if (providerDebugJson) options.trace?.write("provider debug", `path: ${providerDebugJson.path}`);
   const shell = await PtyShellRunner.start({
     cwd: options.cwd,
     shell: options.runtime.shell,
@@ -88,7 +92,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         providerMessages,
         providerMessageChain,
         statefulTurn,
-        providerState
+        providerState,
+        debugJson: providerDebugJson?.write
       }).catch(async (error: unknown) => {
         if (!statefulTurn || !isProviderStateFallbackError(error)) throw error;
         statefulResponses = false;
@@ -107,7 +112,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             statefulResponses: false,
             promptCacheKey,
             promptCacheRetention: options.profile.promptCacheRetention
-          })
+          }),
+          debugJson: providerDebugJson?.write
         });
       });
       if (statefulResponses) {
@@ -224,6 +230,7 @@ async function completeModelTurn(context: {
   providerMessageChain: boolean;
   statefulTurn: boolean;
   providerState?: SmithProviderState;
+  debugJson?: (record: Record<string, unknown>) => void;
 }): Promise<SmithModelResponse> {
   const messages =
     context.statefulTurn && context.providerState?.previousResponseId
@@ -253,7 +260,8 @@ async function completeModelTurn(context: {
       retryDelayMs: context.options.runtime.providerRetryDelayMs,
       debugLog: context.options.runtime.providerDebug
         ? (section, content) => context.options.trace?.write(section, content)
-        : undefined
+        : undefined,
+      debugJson: context.debugJson
     }
   );
 }
@@ -289,7 +297,11 @@ function resolvePromptCacheKey(profile: ProfileConfig, cwd: string, prompt: stri
 
 function promptCacheKeyForRun(profile: ProfileConfig, cwd: string, prompt: string): string {
   const hash = createHash("sha256").update([profile.adapter, profile.model, cwd, prompt].join("\0")).digest("hex");
-  return `smith-${hash.slice(0, 32)}`;
+  const chars = hash.slice(0, 32).split("");
+  chars[12] = "4";
+  chars[16] = (8 + (Number.parseInt(chars[16], 16) % 4)).toString(16);
+  const uuid = chars.join("");
+  return `${uuid.slice(0, 8)}-${uuid.slice(8, 12)}-${uuid.slice(12, 16)}-${uuid.slice(16, 20)}-${uuid.slice(20)}`;
 }
 
 function errorMessage(error: unknown): string {

@@ -103,8 +103,12 @@ describe("provider adapters", () => {
         "text/event-stream"
     );
     const chatgptProfile = { ...profile("chatgpt-codex", "https://chatgpt.example/backend-api/codex"), codexAuthPath: authPath };
+    const debugRecords: Record<string, unknown>[] = [];
 
-    const response = await completeWithProfile(baseRequest(), chatgptProfile, { fetch: calls.fetch });
+    const response = await completeWithProfile(baseRequest(), chatgptProfile, {
+      fetch: calls.fetch,
+      debugJson: (record) => debugRecords.push(record)
+    });
 
     expect(calls.first.url).toBe("https://chatgpt.example/backend-api/codex/responses");
     expect(calls.first.headers.Authorization).toMatch(/^Bearer /);
@@ -130,6 +134,20 @@ describe("provider adapters", () => {
       outputTokens: 6,
       reasoningOutputTokens: 4,
       totalTokens: 11
+    });
+    expect(debugRecords).toHaveLength(2);
+    expect(debugRecords[0]).toMatchObject({
+      adapter: "chatgpt-codex",
+      direction: "request",
+      body: expect.objectContaining({ model: "test-model" })
+    });
+    expect(debugRecords[0].body_json).toContain('"model":"test-model"');
+    expect(debugRecords[1]).toMatchObject({
+      adapter: "chatgpt-codex",
+      direction: "response",
+      status: 200,
+      raw_sse: expect.stringContaining("response.completed"),
+      events: expect.any(Array)
     });
   });
 

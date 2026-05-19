@@ -41,11 +41,13 @@ export type SmithModelResponse = {
 export type ProviderFetch = typeof fetch;
 
 export type ProviderDebugLog = (section: string, content: string) => void;
+export type ProviderDebugJsonLog = (record: Record<string, unknown>) => void;
 
 export type ProviderCompleteOptions = {
   fetch?: ProviderFetch;
   apiKey?: string;
   debugLog?: ProviderDebugLog;
+  debugJson?: ProviderDebugJsonLog;
 };
 
 export type ProviderAdapter = {
