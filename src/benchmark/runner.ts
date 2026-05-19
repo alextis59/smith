@@ -197,7 +197,7 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
       traceDir: agent === "smith" ? join(home, ".smith", "runs") : codexTraceDir(),
       ...(agent === "smith" ? optionalTracePath(home, agentStdout) : {}),
       sandboxDir: sandbox,
-      usage: usageWithCost(agent === "smith" ? parseSmithUsage(agentStdout) : parseCodexUsage(agentStdout), options.cost),
+      usage: usageWithCost(agent === "smith" ? smithUsageFromOutputOrTrace(home, agentStdout) : parseCodexUsage(agentStdout), options.cost),
       verifier
     };
     taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
@@ -223,7 +223,10 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
       traceDir: agent === "smith" ? join(home, ".smith", "runs") : codexTraceDir(),
       ...(agent === "smith" ? optionalTracePath(home, agentStdout || stdout) : {}),
       sandboxDir: sandbox,
-      usage: usageWithCost(agent === "smith" ? parseSmithUsage(agentStdout || stdout) : parseCodexUsage(agentStdout || stdout), options.cost),
+      usage: usageWithCost(
+        agent === "smith" ? smithUsageFromOutputOrTrace(home, agentStdout || stdout) : parseCodexUsage(agentStdout || stdout),
+        options.cost
+      ),
       ...(verifier ? { verifier } : {})
     };
     taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
@@ -250,6 +253,7 @@ async function runSmithForSweBenchProTask(context: {
   const smithArgs = prepareSmithArgsForDocker(home, [...profileArgs, ...(options.smithArgs ?? [])]);
   const jsonArgs = ["--quiet", "--json"];
   const command = `node /smith/bin/smith.js --cwd /workspace ${[...smithArgs, ...jsonArgs].map(shellQuote).join(" ")} "$TASK"`;
+  const containerName = dockerContainerName(dirname(home), "smith");
   const script = [
     "set -euo pipefail",
     "mkdir -p /home/smith",
@@ -266,31 +270,37 @@ async function runSmithForSweBenchProTask(context: {
     "cat \"$RESULT_DIR/smith.stderr\" >&2",
     "exit \"$smith_status\""
   ].join("\n");
-  return execFileAsync(
-    "docker",
-    [
-      "run",
-      "--rm",
-      "--add-host=host.docker.internal:host-gateway",
-      "--user",
-      `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,
-      "-e",
-      "HOME=/home/smith",
-      "-v",
-      `${repoRoot}:/smith`,
-      "-v",
-      `${workspace}:/workspace`,
-      "-v",
-      `${home}:/home/smith`,
-      "-v",
-      `${taskCopy}:/task:ro`,
-      image,
-      "bash",
-      "-lc",
-      script
-    ],
-    { timeout: options.timeoutMs ?? 120_000, maxBuffer: 1024 * 1024 * 50 }
-  );
+  try {
+    return await execFileAsync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--name",
+        containerName,
+        "--add-host=host.docker.internal:host-gateway",
+        "--user",
+        `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,
+        "-e",
+        "HOME=/home/smith",
+        "-v",
+        `${repoRoot}:/smith`,
+        "-v",
+        `${workspace}:/workspace`,
+        "-v",
+        `${home}:/home/smith`,
+        "-v",
+        `${taskCopy}:/task:ro`,
+        image,
+        "bash",
+        "-lc",
+        script
+      ],
+      { timeout: options.timeoutMs ?? 120_000, maxBuffer: 1024 * 1024 * 50 }
+    );
+  } finally {
+    await cleanupDockerContainer(containerName);
+  }
 }
 
 async function runCodexForSweBenchProTask(context: {
@@ -373,12 +383,15 @@ async function runSweBenchProVerifier(context: {
   mkdirSync(resultsDir, { recursive: true });
   const script = buildSweBenchProVerifierScript(metadata);
   const command = `docker run --rm -v ${workspace}:/app -v ${taskCopy}:/task:ro ${metadata.dockerImage} -lc <verifier>`;
+  const containerName = dockerContainerName(sandbox, "verify");
   try {
     const result = await execFileAsync(
       "docker",
       [
         "run",
         "--rm",
+        "--name",
+        containerName,
         "-v",
         `${workspace}:/app`,
         "-v",
@@ -405,6 +418,8 @@ async function runSweBenchProVerifier(context: {
       stderr: verifier.stderr,
       verifier
     });
+  } finally {
+    await cleanupDockerContainer(containerName);
   }
 }
 
@@ -451,6 +466,7 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
   const smithArgs = prepareSmithArgsForDocker(home, [...profileArgs, ...(options.smithArgs ?? [])]);
   const jsonArgs = ["--quiet", "--json"];
   const command = `node /smith/bin/smith.js --cwd /workspace ${[...smithArgs, ...jsonArgs].map(shellQuote).join(" ")} "$TASK"`;
+  const containerName = dockerContainerName(sandbox, "smith");
   const script = [
     "set -euo pipefail",
     "mkdir -p /home/smith",
@@ -478,11 +494,13 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
   ].join("\n");
 
   try {
-    const result = await execFileAsync(
-      "docker",
+    const result = await runDockerBenchmarkContainer(
+      containerName,
       [
         "run",
         "--rm",
+        "--name",
+        containerName,
         "--add-host=host.docker.internal:host-gateway",
         "--user",
         `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,
@@ -515,7 +533,7 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
       traceDir: join(home, ".smith", "runs"),
       ...(tracePath ? { tracePath } : {}),
       sandboxDir: sandbox,
-      usage: usageWithCost(parseSmithUsage(smithStdout), options.cost),
+      usage: usageWithCost(smithUsageFromOutputOrTrace(home, smithStdout), options.cost),
       verifier: readVerifierResult(home)
     };
     taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
@@ -542,7 +560,7 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
       traceDir: join(home, ".smith", "runs"),
       ...(tracePath ? { tracePath } : {}),
       sandboxDir: sandbox,
-      usage: usageWithCost(parseSmithUsage(smithStdout), options.cost),
+      usage: usageWithCost(smithUsageFromOutputOrTrace(home, smithStdout), options.cost),
       verifier: readVerifierResult(home)
     };
     taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
@@ -839,6 +857,10 @@ function optionalTracePath(home: string, stdout: string): { tracePath?: string }
   return tracePath ? { tracePath } : {};
 }
 
+function smithUsageFromOutputOrTrace(home: string, stdout: string): BenchmarkUsage | undefined {
+  return parseSmithUsage(stdout) ?? parseSmithTraceUsage(smithTracePathFromStdout(home, stdout));
+}
+
 function sweBenchProCommandForLog(agent: BenchmarkAgent, metadata: SweBenchProTaskMetadata): string {
   return `${agent} swe-bench-pro ${metadata.instanceId} (${metadata.dockerImage})`;
 }
@@ -848,6 +870,33 @@ function cleanupSandbox(sandbox: string): void {
     rmSync(sandbox, { recursive: true, force: true });
   } catch {
     // Docker-created files can be owned by a different uid on some hosts.
+  }
+}
+
+async function runDockerBenchmarkContainer(
+  containerName: string,
+  args: string[],
+  options: { timeout: number; maxBuffer: number }
+): Promise<{ stdout: string; stderr: string }> {
+  try {
+    return await execFileAsync("docker", args, options);
+  } finally {
+    await cleanupDockerContainer(containerName);
+  }
+}
+
+function dockerContainerName(path: string, suffix: string): string {
+  return `smith-bench-${basename(path)}-${suffix}`.replace(/[^A-Za-z0-9_.-]/g, "-");
+}
+
+async function cleanupDockerContainer(containerName: string): Promise<void> {
+  try {
+    await execFileAsync("docker", ["rm", "-f", containerName], {
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024
+    });
+  } catch {
+    // The container is usually already gone because docker run used --rm.
   }
 }
 
@@ -922,6 +971,50 @@ function parseSmithUsage(stdout: string): BenchmarkUsage | undefined {
   const parsed = (parseJsonObject(stdout) ?? parseFirstJsonObject(stdout)) as { usage?: Partial<BenchmarkUsage> } | undefined;
   if (!parsed?.usage) return undefined;
   return normalizeUsage(parsed.usage);
+}
+
+export function parseSmithTraceUsage(tracePath: string | undefined): BenchmarkUsage | undefined {
+  if (!tracePath || !existsSync(tracePath)) return undefined;
+  let current: Partial<BenchmarkUsage> | undefined;
+  let total: BenchmarkUsage | undefined;
+  for (const line of readFileSync(tracePath, "utf8").split(/\r?\n/)) {
+    if (line === "## model usage" || line === "## danger review usage") {
+      current = {};
+      continue;
+    }
+    if (!current) continue;
+    const [key, rawValue] = splitTraceUsageLine(line);
+    if (!key) continue;
+    const value = Number(rawValue);
+    if (!Number.isFinite(value)) continue;
+    if (key === "input_tokens") current.inputTokens = value;
+    else if (key === "cached_input_tokens") current.cachedInputTokens = value;
+    else if (key === "output_tokens") current.outputTokens = value;
+    else if (key === "reasoning_output_tokens") current.reasoningOutputTokens = value;
+    else if (key === "total_tokens") {
+      current.totalTokens = value;
+      total = addBenchmarkUsageValues(total, normalizeUsage(current));
+      current = undefined;
+    }
+  }
+  return total;
+}
+
+function splitTraceUsageLine(line: string): [string, string] | [] {
+  const index = line.indexOf(":");
+  if (index === -1) return [];
+  return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
+}
+
+function addBenchmarkUsageValues(left: BenchmarkUsage | undefined, right: BenchmarkUsage | undefined): BenchmarkUsage | undefined {
+  if (!right) return left;
+  return {
+    inputTokens: (left?.inputTokens ?? 0) + right.inputTokens,
+    cachedInputTokens: (left?.cachedInputTokens ?? 0) + right.cachedInputTokens,
+    outputTokens: (left?.outputTokens ?? 0) + right.outputTokens,
+    reasoningOutputTokens: (left?.reasoningOutputTokens ?? 0) + right.reasoningOutputTokens,
+    totalTokens: (left?.totalTokens ?? 0) + right.totalTokens
+  };
 }
 
 function parseCodexUsage(stdout: string): BenchmarkUsage | undefined {

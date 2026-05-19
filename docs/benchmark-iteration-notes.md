@@ -864,3 +864,32 @@ Classification:
 - benchmark runner timeout cleanup issue
 
 Decision: retain the compaction trace/threshold/hysteresis implementation because the project stress result is positive and the SWE-bench Pro partial trace confirms prompt refresh noise is removed. Do not claim a SWE-bench Pro task-success improvement from this run. Add a follow-up item to investigate benchmark-runner timeout cleanup separately; it is outside the retained compaction change.
+
+## 2026-05-19: Failed-Run Usage Accounting And SWE 008 Cache Analysis
+
+Follow-up from the incomplete SWE-bench Pro 008 run above.
+
+Smith change:
+
+- Benchmark result usage now falls back to summing `model usage` and `danger review usage` trace sections when Smith stdout has no final JSON usage. This keeps no-`chat_out`, timeout, and manually interrupted runs from silently reporting `usage: null`.
+- Docker benchmark containers now get deterministic names derived from the sandbox and are cleaned up with `docker rm -f` after completion or timeout. This is intended to prevent the parent `docker run` client timing out while the actual benchmark container keeps running.
+
+Evidence for accounting issue: the retained full Smith SWE-bench Pro JSON at `.smith-bench/smith-gpt-5.4-mini-high-swe-pro.json` reports 3,418,985 input tokens, 602,880 cached input tokens, 171,385 output tokens, 3,590,370 total tokens, and `$2.92852725` estimated cost. Several failed tasks in that file have `usage: null`, including SWE 008. Therefore that full-suite cost is a lower bound, not a full accounting of all model calls made by failed no-`chat_out` runs. The partial SWE 008 trace alone accounted for 3,171,701 input tokens, 485,120 cached input tokens, 129,244 output tokens, 3,300,945 total tokens, and `$2.63291775` estimated cost.
+
+SWE 008 Smith cache analysis from `.smith-bench/run-pnk77K/home/.smith/runs/2026-05-18T18-52-21-487Z.trace`:
+
+- 99 model turns.
+- 3,171,701 input tokens.
+- 485,120 cached input tokens.
+- 15.3% cached share.
+- 19 turns with nonzero cached input tokens; 80 turns with zero cached input tokens.
+- Pre-compaction, turns 1-30: 903,889 input tokens, 170,240 cached input tokens, 18.8% cached share.
+- Post-compaction, turns 31-99: 2,267,812 input tokens, 314,880 cached input tokens, 13.9% cached share.
+- Compaction turns: 31, 37, 44, 53, 59, 65, 67, 77, 84, 91, and 97.
+- Cache was fully absent on turns 21-44 except later recovery at turn 46; it was also absent on turns 91-99.
+
+Comparable Codex evidence: `/tmp/smith/2026-05-17T18-27-37-035Z-codex-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json` passed SWE 008 with 4,551,803 input tokens and 4,480,640 cached input tokens, a 98.4% cached share. That run spent more total input tokens than Smith's partial run, but most were cached and the task passed.
+
+Interpretation: Smith's low cache share is not only a compaction-summary problem. Even before compaction, cache usage was intermittent. Smith sends a stateless provider request with a full mutable transcript as one user message each turn. Long terminal output, repeated appended turns, task-memory reads, and compaction summaries all change the user-message prefix shape. Codex CLI appears to preserve much more provider-visible prefix state across turns, so its cached-token ratio can remain very high even as total input grows. Hysteresis helps by reducing explicit transcript rewrites, but it does not make Smith's interaction shape equivalent to Codex CLI's stateful shape.
+
+Decision: retain the runner accounting and cleanup fixes. Further cache work should focus on larger interaction-shape changes only if complexity is acceptable, such as separating stable task/system/memory context from volatile terminal tail in provider messages, or using provider state/session features when available. Those are larger than the current small compaction change.

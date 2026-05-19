@@ -9,6 +9,7 @@ import {
   BENCHMARK_PYTHON_SHIM_SCRIPT,
   SWE_BENCH_PRO_TASK_INSTRUCTIONS,
   buildSweBenchProVerifierScript,
+  parseSmithTraceUsage,
   resolveBenchmarkTarget,
   runBenchmarkTask,
   runTasksWithConcurrency,
@@ -83,6 +84,41 @@ timeout_ms = 5000
     expect(result.valid).toBe(false);
     expect(result.errors).toContain("missing workspace");
     expect(result.errors).toContain("missing verify.sh");
+  });
+
+  it("parses accumulated Smith usage from traces when run JSON is unavailable", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-usage-trace-"));
+    const trace = join(cwd, "run.trace");
+    writeFileSync(
+      trace,
+      `
+## model usage
+input_tokens: 1000
+cached_input_tokens: 600
+output_tokens: 200
+reasoning_output_tokens: 150
+total_tokens: 1200
+
+## terminal output
+done
+
+## danger review usage
+input_tokens: 300
+cached_input_tokens: 100
+output_tokens: 20
+reasoning_output_tokens: 0
+total_tokens: 320
+`,
+      "utf8"
+    );
+
+    expect(parseSmithTraceUsage(trace)).toEqual({
+      inputTokens: 1300,
+      cachedInputTokens: 700,
+      outputTokens: 220,
+      reasoningOutputTokens: 150,
+      totalTokens: 1520
+    });
   });
 
   it("validates SWE-bench Pro task structure", () => {
