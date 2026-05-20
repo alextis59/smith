@@ -55,10 +55,12 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let providerMessages = transcriptToProviderMessages(transcript);
   let systemPrompt = options.systemPrompt;
   let totalUsage: TokenUsageCost | undefined;
-  let statefulResponses = options.profile.statefulResponses;
+  let statefulResponses = options.profile.adapter === "chatgpt-codex" ? false : options.profile.statefulResponses;
   let previousResponseId: string | undefined;
   let previousToolCallId: string | undefined;
   let pendingStatefulOutput: string | undefined;
+  let responsesInputItems: Record<string, unknown>[] | undefined;
+  let codexTurnState: string | undefined;
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
   const providerMessageChain = options.runtime.providerMessageChain;
   const providerDebugJson =
@@ -83,7 +85,9 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         previousToolCallId,
         pendingStatefulOutput,
         promptCacheKey,
-        promptCacheRetention: options.profile.promptCacheRetention
+        promptCacheRetention: options.profile.promptCacheRetention,
+        responsesInputItems,
+        codexTurnState
       });
       const response = await completeModelTurn({
         options,
@@ -111,13 +115,19 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           providerState: providerStateForTurn({
             statefulResponses: false,
             promptCacheKey,
-            promptCacheRetention: options.profile.promptCacheRetention
+            promptCacheRetention: options.profile.promptCacheRetention,
+            responsesInputItems,
+            codexTurnState
           }),
           debugJson: providerDebugJson?.write
         });
       });
+      const responseProviderState = response.providerState;
+      const responseItemsWithOutput = responseProviderState?.responsesInputItems;
+      const responseToolCallId = responseProviderState?.previousToolCallId;
+      codexTurnState = responseProviderState?.codexTurnState ?? codexTurnState;
       if (statefulResponses) {
-        const nextState = response.providerState;
+        const nextState = responseProviderState;
         if (nextState?.previousResponseId) {
           previousResponseId = nextState.previousResponseId;
           previousToolCallId = nextState.previousToolCallId;
@@ -159,6 +169,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         const blockedOutput = "Command too dangerous";
         transcript = appendTerminalTurn(transcript, response.text, blockedOutput);
         providerMessages = appendProviderTerminalTurn(providerMessages, response.text, blockedOutput);
+        responsesInputItems = appendResponsesTerminalOutput(responseItemsWithOutput, responseToolCallId, blockedOutput);
         pendingStatefulOutput = blockedOutput;
         options.trace?.write("terminal output", blockedOutput);
         options.onTerminalOutput?.(blockedOutput);
@@ -169,6 +180,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       const terminalOutput = formatTerminalOutput(result.output, result.exitCode);
       transcript = appendTerminalTurn(transcript, result.command, terminalOutput);
       providerMessages = appendProviderTerminalTurn(providerMessages, result.command, terminalOutput);
+      responsesInputItems = appendResponsesTerminalOutput(responseItemsWithOutput, responseToolCallId, terminalOutput);
       pendingStatefulOutput = terminalOutput;
       options.trace?.write("terminal output", terminalOutput);
       if (terminalOutput) options.onTerminalOutput?.(terminalOutput);
@@ -181,6 +193,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         const timeoutOutput = formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput);
         transcript = appendTerminalTurn(transcript, "# timeout", timeoutOutput);
         providerMessages = appendProviderUserObservation(providerMessages, timeoutOutput);
+        responsesInputItems = appendResponsesUserMessage(responsesInputItems, timeoutOutput);
         pendingStatefulOutput = [pendingStatefulOutput, timeoutOutput].filter(Boolean).join("\n");
         options.trace?.write("timeout", timeoutOutput);
         options.onTerminalOutput?.(timeoutOutput);
@@ -198,6 +211,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           keepTurns: options.runtime.transcriptTurns,
           maxSummaryChars: options.runtime.transcriptCompactionChars
         });
+        responsesInputItems = undefined;
         options.trace?.write(
           "transcript compacted",
           [
@@ -277,16 +291,67 @@ function providerStateForTurn(options: {
   pendingStatefulOutput?: string;
   promptCacheKey?: string;
   promptCacheRetention?: "in_memory" | "24h";
+  responsesInputItems?: Record<string, unknown>[];
+  codexTurnState?: string;
 }): SmithProviderState | undefined {
-  if (!options.statefulResponses && !options.promptCacheKey && !options.promptCacheRetention) return undefined;
+  if (
+    !options.statefulResponses &&
+    !options.promptCacheKey &&
+    !options.promptCacheRetention &&
+    !options.responsesInputItems &&
+    !options.codexTurnState
+  ) {
+    return undefined;
+  }
   return {
     statefulResponses: options.statefulResponses || undefined,
     previousResponseId: options.previousResponseId,
     previousToolCallId: options.previousToolCallId,
     toolOutput: options.pendingStatefulOutput,
     promptCacheKey: options.promptCacheKey,
-    promptCacheRetention: options.promptCacheRetention
+    promptCacheRetention: options.promptCacheRetention,
+    responsesInputItems: options.responsesInputItems,
+    codexTurnState: options.codexTurnState
   };
+}
+
+function appendResponsesTerminalOutput(
+  items: Record<string, unknown>[] | undefined,
+  callId: string | undefined,
+  output: string
+): Record<string, unknown>[] | undefined {
+  if (!items) return undefined;
+  if (callId) {
+    return [
+      ...items,
+      {
+        type: "function_call_output",
+        call_id: callId,
+        output
+      }
+    ];
+  }
+  return appendResponsesUserMessage(items, output);
+}
+
+function appendResponsesUserMessage(
+  items: Record<string, unknown>[] | undefined,
+  text: string
+): Record<string, unknown>[] | undefined {
+  if (!items) return undefined;
+  return [
+    ...items,
+    {
+      type: "message",
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text
+        }
+      ]
+    }
+  ];
 }
 
 function resolvePromptCacheKey(profile: ProfileConfig, cwd: string, prompt: string): string | undefined {

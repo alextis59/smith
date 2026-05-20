@@ -113,6 +113,8 @@ timeout_ms = 20
       "STOP",
       "--input-cost-per-million-tokens",
       "1.25",
+      "--cached-input-cost-per-million-tokens",
+      "0.125",
       "--output-cost-per-million-tokens=10",
       "--max-turns",
       "7",
@@ -147,6 +149,7 @@ timeout_ms = 20
       reasoningEffort: "low",
       stop: ["STOP"],
       inputCostPerMillionTokens: 1.25,
+      cachedInputCostPerMillionTokens: 0.125,
       outputCostPerMillionTokens: 10,
       maxTurns: 7,
       transcriptCompactionMinChars: 12000,
@@ -175,6 +178,7 @@ timeout_ms = 20
       join(cwd, ".smith", "config.toml"),
       `[profiles.default]
 input_cost_per_million_tokens = 1.25
+cached_input_cost_per_million_tokens = 0.125
 output_cost_per_million_tokens = 10
 `,
       "utf8"
@@ -182,6 +186,7 @@ output_cost_per_million_tokens = 10
 
     const profile = resolveProfile(loadConfig({ homeDir: tempDir(), cwd }));
     expect(profile.inputCostPerMillionTokens).toBe(1.25);
+    expect(profile.cachedInputCostPerMillionTokens).toBe(0.125);
     expect(profile.outputCostPerMillionTokens).toBe(10);
   });
 

@@ -239,7 +239,7 @@ smith benchmark validate ./benchmarks
 
 The default runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. With `--agent codex`, the runner executes `codex exec` on the copied workspace on the host, then runs the same verifier. Successful sandboxes are removed automatically; pass `--keep-sandbox` to preserve them for debugging.
 
-Benchmark output includes per-task and summary token/cost data when the agent reports usage and pricing is available. Smith uses the active profile's `input_cost_per_million_tokens` and `output_cost_per_million_tokens`; Codex includes built-in pricing for `gpt-5.4-mini`, and can be overridden with `--input-cost-per-million-tokens`, `--cached-input-cost-per-million-tokens`, and `--output-cost-per-million-tokens`.
+Benchmark output includes per-task and summary token/cost data when the agent reports usage and pricing is available. Smith uses the active profile's `input_cost_per_million_tokens`, optional `cached_input_cost_per_million_tokens`, and `output_cost_per_million_tokens`; Codex includes built-in pricing for `gpt-5.4-mini`, and pricing can be overridden with `--input-cost-per-million-tokens`, `--cached-input-cost-per-million-tokens`, and `--output-cost-per-million-tokens`.
 
 See [docs/benchmarks.md](docs/benchmarks.md) for the task taxonomy, authoring examples, maintenance workflow, and validation commands. See also [docs/architecture.md](docs/architecture.md), [docs/provider-configs.md](docs/provider-configs.md), and [docs/troubleshooting.md](docs/troubleshooting.md).
 

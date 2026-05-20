@@ -300,6 +300,7 @@ async function runBenchmarkCommand(args: string[]): Promise<void> {
     profileCost: resolvedProfile
       ? {
           inputCostPerMillionTokens: resolvedProfile.inputCostPerMillionTokens,
+          cachedInputCostPerMillionTokens: resolvedProfile.cachedInputCostPerMillionTokens,
           outputCostPerMillionTokens: resolvedProfile.outputCostPerMillionTokens
         }
       : undefined
@@ -387,8 +388,12 @@ function parseBenchmarkOptions(args: string[]): {
     else if (flag === "--json") json = true;
     else if (flag === "--keep-sandbox") keepSandbox = true;
     else if (flag === "--concurrency") concurrency = parsePositiveInteger(readValue(), "--concurrency");
-    else if (flag === "--cached-input-cost-per-million-tokens") cachedInputCostPerMillionTokens = Number(readValue());
-    else if (flag === "--log-dir") logDir = readValue();
+    else if (flag === "--cached-input-cost-per-million-tokens") {
+      const value = readValue();
+      cachedInputCostPerMillionTokens = Number(value);
+      if (inline !== undefined) smithArgs.push(arg);
+      else smithArgs.push(flag, value);
+    } else if (flag === "--log-dir") logDir = readValue();
     else smithArgs.push(arg);
   }
   return {
@@ -458,6 +463,7 @@ function benchmarkCostRates(options: {
   cliOutputCost?: number;
   profileCost?: {
     inputCostPerMillionTokens?: number;
+    cachedInputCostPerMillionTokens?: number;
     outputCostPerMillionTokens?: number;
   };
 }): BenchmarkCostRates | undefined {
@@ -465,7 +471,10 @@ function benchmarkCostRates(options: {
   const rates = {
     inputCostPerMillionTokens:
       options.cliInputCost ?? options.profileCost?.inputCostPerMillionTokens ?? modelRates?.inputCostPerMillionTokens,
-    cachedInputCostPerMillionTokens: options.cliCachedInputCost ?? modelRates?.cachedInputCostPerMillionTokens,
+    cachedInputCostPerMillionTokens:
+      options.cliCachedInputCost ??
+      options.profileCost?.cachedInputCostPerMillionTokens ??
+      modelRates?.cachedInputCostPerMillionTokens,
     outputCostPerMillionTokens:
       options.cliOutputCost ?? options.profileCost?.outputCostPerMillionTokens ?? modelRates?.outputCostPerMillionTokens
   };

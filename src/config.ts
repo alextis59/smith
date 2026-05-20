@@ -21,6 +21,7 @@ export type ProfileConfig = {
   reasoningEffort?: ReasoningEffort;
   stop?: string[];
   inputCostPerMillionTokens?: number;
+  cachedInputCostPerMillionTokens?: number;
   outputCostPerMillionTokens?: number;
   headers: Record<string, string>;
   body: Record<string, unknown>;
@@ -81,6 +82,7 @@ export type CliConfigOverrides = {
   reasoningEffort?: ReasoningEffort;
   stop?: string[];
   inputCostPerMillionTokens?: number;
+  cachedInputCostPerMillionTokens?: number;
   outputCostPerMillionTokens?: number;
   shell?: string;
   timeoutMs?: number;
@@ -274,6 +276,9 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--input-cost-per-million-tokens":
         overrides.inputCostPerMillionTokens = Number(readValue());
         break;
+      case "--cached-input-cost-per-million-tokens":
+        overrides.cachedInputCostPerMillionTokens = Number(readValue());
+        break;
       case "--output-cost-per-million-tokens":
         overrides.outputCostPerMillionTokens = Number(readValue());
         break;
@@ -352,6 +357,7 @@ max_output_tokens = 4096
 reasoning_effort = "medium"
 # Optional estimated pricing in USD per 1,000,000 tokens.
 # input_cost_per_million_tokens = 1.25
+# cached_input_cost_per_million_tokens = 0.125
 # output_cost_per_million_tokens = 10
 
 [profiles.reviewer]
@@ -444,6 +450,9 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.inputCostPerMillionTokens !== undefined
       ? { inputCostPerMillionTokens: cli.inputCostPerMillionTokens }
       : {}),
+    ...(cli.cachedInputCostPerMillionTokens !== undefined
+      ? { cachedInputCostPerMillionTokens: cli.cachedInputCostPerMillionTokens }
+      : {}),
     ...(cli.outputCostPerMillionTokens !== undefined
       ? { outputCostPerMillionTokens: cli.outputCostPerMillionTokens }
       : {})
@@ -501,6 +510,9 @@ function mergeProfile(previous: ProfileConfig, raw: RawConfig): ProfileConfig {
     ...(Array.isArray(raw.stop) ? { stop: raw.stop.map(String) } : {}),
     ...(typeof raw.input_cost_per_million_tokens === "number"
       ? { inputCostPerMillionTokens: raw.input_cost_per_million_tokens }
+      : {}),
+    ...(typeof raw.cached_input_cost_per_million_tokens === "number"
+      ? { cachedInputCostPerMillionTokens: raw.cached_input_cost_per_million_tokens }
       : {}),
     ...(typeof raw.output_cost_per_million_tokens === "number"
       ? { outputCostPerMillionTokens: raw.output_cost_per_million_tokens }
@@ -614,6 +626,12 @@ export function validateConfig(config: SmithConfig): void {
     validateRange(`${prefix}.temperature`, profile.temperature, 0, 2);
     validateInteger(`${prefix}.max_output_tokens`, profile.maxOutputTokens, 1, Number.MAX_SAFE_INTEGER);
     validateRange(`${prefix}.input_cost_per_million_tokens`, profile.inputCostPerMillionTokens, 0, Number.MAX_SAFE_INTEGER);
+    validateRange(
+      `${prefix}.cached_input_cost_per_million_tokens`,
+      profile.cachedInputCostPerMillionTokens,
+      0,
+      Number.MAX_SAFE_INTEGER
+    );
     validateRange(`${prefix}.output_cost_per_million_tokens`, profile.outputCostPerMillionTokens, 0, Number.MAX_SAFE_INTEGER);
     if (profile.apiKeyEnv !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(profile.apiKeyEnv)) {
       throw new Error(`${prefix}.api_key_env must be an environment variable name`);

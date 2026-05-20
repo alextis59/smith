@@ -95,6 +95,7 @@ describe("provider adapters", () => {
       }),
       "utf8"
     );
+    writeFileSync(join(dir, "installation_id"), "installation-id", "utf8");
     const calls = captureFetch(
         [
           'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"done"}',
@@ -105,21 +106,39 @@ describe("provider adapters", () => {
     const chatgptProfile = { ...profile("chatgpt-codex", "https://chatgpt.example/backend-api/codex"), codexAuthPath: authPath };
     const debugRecords: Record<string, unknown>[] = [];
 
-    const response = await completeWithProfile(baseRequest(), chatgptProfile, {
+    const response = await completeWithProfile(
+      {
+        ...baseRequest(),
+        providerState: {
+          promptCacheKey: "smith-test"
+        }
+      },
+      chatgptProfile,
+      {
       fetch: calls.fetch,
       debugJson: (record) => debugRecords.push(record)
-    });
+      }
+    );
 
     expect(calls.first.url).toBe("https://chatgpt.example/backend-api/codex/responses");
     expect(calls.first.headers.Authorization).toMatch(/^Bearer /);
     expect(calls.first.headers["ChatGPT-Account-ID"]).toBe("account-id");
+    expect(calls.first.headers["x-client-request-id"]).toBe("smith-test");
+    expect(calls.first.headers["session-id"]).toBe("smith-test");
+    expect(calls.first.headers["thread-id"]).toBe("smith-test");
     expect(calls.first.body).toMatchObject({
       model: "test-model",
       stream: true,
       store: false,
       reasoning: { effort: "low" },
+      prompt_cache_key: "smith-test",
+      client_metadata: { "x-codex-installation-id": "installation-id" },
       gateway_extra: true
     });
+    expect(calls.first.body.input).toEqual([
+      { type: "message", role: "user", content: [{ type: "input_text", text: "task" }] },
+      { type: "message", role: "assistant", content: [{ type: "output_text", text: "prior" }] }
+    ]);
     expect(calls.first.body.tools).toEqual([
       expect.objectContaining({
         type: "function",
@@ -151,7 +170,7 @@ describe("provider adapters", () => {
     });
   });
 
-  it("maps chatgpt-codex stateful tool output requests", async () => {
+  it("maps chatgpt-codex native Responses history requests", async () => {
     const dir = mkdtempSync(join(tmpdir(), "smith-codex-auth-"));
     const authPath = join(dir, "auth.json");
     writeFileSync(
@@ -165,14 +184,26 @@ describe("provider adapters", () => {
       }),
       "utf8"
     );
+    writeFileSync(join(dir, "installation_id"), "installation-id", "utf8");
     const calls = captureFetch(
       [
         'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"id":"fc_2","call_id":"call_2","type":"function_call","name":"shell_command","arguments":"{\\"command\\":\\"pwd\\"}"}}',
         'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_2","usage":{"input_tokens":5}}}'
       ].join("\n\n"),
-      "text/event-stream"
+      "text/event-stream",
+      { "x-codex-turn-state": "turn-state-2" }
     );
     const chatgptProfile = { ...profile("chatgpt-codex", "https://chatgpt.example/backend-api/codex"), codexAuthPath: authPath };
+    const previousItems = [
+      { type: "message", role: "user", content: [{ type: "input_text", text: "task" }] },
+      {
+        type: "function_call",
+        name: "shell_command",
+        arguments: "{\"command\":\"echo hi\"}",
+        call_id: "call_1"
+      },
+      { type: "function_call_output", call_id: "call_1", output: "hi" }
+    ];
 
     const response = await completeWithProfile(
       {
@@ -186,22 +217,33 @@ describe("provider adapters", () => {
           previousResponseId: "resp_1",
           previousToolCallId: "call_1",
           toolOutput: "terminal output",
-          promptCacheKey: "smith-test"
+          promptCacheKey: "smith-test",
+          responsesInputItems: previousItems,
+          codexTurnState: "turn-state-1"
         }
       },
       chatgptProfile,
       { fetch: calls.fetch }
     );
 
-    expect(calls.first.body).toMatchObject({
-      store: false,
-      previous_response_id: "resp_1",
-      prompt_cache_key: "smith-test",
-      input: [{ type: "function_call_output", call_id: "call_1", output: "terminal output" }]
-    });
+    expect(calls.first.headers["x-codex-turn-state"]).toBe("turn-state-1");
+    expect(calls.first.body).toMatchObject({ store: false, prompt_cache_key: "smith-test" });
+    expect(calls.first.body).not.toHaveProperty("previous_response_id");
+    expect(calls.first.body.input).toEqual(previousItems);
     expect(response.text).toBe("pwd");
     expect(response.providerState?.previousResponseId).toBe("resp_2");
     expect(response.providerState?.previousToolCallId).toBe("call_2");
+    expect(response.providerState?.codexTurnState).toBe("turn-state-2");
+    expect(response.providerState?.responsesInputItems).toEqual([
+      ...previousItems,
+      {
+        id: "fc_2",
+        call_id: "call_2",
+        type: "function_call",
+        name: "shell_command",
+        arguments: "{\"command\":\"pwd\"}"
+      }
+    ]);
   });
 
   it("retries chatgpt-codex response stream failures", async () => {
@@ -415,7 +457,7 @@ function profile(adapter: ProfileConfig["adapter"], baseUrl = "https://gateway.e
   };
 }
 
-function captureFetch(raw: unknown, contentType = "application/json"): {
+function captureFetch(raw: unknown, contentType = "application/json", responseHeaders: Record<string, string> = {}): {
   fetch: ProviderFetch;
   first: { url: string; headers: Record<string, string>; body: Record<string, unknown> };
 } {
@@ -429,7 +471,7 @@ function captureFetch(raw: unknown, contentType = "application/json"): {
     });
     return new Response(contentType === "application/json" ? JSON.stringify(raw) : String(raw), {
       status: 200,
-      headers: { "Content-Type": contentType }
+      headers: { "Content-Type": contentType, ...responseHeaders }
     });
   };
 

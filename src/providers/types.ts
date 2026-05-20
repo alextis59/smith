@@ -23,6 +23,8 @@ export type SmithProviderState = {
   toolOutput?: string;
   promptCacheKey?: string;
   promptCacheRetention?: "in_memory" | "24h";
+  responsesInputItems?: Record<string, unknown>[];
+  codexTurnState?: string;
 };
 
 export type SmithModelResponse = {

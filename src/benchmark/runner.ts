@@ -580,6 +580,10 @@ function prepareSmithArgsForDocker(home: string, args: string[]): string[] {
   const sandboxAuthPath = join(home, "codex-auth.json");
   cpSync(hostAuthPath, sandboxAuthPath);
   chmodSync(sandboxAuthPath, 0o600);
+  const hostInstallationPath = join(dirname(hostAuthPath), "installation_id");
+  if (existsSync(hostInstallationPath)) {
+    cpSync(hostInstallationPath, join(home, "installation_id"));
+  }
   return [...args, "--codex-auth-path", "/home/smith/codex-auth.json"];
 }
 

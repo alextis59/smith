@@ -20,9 +20,17 @@ export function summarizeUsage(
   const outputTokens = usage.outputTokens ?? 0;
   const reasoningOutputTokens = usage.reasoningOutputTokens ?? 0;
   const totalTokens = usage.totalTokens ?? inputTokens + outputTokens;
-  const inputCost = costForTokens(inputTokens, profile.inputCostPerMillionTokens);
+  const uncachedInputTokens = Math.max(0, inputTokens - cachedInputTokens);
+  const inputCost = costForTokens(uncachedInputTokens, profile.inputCostPerMillionTokens);
+  const cachedInputCost = costForTokens(
+    cachedInputTokens,
+    profile.cachedInputCostPerMillionTokens ?? profile.inputCostPerMillionTokens
+  );
   const outputCost = costForTokens(outputTokens, profile.outputCostPerMillionTokens);
-  const costUsd = inputCost === undefined && outputCost === undefined ? undefined : (inputCost ?? 0) + (outputCost ?? 0);
+  const costUsd =
+    inputCost === undefined && cachedInputCost === undefined && outputCost === undefined
+      ? undefined
+      : (inputCost ?? 0) + (cachedInputCost ?? 0) + (outputCost ?? 0);
   return {
     inputTokens,
     cachedInputTokens,

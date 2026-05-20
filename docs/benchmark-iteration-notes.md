@@ -1057,3 +1057,64 @@ Result for `.smith-bench/run-x4B1cI/home/.smith/runs/2026-05-19T18-31-58-589Z.tr
 Result for `.smith-bench/run-HGcEOH/home/.smith/runs/2026-05-19T18-28-35-331Z.trace.provider-debug.jsonl`: 28 records, 14 provider calls, 42,338 input tokens, 20,992 cached input tokens, 49.6% cached share, 11,776 output tokens, 10,191 reasoning output tokens, and 54,114 total tokens. The analyzer found 13 comparable message calls, 12 append-only prefixes, and calls 3, 5, 11, and 13 had zero cached input tokens despite exact append-only input prefixes. Estimated stable body-prefix tokens on those zero-cache calls were about 1,636, 1,972, 3,766, and 4,436 respectively. Call 2 was again the expected stateful failure, and successful response cache keys still differed from the request key.
 
 Classification: retained diagnostic tooling. The message-chain payloads are append-only after the stateful fallback, so the low/intermittent cache behavior is not explained by Smith reordering or rewriting prior messages in these debug runs. The remaining uncertainty is provider-side cache policy and provider-side tokenization or canonicalization, not Smith's sent message order.
+
+## 2026-05-20: Codex-Compatible ChatGPT Cache Identity
+
+Follow-up question: compare Smith's ChatGPT Codex request shape with Codex CLI and test whether the missing session identity explains the discarded cache keys.
+
+Retained Smith changes:
+
+- `chatgpt-codex` now sends Codex-style cache/session identity when `prompt_cache_key` is set: `x-client-request-id`, `session-id`, and `thread-id` all match the prompt cache key.
+- `chatgpt-codex` includes `client_metadata.x-codex-installation-id` when an `installation_id` file is available next to the Codex auth file.
+- The benchmark runner now copies Codex `installation_id` into retained Smith sandboxes alongside the copied auth file.
+- `chatgpt-codex` no longer sends HTTP `previous_response_id`, because the backend rejected it with `Unsupported parameter: previous_response_id`.
+- Smith preserves native Responses items between ChatGPT Codex calls when available, appending `function_call_output` items after command execution. This keeps the provider input append-only while still resetting the native item chain when Smith compacts the local transcript.
+- Smith's own usage-cost calculation now supports `cached_input_cost_per_million_tokens`, so direct Smith JSON and benchmark wrapper JSON agree on cached-token pricing.
+
+Clean final command with a fresh explicit cache key:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 80 \
+  --timeout-ms 300000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5 \
+  --prompt-cache-key fea26165-3a71-47d8-9a78-3e11f35d26bf \
+  --provider-message-chain \
+  --provider-debug \
+  --json
+```
+
+Final result: passed in 72,866 ms and 10 turns. Usage was 64,207 input tokens, 58,880 cached input tokens, 91.7% cached share, 7,970 output tokens, 6,650 reasoning output tokens, 72,177 total tokens, and `$0.04427625` estimated cost. Trace: `.smith-bench/run-caZbZV/home/.smith/runs/2026-05-20T04-43-57-196Z.trace`. Provider debug: `.smith-bench/run-caZbZV/home/.smith/runs/2026-05-20T04-43-57-196Z.trace.provider-debug.jsonl`. Log: `/tmp/smith/2026-05-20T04-45-09-824Z-smith-091-command-router-refactor.json`. Sandbox: `.smith-bench/run-caZbZV`.
+
+Evidence:
+
+- Request headers included `x-client-request-id`, `session-id`, and `thread-id`, all set to `fea26165-3a71-47d8-9a78-3e11f35d26bf`.
+- Request body included matching `prompt_cache_key` and `client_metadata.x-codex-installation-id`.
+- The analyzer found 10 provider calls, 9 comparable message calls, 9 append-only prefixes, no prompt-cache-key mismatches, no stateful failures, and no zero-cache calls after an append-only prefix.
+- Compaction events: 0. Prompt refresh events: 0. First compaction turn: not applicable. Cache behavior after compaction: not applicable.
+
+Comparison to the 2026-05-19 UUID-shaped-key debug run on the same task (`.smith-bench/run-x4B1cI/home/.smith/runs/2026-05-19T18-31-58-589Z.trace.provider-debug.jsonl`):
+
+- Pass/fail: passed before and after.
+- Cached input tokens: 25,600 before, 58,880 after.
+- Cached-token share: 48.0% before, 91.7% after.
+- Input tokens: 53,384 before, 64,207 after.
+- Output tokens: 9,754 before, 7,970 after.
+- Reasoning output tokens: 7,951 before, 6,650 after.
+- Total tokens: 63,138 before, 72,177 after.
+- Estimated cost at the same rates: `$0.06665100` before, `$0.04427625` after.
+- Prompt-cache-key mismatches: every successful response before, none after.
+- Stateful failures: one before from HTTP `previous_response_id`, none after.
+
+Classification: retained improvement. Total tokens increased versus that debug baseline, but uncached input dropped from 27,784 to 5,327 tokens and estimated cost dropped by about 33.6% with the same pass result. This is the first Smith run in this investigation where ChatGPT Codex accepted the requested cache identity consistently and cache hits no longer collapsed on append-only prefixes.
+
+Decision: keep the Codex-compatible session/cache identity, native Responses item preservation, benchmark `installation_id` copy, and cached-input cost fix. Do not reintroduce HTTP `previous_response_id` for ChatGPT Codex unless a separate websocket-compatible stateful transport is implemented and tested.

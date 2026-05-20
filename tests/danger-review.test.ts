@@ -114,6 +114,7 @@ describe("danger review", () => {
       profile: {
         ...profile("main-model"),
         inputCostPerMillionTokens: 2,
+        cachedInputCostPerMillionTokens: 0.2,
         outputCostPerMillionTokens: 4
       },
       runtime: runtime("off"),
@@ -121,14 +122,14 @@ describe("danger review", () => {
       fetch: fetchImpl
     });
 
-    expect(result.usage).toEqual({
+    expect(result.usage).toMatchObject({
       inputTokens: 2000,
       cachedInputTokens: 1400,
       outputTokens: 1000,
       reasoningOutputTokens: 600,
-      totalTokens: 3000,
-      costUsd: 0.008
+      totalTokens: 3000
     });
+    expect(result.usage?.costUsd).toBeCloseTo(0.00548);
   });
 
   it("reports command timeouts and enforces max turns", async () => {

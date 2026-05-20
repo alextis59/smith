@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { ProfileConfig } from "../config.js";
 import type { ProviderAdapter, ProviderCompleteOptions, SmithMessage, SmithModelRequest, SmithModelResponse } from "./types.js";
 import { isRecord, joinUrl, numberValue, ProviderError, requireText, textValue } from "./types.js";
@@ -23,14 +23,24 @@ const DEFAULT_REFRESH_URL = "https://auth.openai.com/oauth/token";
 export const chatGptCodexAdapter: ProviderAdapter = {
   name: "chatgpt-codex",
   async complete(request, profile, options = {}) {
-    const auth = await loadCodexAuth(profile, options);
+    const authPath = resolveCodexAuthPath(profile);
+    const auth = await loadCodexAuth(authPath, options);
+    const installationId = loadCodexInstallationId(authPath);
     const body = buildBody(request, profile);
+    if (installationId) {
+      body.client_metadata = {
+        ...(isRecord(body.client_metadata) ? body.client_metadata : {}),
+        "x-codex-installation-id": installationId
+      };
+    }
+    const codexIdentityHeaders = codexSessionHeaders(request.providerState);
     const headers = {
       Authorization: `Bearer ${auth.accessToken}`,
       ...(auth.accountId ? { "ChatGPT-Account-ID": auth.accountId } : {}),
       Accept: "text/event-stream",
       "Content-Type": "application/json",
-      version: "0.130.0",
+      version: "0.131.0",
+      ...codexIdentityHeaders,
       ...profile.headers
     };
     const url = joinUrl(profile.baseUrl, "responses");
@@ -92,7 +102,7 @@ export const chatGptCodexAdapter: ProviderAdapter = {
       text: requireText("chatgpt-codex", parsed.text),
       raw: parsed.events,
       usage: parsed.usage,
-      providerState: responseProviderState(request, parsed.responseId, parsed.toolCallId)
+      providerState: responseProviderState(request, inputFromBody(body), parsed, responseHeaders)
     };
   }
 };
@@ -115,7 +125,6 @@ function buildBody(request: SmithModelRequest, profile: ProfileConfig): Record<s
     parallel_tool_calls: false,
     ...(reasoning ? { reasoning } : {}),
     store: false,
-    ...(state?.previousResponseId ? { previous_response_id: state.previousResponseId } : {}),
     ...(state?.promptCacheKey ? { prompt_cache_key: state.promptCacheKey } : {}),
     ...(state?.promptCacheRetention ? { prompt_cache_retention: state.promptCacheRetention } : {}),
     stream: true,
@@ -136,30 +145,29 @@ function parseJson(text: string): unknown {
 
 function responseInput(request: SmithModelRequest): Record<string, unknown>[] {
   const state = request.providerState;
-  if (state?.previousResponseId && state.previousToolCallId && state.toolOutput !== undefined) {
-    return [
-      {
-        type: "function_call_output",
-        call_id: state.previousToolCallId,
-        output: state.toolOutput
-      }
-    ];
-  }
+  if (state?.responsesInputItems) return state.responsesInputItems;
   return request.messages.filter((message) => message.role !== "system").map(toResponseInputMessage);
 }
 
 function responseProviderState(
   request: SmithModelRequest,
-  previousResponseId: string | undefined,
-  previousToolCallId: string | undefined
+  input: Record<string, unknown>[],
+  parsed: ReturnType<typeof parseResponsesSse>,
+  headers: Record<string, string>
 ): SmithModelRequest["providerState"] {
-  if (!request.providerState?.statefulResponses || !previousResponseId) return undefined;
+  if (!request.providerState) return undefined;
   return {
     ...request.providerState,
-    previousResponseId,
-    previousToolCallId,
-    toolOutput: undefined
+    previousResponseId: parsed.responseId,
+    previousToolCallId: parsed.toolCallId,
+    toolOutput: undefined,
+    responsesInputItems: [...input, ...parsed.outputItems],
+    codexTurnState: headerValue(headers, "x-codex-turn-state") ?? request.providerState.codexTurnState
   };
+}
+
+function inputFromBody(body: Record<string, unknown>): Record<string, unknown>[] {
+  return Array.isArray(body.input) ? (body.input.filter(isRecord) as Record<string, unknown>[]) : [];
 }
 
 function errorMessage(error: unknown): string {
@@ -200,6 +208,7 @@ function shellCommandTool(): Record<string, unknown> {
 
 function toResponseInputMessage(message: SmithMessage): Record<string, unknown> {
   return {
+    type: "message",
     role: message.role,
     content: [
       {
@@ -213,11 +222,14 @@ function toResponseInputMessage(message: SmithMessage): Record<string, unknown> 
 export function parseResponsesSse(raw: string): {
   text: string;
   events: unknown[];
+  outputItems: Record<string, unknown>[];
   usage?: SmithModelResponse["usage"];
   responseId?: string;
   toolCallId?: string;
 } {
   const events: unknown[] = [];
+  const outputItems: Record<string, unknown>[] = [];
+  const pendingOutputItems = new Map<string, Record<string, unknown>>();
   const chunks: string[] = [];
   const functionCalls = new Map<string, { name?: string; arguments: string; callId?: string }>();
   let doneText: string | undefined;
@@ -243,14 +255,25 @@ export function parseResponsesSse(raw: string): {
     const itemId = textValue(event.item_id);
     if (event.type === "response.output_item.added" || event.type === "response.output_item.done") {
       captureFunctionCall(functionCalls, event.item);
+      if (isRecord(event.item)) {
+        const key = responseItemKey(event.item, itemId ?? `item_${pendingOutputItems.size}`);
+        if (event.type === "response.output_item.done") {
+          outputItems.push(event.item);
+          pendingOutputItems.delete(key);
+        } else {
+          pendingOutputItems.set(key, { ...event.item });
+        }
+      }
     } else if (event.type === "response.function_call_arguments.delta" && itemId) {
       const call = functionCalls.get(itemId) ?? { arguments: "" };
       call.arguments += textValue(event.delta) ?? "";
       functionCalls.set(itemId, call);
+      appendPendingFunctionCallArguments(pendingOutputItems, itemId, textValue(event.delta) ?? "");
     } else if (event.type === "response.function_call_arguments.done" && itemId) {
       const call = functionCalls.get(itemId) ?? { arguments: "" };
       call.arguments = textValue(event.arguments) ?? call.arguments;
       functionCalls.set(itemId, call);
+      setPendingFunctionCallArguments(pendingOutputItems, itemId, call.arguments);
     } else if (event.type === "response.output_text.delta") {
       const delta = textValue(event.delta);
       if (delta) chunks.push(delta);
@@ -266,12 +289,55 @@ export function parseResponsesSse(raw: string): {
   }
 
   const shellCommand = extractShellCommand(functionCalls);
+  outputItems.push(...pendingOutputItems.values());
+  if (outputItems.length === 0) {
+    const text = doneText ?? chunks.join("");
+    if (text.trim().length > 0) outputItems.push(assistantOutputMessage(text));
+  }
   return {
     text: shellCommand?.command ?? doneText ?? chunks.join(""),
     events,
+    outputItems,
     usage,
     responseId,
     toolCallId: shellCommand?.callId
+  };
+}
+
+function responseItemKey(item: Record<string, unknown>, fallback: string): string {
+  return textValue(item.id) ?? textValue(item.call_id) ?? fallback;
+}
+
+function appendPendingFunctionCallArguments(
+  items: Map<string, Record<string, unknown>>,
+  itemId: string,
+  delta: string
+): void {
+  const item = items.get(itemId);
+  if (!item || item.type !== "function_call") return;
+  item.arguments = `${textValue(item.arguments) ?? ""}${delta}`;
+}
+
+function setPendingFunctionCallArguments(
+  items: Map<string, Record<string, unknown>>,
+  itemId: string,
+  args: string
+): void {
+  const item = items.get(itemId);
+  if (!item || item.type !== "function_call") return;
+  item.arguments = args;
+}
+
+function assistantOutputMessage(text: string): Record<string, unknown> {
+  return {
+    type: "message",
+    role: "assistant",
+    content: [
+      {
+        type: "output_text",
+        text
+      }
+    ]
   };
 }
 
@@ -334,11 +400,21 @@ function usageFromResponse(response: Record<string, unknown>): SmithModelRespons
   };
 }
 
+function codexSessionHeaders(state: SmithModelRequest["providerState"]): Record<string, string> {
+  const threadId = state?.promptCacheKey;
+  if (!threadId) return {};
+  return {
+    "x-client-request-id": threadId,
+    "session-id": threadId,
+    "thread-id": threadId,
+    ...(state.codexTurnState ? { "x-codex-turn-state": state.codexTurnState } : {})
+  };
+}
+
 async function loadCodexAuth(
-  profile: ProfileConfig,
+  authPath: string,
   options: ProviderCompleteOptions
 ): Promise<{ accessToken: string; accountId?: string }> {
-  const authPath = resolveCodexAuthPath(profile);
   const auth = readCodexAuth(authPath);
   if (tokenNeedsRefresh(auth.tokens?.access_token)) {
     await refreshCodexAuth(authPath, auth, options);
@@ -356,6 +432,21 @@ function resolveCodexAuthPath(profile: ProfileConfig): string {
   if (profile.codexAuthPath) return resolve(profile.codexAuthPath);
   const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
   return join(codexHome, "auth.json");
+}
+
+function loadCodexInstallationId(authPath: string): string | undefined {
+  const installationPath = join(dirname(authPath), "installation_id");
+  if (!existsSync(installationPath)) return undefined;
+  const installationId = readFileSync(installationPath, "utf8").trim();
+  return installationId.length > 0 ? installationId : undefined;
+}
+
+function headerValue(headers: Record<string, string>, name: string): string | undefined {
+  const lowered = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lowered) return value;
+  }
+  return undefined;
 }
 
 function readCodexAuth(path: string): CodexAuthJson {
