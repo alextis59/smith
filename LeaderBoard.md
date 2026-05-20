@@ -7,6 +7,7 @@ Pricing uses standard API rates checked on 2026-05-17:
 
 | Date | Dataset | Agent | Model | Reasoning | Passed | Failed | Score | Duration | Cost | Avg cost/task | Total tokens | Raw result |
 | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 2026-05-20 | `benchmarks/` | Smith | `gpt-5.4-mini` | high | 100 | 0 | 100.0% | 6m 14s wall | `$1.629856` | `$0.016299` | 3,457,851 | `.smith-bench/smith-gpt-5.4-mini-high-project-2026-05-20.json` |
 | 2026-05-19 | `benchmarks/` | Smith | `gpt-5.4-mini` | high | 100 | 0 | 100.0% | ~5m 58s wall | `$2.075478` | `$0.020755` | 2,032,162 | `.smith-bench/smith-gpt-5.4-mini-high-project-compacted-split.json` |
 | 2026-05-18 | `benchmarks/` | Smith | `gpt-5.4-mini` | high | 100 | 0 | 100.0% | 5m 49s wall | `$1.971961` | `$0.019720` | 1,927,941 | `.smith-bench/smith-gpt-5.4-mini-high-project.json` |
 | 2026-05-17 | `swe-bench-pro` | Codex CLI (`codex exec`) | `gpt-5.4` | high | 7 | 3 | 70.0% | 11m 49s wall | `$6.523216` | `$0.652322` | 13,913,681 | `.smith-bench/codex-gpt-5.4-high-swe-pro.json` |
@@ -17,8 +18,17 @@ Pricing uses standard API rates checked on 2026-05-17:
 
 ## Smith gpt-5.4-mini high, project benchmark
 
-- Command: `node bin/smith.js benchmark run benchmarks --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 60 --timeout-ms 900000 --concurrency 10 --log-dir /tmp/smith --input-cost-per-million-tokens 0.75 --cached-input-cost-per-million-tokens 0.075 --output-cost-per-million-tokens 4.5 --json`
+- Current command: `node bin/smith.js benchmark run benchmarks --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 60 --timeout-ms 900000 --concurrency 10 --log-dir /tmp/smith --input-cost-per-million-tokens 0.75 --cached-input-cost-per-million-tokens 0.075 --output-cost-per-million-tokens 4.5 --prompt-cache-key auto --provider-message-chain --json`
 - Concurrency: 10
+- 2026-05-20 provider message-chain + prompt-cache-key rerun: 6m 14s wall; aggregate task duration: 50m 13s
+- Input tokens: 3,228,142
+- Cached input tokens: 2,703,616
+- Cached input share: 83.8%
+- Output tokens: 229,709
+- Reasoning output tokens: 160,239
+- Estimated cost: `$1.62985620`
+- Failed tasks: none
+- Raw result: `.smith-bench/smith-gpt-5.4-mini-high-project-2026-05-20.json`
 - 2026-05-19 compaction-only split rerun: ~5m 58s wall; aggregate task duration: 51m 28s
 - Input tokens: 1,747,723
 - Cached input tokens: 763,392
