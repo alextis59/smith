@@ -1118,3 +1118,54 @@ Comparison to the 2026-05-19 UUID-shaped-key debug run on the same task (`.smith
 Classification: retained improvement. Total tokens increased versus that debug baseline, but uncached input dropped from 27,784 to 5,327 tokens and estimated cost dropped by about 33.6% with the same pass result. This is the first Smith run in this investigation where ChatGPT Codex accepted the requested cache identity consistently and cache hits no longer collapsed on append-only prefixes.
 
 Decision: keep the Codex-compatible session/cache identity, native Responses item preservation, benchmark `installation_id` copy, and cached-input cost fix. Do not reintroduce HTTP `previous_response_id` for ChatGPT Codex unless a separate websocket-compatible stateful transport is implemented and tested.
+
+## 2026-05-20: SWE-bench Pro 006 Navidrome Diagnostic After Cache Identity Fix
+
+Follow-up task: move from the project benchmark to a known failing SWE-bench Pro task and understand the current failure mode after the Codex-compatible cache/session changes.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 80 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5 \
+  --prompt-cache-key 036e71b7-176c-4a8e-9be6-f8cd1e2797e0 \
+  --provider-message-chain \
+  --provider-debug \
+  --json
+```
+
+Result: failed in 198,694 ms and 31 turns. Usage was 1,111,206 input tokens, 1,056,256 cached input tokens, 95.1% cached share, 16,624 output tokens, 9,620 reasoning output tokens, 1,127,830 total tokens, and `$0.19523970` estimated cost. Log: `/tmp/smith/2026-05-20T04-59-09-431Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`. Trace: `.smith-bench/run-GX5aWx/home/.smith/runs/2026-05-20T04-56-13-880Z.trace`. Provider debug: `.smith-bench/run-GX5aWx/home/.smith/runs/2026-05-20T04-56-13-880Z.trace.provider-debug.jsonl`. Sandbox: `.smith-bench/run-GX5aWx`.
+
+Comparison to the retained 2026-05-18 mini full-suite failure for the same task (`/tmp/smith/2026-05-18T05-54-55-423Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`):
+
+- Pass/fail: failed before and after.
+- Duration: 507,383 ms before, 198,694 ms after.
+- Turns: 58 before, 31 after.
+- Cached input tokens: 106,496 before, 1,056,256 after.
+- Cached-token share: 6.6% before, 95.1% after.
+- Input tokens: 1,618,965 before, 1,111,206 after.
+- Output tokens: 50,361 before, 16,624 after.
+- Reasoning output tokens: 40,900 before, 9,620 after.
+- Total tokens: 1,669,326 before, 1,127,830 after.
+- Estimated cost at the same rates: `$1.36896345` before, `$0.19523970` after.
+- Prompt refresh events: 37 before, 0 after.
+- Zero-cache model calls: 40 before, 1 after.
+
+Provider debug evidence: `npm run analyze:provider-debug -- .smith-bench/run-GX5aWx/home/.smith/runs/2026-05-20T04-56-13-880Z.trace.provider-debug.jsonl` reported 31 calls, 30 comparable message calls, 30 append-only prefixes, no prompt-cache-key mismatches, no stateful failures, and no zero-cache calls after an append-only prefix.
+
+Failure evidence: the new run reached a much narrower verifier failure than the earlier retained failure. The final verifier reported one remaining build/test failure in the LastFM selected test. The sandbox shows Smith updated most affected source and test call sites, but missed one direct test call to a renamed low-level client method. Smith did attempt `gofmt` and the narrow Go test command, but the editing container reported `gofmt: command not found` and `go: command not found`, so the compile error was only surfaced by the SWE-bench Pro Docker verifier after `chat_out`.
+
+Classification: cache/session improvement retained; benchmark task still failed. The current failure is a task-execution issue around complete call-site validation when the editing container lacks the project toolchain. This single run does not justify a new Smith source or prompt change yet: the model already attempted a local compile/test, and the remaining miss was a specific grep/rename coverage gap rather than a cache, compaction, prompt-refresh, provider-debug, or cost-accounting problem.
+
+Decision: keep the existing cache/session changes and do not add a new retained Smith change from this run alone. Next useful experiment should target whether Smith can use the SWE-bench Pro Docker verifier earlier, or otherwise run a more reliable static compile/reference check for Go tasks when the editing container lacks `go` and `gofmt`.
