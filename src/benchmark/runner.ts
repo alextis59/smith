@@ -57,7 +57,7 @@ export type BenchmarkRunOptions = {
 
 type BenchmarkTaskKind = "local" | "swe-bench-pro";
 
-type SweBenchProTaskMetadata = {
+export type SweBenchProTaskMetadata = {
   format: "swe-bench-pro-v1";
   repo: string;
   instanceId: string;
@@ -69,6 +69,8 @@ type SweBenchProTaskMetadata = {
   failToPass: string[];
   passToPass: string[];
 };
+
+export const DEFAULT_SMITH_BENCHMARK_IMAGE = "node:22-bookworm";
 
 export type BenchmarkCostRates = {
   inputCostPerMillionTokens?: number;
@@ -173,6 +175,7 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
   const agent = options.agent ?? "smith";
   let agentStdout = "";
   let agentStderr = "";
+  let agentImage: string | undefined;
   let verifier: BenchmarkVerifierResult | undefined;
 
   try {
@@ -185,6 +188,7 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
       const smith = await runSmithForSweBenchProTask({ taskCopy, workspace, home, options, repoRoot, metadata });
       agentStdout = smith.stdout;
       agentStderr = smith.stderr;
+      agentImage = smith.image;
     }
     verifier = await runSweBenchProVerifier({ metadata, taskCopy, workspace, sandbox, timeoutMs: options.timeoutMs ?? 120_000 });
     const taskResult: BenchmarkTaskResult = {
@@ -201,7 +205,7 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
       verifier
     };
     taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
-      command: sweBenchProCommandForLog(agent, metadata),
+      command: sweBenchProCommandForLog(agent, metadata, agentImage),
       stdout: taskResult.stdout,
       stderr: taskResult.stderr,
       sandboxRetained: Boolean(options.keepSandbox)
@@ -230,7 +234,7 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
       ...(verifier ? { verifier } : {})
     };
     taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
-      command: sweBenchProCommandForLog(agent, metadata),
+      command: sweBenchProCommandForLog(agent, metadata, agentImage),
       stdout,
       stderr,
       sandboxRetained: true
@@ -246,16 +250,31 @@ async function runSmithForSweBenchProTask(context: {
   options: BenchmarkRunOptions;
   repoRoot: string;
   metadata: SweBenchProTaskMetadata;
-}): Promise<{ stdout: string; stderr: string }> {
+}): Promise<{ stdout: string; stderr: string; image: string }> {
   const { taskCopy, workspace, home, options, repoRoot, metadata } = context;
-  const image = options.image ?? "node:22-bookworm";
+  const image = await selectSweBenchProSmithImage({ metadata, options, repoRoot, timeoutMs: options.timeoutMs ?? 120_000 });
   const profileArgs = options.profile ? ["--profile", options.profile] : [];
   const smithArgs = prepareSmithArgsForDocker(home, [...profileArgs, ...(options.smithArgs ?? [])]);
   const jsonArgs = ["--quiet", "--json"];
   const command = `node /smith/bin/smith.js --cwd /workspace ${[...smithArgs, ...jsonArgs].map(shellQuote).join(" ")} "$TASK"`;
   const containerName = dockerContainerName(dirname(home), "smith");
-  const script = [
+  const script = buildSweBenchProSmithScript(metadata, command);
+  try {
+    const result = await execFileAsync(
+      "docker",
+      buildSmithBenchmarkDockerArgs({ containerName, image, repoRoot, workspace, home, taskCopy, script }),
+      { timeout: options.timeoutMs ?? 120_000, maxBuffer: 1024 * 1024 * 50 }
+    );
+    return { ...result, image };
+  } finally {
+    await cleanupDockerContainer(containerName);
+  }
+}
+
+export function buildSweBenchProSmithScript(metadata: SweBenchProTaskMetadata, command: string): string {
+  return [
     "set -euo pipefail",
+    "export PATH=/usr/local/go/bin:/go/bin:$PATH",
     "mkdir -p /home/smith",
     "RESULT_DIR=/home/smith/benchmark-results",
     "mkdir -p \"$RESULT_DIR\"",
@@ -270,37 +289,88 @@ async function runSmithForSweBenchProTask(context: {
     "cat \"$RESULT_DIR/smith.stderr\" >&2",
     "exit \"$smith_status\""
   ].join("\n");
+}
+
+export function buildSmithBenchmarkDockerArgs(context: {
+  containerName: string;
+  image: string;
+  repoRoot: string;
+  workspace: string;
+  home: string;
+  taskCopy: string;
+  script: string;
+}): string[] {
+  const { containerName, image, repoRoot, workspace, home, taskCopy, script } = context;
+  return [
+    "run",
+    "--rm",
+    "--name",
+    containerName,
+    "--add-host=host.docker.internal:host-gateway",
+    "--entrypoint",
+    "bash",
+    ...dockerUserArgs(),
+    "-e",
+    "HOME=/home/smith",
+    "-v",
+    `${repoRoot}:/smith`,
+    "-v",
+    `${workspace}:/workspace`,
+    "-v",
+    `${home}:/home/smith`,
+    "-v",
+    `${taskCopy}:/task:ro`,
+    image,
+    "-lc",
+    script
+  ];
+}
+
+async function selectSweBenchProSmithImage(context: {
+  metadata: SweBenchProTaskMetadata;
+  options: BenchmarkRunOptions;
+  repoRoot: string;
+  timeoutMs: number;
+}): Promise<string> {
+  const { metadata, options, repoRoot, timeoutMs } = context;
+  if (options.image) return options.image;
+  if (await canRunSmithInImage(metadata.dockerImage, repoRoot, timeoutMs)) return metadata.dockerImage;
+  return DEFAULT_SMITH_BENCHMARK_IMAGE;
+}
+
+async function canRunSmithInImage(image: string, repoRoot: string, timeoutMs: number): Promise<boolean> {
   try {
-    return await execFileAsync(
+    await execFileAsync(
       "docker",
       [
         "run",
         "--rm",
-        "--name",
-        containerName,
-        "--add-host=host.docker.internal:host-gateway",
-        "--user",
-        `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,
-        "-e",
-        "HOME=/home/smith",
-        "-v",
-        `${repoRoot}:/smith`,
-        "-v",
-        `${workspace}:/workspace`,
-        "-v",
-        `${home}:/home/smith`,
-        "-v",
-        `${taskCopy}:/task:ro`,
-        image,
+        "--entrypoint",
         "bash",
+        ...dockerUserArgs(),
+        "-e",
+        "HOME=/tmp",
+        "-v",
+        `${repoRoot}:/smith:ro`,
+        image,
         "-lc",
-        script
+        [
+          "export PATH=/usr/local/go/bin:/go/bin:$PATH",
+          "command -v node >/dev/null 2>&1",
+          "node -e 'const major = Number(process.versions.node.split(\".\")[0]); process.exit(major >= 20 ? 0 : 1)'",
+          "node /smith/bin/smith.js --version >/dev/null 2>&1"
+        ].join(" && ")
       ],
-      { timeout: options.timeoutMs ?? 120_000, maxBuffer: 1024 * 1024 * 50 }
+      { timeout: Math.min(timeoutMs, 30_000), maxBuffer: 1024 * 1024 }
     );
-  } finally {
-    await cleanupDockerContainer(containerName);
+    return true;
+  } catch {
+    return false;
   }
+}
+
+function dockerUserArgs(): string[] {
+  return ["--user", `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`];
 }
 
 async function runCodexForSweBenchProTask(context: {
@@ -865,8 +935,9 @@ function smithUsageFromOutputOrTrace(home: string, stdout: string): BenchmarkUsa
   return parseSmithUsage(stdout) ?? parseSmithTraceUsage(smithTracePathFromStdout(home, stdout));
 }
 
-function sweBenchProCommandForLog(agent: BenchmarkAgent, metadata: SweBenchProTaskMetadata): string {
-  return `${agent} swe-bench-pro ${metadata.instanceId} (${metadata.dockerImage})`;
+function sweBenchProCommandForLog(agent: BenchmarkAgent, metadata: SweBenchProTaskMetadata, agentImage?: string): string {
+  const imageText = agentImage && agentImage !== metadata.dockerImage ? `, agent image ${agentImage}` : "";
+  return `${agent} swe-bench-pro ${metadata.instanceId} (task image ${metadata.dockerImage}${imageText})`;
 }
 
 function cleanupSandbox(sandbox: string): void {

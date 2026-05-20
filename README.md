@@ -237,7 +237,7 @@ smith benchmark run ./benchmarks --timeout-ms 120000 --image node:22-bookworm --
 smith benchmark validate ./benchmarks
 ```
 
-The default runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. With `--agent codex`, the runner executes `codex exec` on the copied workspace on the host, then runs the same verifier. Successful sandboxes are removed automatically; pass `--keep-sandbox` to preserve them for debugging.
+The default local-task runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. For SWE-bench Pro tasks, Smith first tries to run inside the task's own Docker image when that image can execute Smith with Node; otherwise it falls back to `node:22-bookworm`. Passing `--image` overrides the Smith editing image. With `--agent codex`, the runner executes `codex exec` on the copied workspace on the host, then runs the same verifier. Successful sandboxes are removed automatically; pass `--keep-sandbox` to preserve them for debugging.
 
 Benchmark output includes per-task and summary token/cost data when the agent reports usage and pricing is available. Smith uses the active profile's `input_cost_per_million_tokens`, optional `cached_input_cost_per_million_tokens`, and `output_cost_per_million_tokens`; Codex includes built-in pricing for `gpt-5.4-mini`, and pricing can be overridden with `--input-cost-per-million-tokens`, `--cached-input-cost-per-million-tokens`, and `--output-cost-per-million-tokens`.
 

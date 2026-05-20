@@ -1169,3 +1169,61 @@ Failure evidence: the new run reached a much narrower verifier failure than the 
 Classification: cache/session improvement retained; benchmark task still failed. The current failure is a task-execution issue around complete call-site validation when the editing container lacks the project toolchain. This single run does not justify a new Smith source or prompt change yet: the model already attempted a local compile/test, and the remaining miss was a specific grep/rename coverage gap rather than a cache, compaction, prompt-refresh, provider-debug, or cost-accounting problem.
 
 Decision: keep the existing cache/session changes and do not add a new retained Smith change from this run alone. Next useful experiment should target whether Smith can use the SWE-bench Pro Docker verifier earlier, or otherwise run a more reliable static compile/reference check for Go tasks when the editing container lacks `go` and `gofmt`.
+
+## 2026-05-20: SWE-bench Pro Task Image Editing Container
+
+Follow-up question: the SWE-bench Pro verifier image has project toolchains such as Go available, but Smith was editing inside the generic `node:22-bookworm` image. This made local engineering checks weaker than the actual verifier environment.
+
+Retained Smith change:
+
+- SWE-bench Pro Smith runs now probe the task Docker image before starting the edit loop.
+- If the task image can execute `node /smith/bin/smith.js --version` with the mounted Smith checkout, Smith runs inside that task image.
+- If the probe fails, Smith falls back to the previous `node:22-bookworm` editing image.
+- The SWE Smith container now runs through an explicit `bash` entrypoint and prepends `/usr/local/go/bin:/go/bin` to `PATH`, so task-image Go toolchains are visible during local validation.
+- `--image` still overrides the Smith editing image.
+
+Validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+npm test
+```
+
+All tests passed: 13 benchmark tests in the focused run, then 80 tests across 13 files in the full suite. A direct Docker smoke check against the Navidrome task image confirmed the updated Smith container shape can run `node /smith/bin/smith.js --version`, `/usr/local/go/bin/go version`, and `/usr/local/go/bin/gofmt`.
+
+Rerun command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e \
+  --adapter chatgpt-codex \
+  --base-url https://chatgpt.com/backend-api/codex \
+  --model gpt-5.4-mini \
+  --reasoning-effort high \
+  --danger-review off \
+  --max-turns 80 \
+  --timeout-ms 900000 \
+  --keep-sandbox \
+  --log-dir /tmp/smith \
+  --input-cost-per-million-tokens 0.75 \
+  --cached-input-cost-per-million-tokens 0.075 \
+  --output-cost-per-million-tokens 4.5 \
+  --prompt-cache-key 4ec4940c-b4c6-4e85-adb8-a81fc6c0c30b \
+  --provider-message-chain \
+  --provider-debug \
+  --json
+```
+
+Result: failed in 347,469 ms and 33 turns. Usage was 1,170,628 input tokens, 1,040,896 cached input tokens, 88.9% cached share, 13,800 output tokens, 8,561 reasoning output tokens, 1,184,428 total tokens, and `$0.23746620` estimated cost. Log: `/tmp/smith/2026-05-20T05-33-00-996Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`. Trace: `.smith-bench/run-D0FrEd/home/.smith/runs/2026-05-20T05-27-40-851Z.trace`. Provider debug: `.smith-bench/run-D0FrEd/home/.smith/runs/2026-05-20T05-27-40-851Z.trace.provider-debug.jsonl`. Sandbox: `.smith-bench/run-D0FrEd`.
+
+Evidence:
+
+- Docker showed the live Smith container was running on `jefzda/sweap-images:navidrome.navidrome-navidrome__navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e`, not `node:22-bookworm`.
+- Smith successfully ran `gofmt` and `go test ./core/agents/lastfm ./core/agents/listenbrainz ./core/agents/spotify` inside the editing loop.
+- The post-`chat_out` SWE verifier still failed with `client.GetToken undefined`.
+- The failure persisted because Smith edited in-package tests to use unexported methods, and its local `go test` used those edited tests. The SWE-bench Pro verifier then ran the task `setupCommand`, which restored selected tests before running the official checks. That exposed the source-code compatibility issue hidden by the local test edits.
+- Prompt refresh events: 0. Model calls: 33. Zero-cache model calls in the trace: 3.
+
+Classification: retained runner improvement, task still failed. The runner now gives Smith access to task-image project tooling when possible. The remaining failure is a separate SWE-bench Pro validation issue: local tests modified by Smith can mask verifier behavior when the benchmark restores selected tests after `chat_out`.
+
+Decision: keep the task-image editing container fallback. Do not claim a task-success improvement from this Navidrome rerun. A follow-up general improvement should make SWE-bench Pro guidance clearer that implementation source changes, not edits to selected tests, are the validation target unless the task specifically asks for test changes; local test edits should not be treated as proof when the official verifier may restore tests.

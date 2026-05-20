@@ -13,6 +13,10 @@ The runtime has four small responsibilities:
 
 There are no model-visible tools, function calls, MCP servers, or JSON command schemas. `chat_out` and `smith_patch` are ordinary shell commands placed in the shell `PATH`, not provider tool calls.
 
+## Benchmark Containers
+
+Local benchmark tasks run Smith in `node:22-bookworm` against a copied workspace, then run the task verifier after Smith exits. SWE-bench Pro tasks copy `/app` from the task image into a sandboxed workspace. For Smith runs, the runner probes the task image and uses it for the editing loop when it can execute `node /smith/bin/smith.js --version`; this gives Smith access to project toolchains that are already present in the task image. If the task image cannot run Smith, the runner falls back to `node:22-bookworm`. The SWE-bench Pro verifier still runs after `chat_out` in the original task image.
+
 ## Provider Boundary
 
 Provider adapters translate Smith's internal message shape to API wire formats:

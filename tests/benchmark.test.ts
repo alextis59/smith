@@ -7,7 +7,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   BENCHMARK_TASK_INSTRUCTIONS,
   BENCHMARK_PYTHON_SHIM_SCRIPT,
+  DEFAULT_SMITH_BENCHMARK_IMAGE,
   SWE_BENCH_PRO_TASK_INSTRUCTIONS,
+  buildSmithBenchmarkDockerArgs,
+  buildSweBenchProSmithScript,
   buildSweBenchProVerifierScript,
   parseSmithTraceUsage,
   resolveBenchmarkTarget,
@@ -207,6 +210,43 @@ total_tokens: 320
     expect(script).toContain("command -v python3");
     expect(script).toContain("ln -sf \"$(command -v python3)\" \"$SHIM_DIR/python\"");
     expect(script).toContain("export PATH=\"$SHIM_DIR:$PATH\"");
+  });
+
+  it("prepares SWE-bench Pro Smith containers to use task-image tool paths", () => {
+    const script = buildSweBenchProSmithScript(
+      {
+        format: "swe-bench-pro-v1",
+        repo: "owner/repo",
+        instanceId: "instance_owner__repo-abc",
+        baseCommit: "abc123",
+        repoLanguage: "go",
+        dockerImage: "example/image:tag",
+        selectedTestFilesToRun: ["TestFeature"],
+        failToPass: ["TestFeature"],
+        passToPass: []
+      },
+      "node /smith/bin/smith.js --cwd /workspace --quiet --json \"$TASK\""
+    );
+
+    expect(script).toContain("export PATH=/usr/local/go/bin:/go/bin:$PATH");
+    expect(script).toContain("node /smith/bin/smith.js --cwd /workspace --quiet --json \"$TASK\"");
+  });
+
+  it("runs SWE-bench Pro Smith containers through a bash entrypoint", () => {
+    const args = buildSmithBenchmarkDockerArgs({
+      containerName: "smith-bench-test",
+      image: DEFAULT_SMITH_BENCHMARK_IMAGE,
+      repoRoot: "/repo",
+      workspace: "/workspace-copy",
+      home: "/home-copy",
+      taskCopy: "/task-copy",
+      script: "echo ok"
+    });
+
+    expect(args).toContain("--entrypoint");
+    expect(args[args.indexOf("--entrypoint") + 1]).toBe("bash");
+    expect(args.slice(-3)).toEqual([DEFAULT_SMITH_BENCHMARK_IMAGE, "-lc", "echo ok"]);
+    expect(args).not.toContain("bash -lc");
   });
 
   it("marks mounted SWE-bench Pro workspaces as safe for git before verification", () => {
