@@ -1,5 +1,6 @@
 import type { ProviderAdapter, SmithModelRequest } from "./types.js";
 import { authHeaders, isRecord, joinUrl, mergeBody, postJson, requireText, textValue, usageFromOpenAi } from "./types.js";
+import { parseToolArguments, toolCallSummary } from "./tools.js";
 
 export const openAiResponsesAdapter: ProviderAdapter = {
   name: "openai-responses",
@@ -12,8 +13,11 @@ export const openAiResponsesAdapter: ProviderAdapter = {
       options.fetch,
       options.debugLog
     );
+    const toolCalls = extractOpenAiResponsesToolCalls(raw);
+    const text = extractOpenAiResponsesText(raw);
     return {
-      text: requireText("openai-responses", extractOpenAiResponsesText(raw)),
+      text: toolCalls.length > 0 ? toolCallSummary(toolCalls) : requireText("openai-responses", text),
+      ...(toolCalls.length > 0 ? { toolCalls } : {}),
       raw,
       usage: isRecord(raw) ? usageFromOpenAi(raw) : undefined,
       providerState: responseProviderState(request, raw)
@@ -26,18 +30,26 @@ function buildBody(request: SmithModelRequest): Record<string, unknown> {
     .filter((message) => message.role === "system")
     .map((message) => message.content)
     .join("\n\n");
-  const input = request.messages
-    .filter((message) => message.role !== "system")
-    .map((message) => ({
-      role: message.role,
-      content: [{ type: message.role === "assistant" ? "output_text" : "input_text", text: message.content }]
-    }));
+  const input = responseInput(request);
   const state = request.providerState;
 
   return {
     model: request.model,
     ...(instructions ? { instructions } : {}),
     input,
+    ...(request.tools && request.tools.length > 0
+      ? {
+          tools: request.tools.map((tool) => ({
+            type: "function",
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+            strict: false
+          })),
+          tool_choice: "required",
+          parallel_tool_calls: false
+        }
+      : {}),
     ...(state?.statefulResponses ? { store: true } : {}),
     ...(state?.previousResponseId ? { previous_response_id: state.previousResponseId } : {}),
     ...(state?.promptCacheKey ? { prompt_cache_key: state.promptCacheKey } : {}),
@@ -49,14 +61,34 @@ function buildBody(request: SmithModelRequest): Record<string, unknown> {
   };
 }
 
+function responseInput(request: SmithModelRequest): Record<string, unknown>[] {
+  const state = request.providerState;
+  if (state?.previousResponseId && state.previousToolCallId && state.toolOutput !== undefined) {
+    return [
+      {
+        type: "function_call_output",
+        call_id: state.previousToolCallId,
+        output: state.toolOutput
+      }
+    ];
+  }
+  return request.messages
+    .filter((message) => message.role !== "system")
+    .map((message) => ({
+      role: message.role,
+      content: [{ type: message.role === "assistant" ? "output_text" : "input_text", text: message.content }]
+    }));
+}
+
 function responseProviderState(request: SmithModelRequest, raw: unknown): SmithModelRequest["providerState"] {
   if (!request.providerState?.statefulResponses || !isRecord(raw)) return undefined;
   const previousResponseId = textValue(raw.id);
+  const previousToolCallId = extractOpenAiResponsesToolCalls(raw)[0]?.id;
   return previousResponseId
     ? {
         ...request.providerState,
         previousResponseId,
-        previousToolCallId: undefined,
+        previousToolCallId,
         toolOutput: undefined
       }
     : undefined;
@@ -78,4 +110,20 @@ export function extractOpenAiResponsesText(raw: unknown): string {
     }
   }
   return chunks.join("");
+}
+
+export function extractOpenAiResponsesToolCalls(raw: unknown) {
+  if (!isRecord(raw) || !Array.isArray(raw.output)) return [];
+  return raw.output
+    .map((item): { id?: string; name: string; arguments: Record<string, unknown> } | undefined => {
+      if (!isRecord(item) || item.type !== "function_call") return undefined;
+      const name = textValue(item.name);
+      if (!name) return undefined;
+      return {
+        id: textValue(item.call_id) ?? textValue(item.id),
+        name,
+        arguments: parseToolArguments(item.arguments)
+      };
+    })
+    .filter((item): item is { id?: string; name: string; arguments: Record<string, unknown> } => Boolean(item));
 }

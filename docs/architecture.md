@@ -1,21 +1,21 @@
 # Smith Architecture
 
-Smith is a terminal-first coding agent. The model receives text transcript context and returns shell input. Smith writes that input to a PTY-backed shell, captures terminal output, appends it to the transcript, and repeats until the model runs `chat_out`.
+Smith is a terminal-first coding agent. The model receives transcript context plus provider tools, calls `run` to execute terminal commands in a persistent PTY, and calls `finish` to end the run. Smith captures terminal output, appends it to the transcript, and repeats until `finish` is called.
 
 ## Runtime Model
 
 The runtime has four small responsibilities:
 
 - Build the system prompt and transcript slice.
-- Call one configured provider adapter with plain text messages.
-- Execute the returned shell input in a persistent PTY.
+- Call one configured provider adapter with structured messages and Smith tool definitions.
+- Execute `run` tool calls in a persistent PTY, and launch bounded child Smith runs for `sub_agent` tool calls.
 - Record trace, usage, safety, timeout, and transcript state locally.
 
-There are no model-visible tools, function calls, MCP servers, or JSON command schemas. `chat_out` and `smith_patch` are ordinary shell commands placed in the shell `PATH`, not provider tool calls.
+The model-visible tools are `run`, `patch`, `sub_agent`, and `finish`, and provider adapters request tool use instead of plain text where the API supports it. Each tool call requires a short `reason`; Smith records that reason in the transcript before the tool result. `patch` runs the same parser and diagnostics as the terminal-native `smith_patch` helper. By default, `sub_agent` child runs inherit the parent transcript and append the delegated task as the final user input, so the child sees the same working context without seeing the parent function call. Set `runtime.sub_agent_inherit_context = false` or pass `--no-sub-agent-inherit-context` to start child runs with only the delegated task. `smith_patch` remains an ordinary shell command placed in the PTY `PATH` for compatibility. A legacy `chat_out` helper still exists in the shell for compatibility, but the packaged prompt tells models to use `finish`.
 
 ## Benchmark Containers
 
-Local benchmark tasks run Smith in `node:22-bookworm` against a copied workspace, then run the task verifier after Smith exits. SWE-bench Pro tasks copy `/app` from the task image into a sandboxed workspace. For Smith runs, the runner probes the task image and uses it for the editing loop when it can execute `node /smith/bin/smith.js --version`; this gives Smith access to project toolchains that are already present in the task image. If the task image cannot run Smith, the runner falls back to `node:22-bookworm`. The SWE-bench Pro verifier still runs after `chat_out` in the original task image.
+Local benchmark tasks run Smith in `node:22-bookworm` against a copied workspace, then run the task verifier after Smith exits. SWE-bench Pro tasks copy `/app` from the task image into a sandboxed workspace. For Smith runs, the runner probes the task image and uses it for the editing loop when it can execute `node /smith/bin/smith.js --version`; this gives Smith access to project toolchains that are already present in the task image. If the task image cannot run Smith, the runner falls back to `node:22-bookworm`. The SWE-bench Pro verifier still runs after `finish` in the original task image.
 
 ## Provider Boundary
 
@@ -26,15 +26,15 @@ Provider adapters translate Smith's internal message shape to API wire formats:
 - `gemini`
 - `anthropic-messages`
 
-Adapters normalize response text, token usage when available, HTTP errors, retryable failures, and optional debug request logging. Provider-specific options that Smith does not model directly belong in profile `headers` and `body` extras.
+Adapters normalize response text, tool calls, token usage when available, HTTP errors, retryable failures, and optional debug request logging. Provider-specific options that Smith does not model directly belong in profile `headers` and `body` extras.
 
 ## Transcript Control
 
-Smith keeps the packaged system prompt and recent terminal transcript. `SMITH.md` and `SMITH.TASK.md` contents are not inlined into the system prompt; the transcript reports whether local memory files exist, and the packaged prompt tells the agent to read those files explicitly when present. `runtime.max_context_chars` limits the provider context slice. By default, short and merely budget-truncated transcripts keep Smith's simple single-user-message provider shape. Once the local transcript has been compacted, Smith splits the stable initial request, memory-file presence note, optional compaction summary, and volatile recent terminal tail into separate provider user messages so stable context can remain earlier in the request shape while the tail changes. `runtime.provider_message_chain = true` or `--provider-message-chain` enables an experimental provider view where prior model commands are rendered as assistant messages and terminal outputs as user messages while the local transcript format remains unchanged. `runtime.transcript_turns`, `runtime.transcript_compaction_min_chars`, `runtime.transcript_compaction_hysteresis_turns`, and `runtime.transcript_compaction_chars` compact older terminal turns deterministically once the local transcript is large enough. The initial user request and memory-file presence note stay ahead of compaction summaries as a stable prefix. Compaction is local transcript maintenance; it is not a model tool and does not refresh the system prompt.
+Smith keeps the packaged system prompt and recent terminal transcript. `SMITH.md` and `SMITH.TASK.md` contents are not inlined into the system prompt; the transcript reports whether local memory files exist, and the packaged prompt tells the agent to read those files explicitly when present. `runtime.max_context_chars` limits the provider context slice. Provider requests always use Smith's structured message chain: prior model commands are rendered as assistant messages and terminal outputs as user messages while the local transcript format remains unchanged. `runtime.transcript_turns`, `runtime.transcript_compaction_min_chars`, `runtime.transcript_compaction_hysteresis_turns`, and `runtime.transcript_compaction_chars` compact older terminal turns deterministically once the local transcript is large enough. The initial user request and memory-file presence note stay ahead of compaction summaries as a stable prefix. Compaction is local transcript maintenance; it is not a model tool and does not refresh the system prompt.
 
 Profiles can set `prompt_cache_key = "auto"` or pass `--prompt-cache-key auto` to send a deterministic per-run prompt cache key where the adapter supports it. `chatgpt-codex` also sends matching Codex session headers and installation metadata when available, and preserves native Responses items between calls until local transcript compaction resets that provider-native chain. Profiles can also opt into `stateful_responses = true` or `--stateful-responses`; Smith will attempt Responses-style `previous_response_id` chaining for compatible adapters, then fall back to stateless requests if the selected backend rejects that parameter. `chatgpt-codex` does not send HTTP `previous_response_id` because that backend rejects it on the tested endpoint.
 
-`--provider-debug` writes normal provider request/response sections to the trace and also writes an exact JSONL provider debug artifact next to the trace at `<trace>.provider-debug.jsonl`. For `chatgpt-codex`, each request record includes the exact JSON request body string sent to the provider, and each response record includes the status, raw SSE/error payload, and parsed SSE events when available. Authorization-like headers are redacted.
+`--provider-debug` writes provider request/response sections to the trace and also writes an exact JSONL provider debug artifact next to the trace at `<trace>.provider-debug.jsonl`. ChatGPT Codex SSE response traces omit streaming `.delta` event blocks to keep traces readable; the JSONL artifact still retains the raw SSE payload. For `chatgpt-codex`, each request record includes the exact JSON request body string sent to the provider, and each response record includes the status, raw SSE/error payload, and parsed SSE events when available. Authorization-like headers are redacted.
 
 ## Safety Boundary
 

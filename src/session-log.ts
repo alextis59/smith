@@ -63,7 +63,7 @@ export function summarizeTraceText(trace: string): TraceSummary {
       summary.modelOutputs.push(content);
     } else if (name === "terminal output") {
       summary.terminalOutputs.push(content);
-    } else if (name === "chat_out") {
+    } else if (name === "finish" || name === "chat_out") {
       summary.chatOut = content;
     } else if (name === "parsed events") {
       const parsed = parseJson(content);

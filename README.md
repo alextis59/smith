@@ -1,6 +1,6 @@
 # Smith
 
-Smith is a minimal terminal-first CLI coding agent. The model does not receive tools, function calls, MCP servers, skills, or JSON command schemas. It outputs shell input; Smith writes that input to a PTY-backed shell, captures terminal output, appends it to the transcript, and asks the model for the next shell input.
+Smith is a minimal terminal-first CLI coding agent. The model receives provider tools for `run`, `patch`, `sub_agent`, and `finish`. Smith executes workspace-changing tools in a PTY-backed shell, captures terminal output, appends it to the transcript, and asks the model for the next tool call until `finish` ends the run.
 
 ## Install
 
@@ -86,12 +86,13 @@ danger_review_profile = "reviewer"
 max_turns = 20
 provider_retries = 2
 provider_retry_delay_ms = 250
+sub_agent_inherit_context = true
 read_only = false
 # Optional session log directory; also settable with SMITH_LOG_DIR or --log-dir.
 # log_dir = "/tmp/smith"
 ```
 
-Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--codex-auth-path`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--danger-review`, `--read-only`, and `--log-dir`.
+Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--codex-auth-path`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--danger-review`, `--read-only`, `--no-sub-agent-inherit-context`, and `--log-dir`.
 
 When a provider response includes token usage, Smith records per-turn and total usage in the run trace. If `input_cost_per_million_tokens` and/or `output_cost_per_million_tokens` are set on the active profile, traces also include estimated USD cost.
 
@@ -112,7 +113,7 @@ Smith implements API wire-format adapters:
 - `gemini`: POST `{base_url}/v1beta/models/{model}:generateContent`
 - `anthropic-messages`: POST `{base_url}/v1/messages`
 
-Each adapter supports custom base URLs, custom headers, custom body extras, configurable API key environment variables, and best-effort normalized options: `temperature`, `max_output_tokens`, `reasoning_effort`, and `stop`.
+Each adapter supports custom base URLs, custom headers, custom body extras, configurable API key environment variables, Smith tool calls, and best-effort normalized options: `temperature`, `max_output_tokens`, `reasoning_effort`, and `stop`.
 
 For ChatGPT subscription-backed Codex usage:
 
@@ -128,23 +129,16 @@ reasoning_effort = "high"
 
 Run `codex login` first and choose ChatGPT sign-in. Smith reuses that local Codex auth file and refreshes the OAuth token when needed.
 
-## chat_out
+## Provider Tools
 
-To speak to the user, the model runs:
+Smith exposes four model-visible tools:
 
-```sh
-chat_out "message"
-```
+- `run`: execute a terminal command in the current workspace.
+- `patch`: apply a focused Smith patch to workspace files.
+- `sub_agent`: launch an independent Smith child run for bounded repo-local work.
+- `finish`: end the run with the final answer, blocker report, or user question.
 
-For multiline output:
-
-```sh
-chat_out <<'SMITH'
-message
-SMITH
-```
-
-The first `chat_out` ends single-shot and remote runs. Smith keeps `chat_out` visible in the terminal transcript while hiding its internal sentinel markers.
+Each tool call includes a required short `reason`, which Smith records in the transcript before the tool output. By default, `sub_agent` child runs inherit the parent transcript context and receive the delegated task as the final user input; set `runtime.sub_agent_inherit_context = false` or pass `--no-sub-agent-inherit-context` to start them fresh. The first `finish` ends single-shot and remote runs. A legacy `chat_out` shell helper remains available for older traces and compatibility, but the packaged prompt directs models to use `finish`.
 
 ## Remote Mode
 
@@ -154,7 +148,7 @@ Remote mode is script-friendly:
 smith remote --cwd ./packages/api "find why tests fail"
 ```
 
-Only the first child `chat_out` text is printed to stdout. Status lines go to stderr unless `--quiet` is set.
+Only the first child `finish` message is printed to stdout. Status lines go to stderr unless `--quiet` is set.
 
 Remote runs persist resumable state:
 
@@ -164,7 +158,7 @@ smith remote --cwd ./packages/api "inspect auth failures"
 smith remote --resume abc123 "Use the mock-token branch and continue"
 ```
 
-Resume starts a fresh shell, restores the transcript context, appends the new parent answer as `chat_in`, and continues.
+Resume starts a fresh shell, restores the transcript context, appends the new parent answer as user input, and continues.
 
 Remote sessions can be inspected and deleted:
 
@@ -176,7 +170,7 @@ smith remote delete abc123
 
 ## smith_patch
 
-Smith installs a terminal-native patch helper into the agent shell:
+Smith exposes a provider-level `patch` tool that runs the same terminal-native patch helper used by `smith_patch`. The shell helper remains available for compatibility:
 
 ```sh
 smith_patch <<'PATCH'
@@ -213,7 +207,7 @@ Each run writes a plain text trace under:
 ~/.smith/runs/
 ```
 
-Traces include run metadata, model outputs, terminal outputs, and the final `chat_out`.
+Traces include run metadata, model outputs, terminal outputs, and the final `finish` message.
 
 Set `SMITH_LOG_DIR=/tmp/smith`, `runtime.log_dir = "/tmp/smith"`, or pass `--log-dir /tmp/smith` to write a redacted JSON session log. Benchmark logs include task id, command, stdout/stderr, trace path, sandbox path, usage, verifier result, model output, terminal output, and parsed provider event summaries.
 

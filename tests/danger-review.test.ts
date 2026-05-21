@@ -60,11 +60,17 @@ describe("danger review", () => {
 
   it("feeds Command too dangerous back into the transcript", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "smith-danger-"));
-    const mainCommands = ["rm -rf /", "chat_out \"blocked\""];
+    const mainToolCalls = [
+      { name: "run", arguments: { command: "rm -rf /" } },
+      { name: "finish", arguments: { message: "blocked" } }
+    ];
     const fetchImpl: ProviderFetch = async (_input, init) => {
       const body = JSON.parse(String(init?.body)) as { model: string };
-      const text = body.model === "reviewer-model" ? "BLOCK" : mainCommands.shift() ?? "chat_out done";
-      return new Response(JSON.stringify({ choices: [{ message: { content: text } }] }), {
+      const response =
+        body.model === "reviewer-model"
+          ? { choices: [{ message: { content: "BLOCK" } }] }
+          : openAiToolCallResponse(mainToolCalls.shift() ?? { name: "finish", arguments: { message: "done" } });
+      return new Response(JSON.stringify(response), {
         status: 200,
         headers: { "Content-Type": "application/json" }
       });
@@ -89,11 +95,14 @@ describe("danger review", () => {
 
   it("accumulates token usage and estimated cost", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "smith-cost-"));
-    const commands = ["printf done", "chat_out \"done\""];
+    const toolCalls = [
+      { name: "run", arguments: { command: "printf done" } },
+      { name: "finish", arguments: { message: "done" } }
+    ];
     const fetchImpl: ProviderFetch = async () =>
       new Response(
         JSON.stringify({
-          choices: [{ message: { content: commands.shift() ?? "chat_out done" } }],
+          ...openAiToolCallResponse(toolCalls.shift() ?? { name: "finish", arguments: { message: "done" } }),
           usage: {
             prompt_tokens: 1000,
             prompt_tokens_details: { cached_tokens: 700 },
@@ -130,13 +139,48 @@ describe("danger review", () => {
       totalTokens: 3000
     });
     expect(result.usage?.costUsd).toBeCloseTo(0.00548);
+    expect(result.transcript).toContain("smith$ # tool reason\nrun: test tool call");
+  });
+
+  it("does not execute text-only model responses as shell commands", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-text-only-"));
+    let count = 0;
+    const fetchImpl: ProviderFetch = async () => {
+      count += 1;
+      const response =
+        count === 1
+          ? { choices: [{ message: { content: "All done without a tool." } }] }
+          : openAiToolCallResponse({ name: "finish", arguments: { message: "done" } });
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    };
+
+    const result = await runSmithTask({
+      cwd,
+      prompt: "finish incorrectly",
+      profile: profile("main-model"),
+      runtime: runtime("off"),
+      systemPrompt: "system",
+      fetch: fetchImpl
+    });
+
+    expect(result.chatOut).toBe("done");
+    expect(result.turns).toBe(2);
+    expect(result.transcript).toContain("Model response did not call a Smith tool");
+    expect(result.transcript).not.toContain("command not found");
   });
 
   it("reports command timeouts and enforces max turns", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "smith-timeout-"));
-    const commands = ["sleep 2", "printf recovered", "printf still-running"];
+    const toolCalls = [
+      { name: "run", arguments: { command: "sleep 2" } },
+      { name: "run", arguments: { command: "printf recovered" } },
+      { name: "run", arguments: { command: "printf still-running" } }
+    ];
     const fetchImpl: ProviderFetch = async () =>
-      new Response(JSON.stringify({ choices: [{ message: { content: commands.shift() ?? "printf nope" } }] }), {
+      new Response(JSON.stringify(openAiToolCallResponse(toolCalls.shift() ?? { name: "run", arguments: { command: "printf nope" } })), {
         status: 200,
         headers: { "Content-Type": "application/json" }
       });
@@ -152,7 +196,7 @@ describe("danger review", () => {
         fetch: fetchImpl,
         onTerminalOutput: (chunk) => output.push(chunk)
       })
-    ).rejects.toThrow("model did not call chat_out within 2 turns");
+    ).rejects.toThrow("model did not call finish within 2 turns");
     expect(output.join("\n")).toContain("Command timed out after");
     expect(output.join("\n")).toContain("Command running: sleep 2");
   });
@@ -185,8 +229,30 @@ function runtime(dangerReview: RuntimeConfig["dangerReview"]): RuntimeConfig {
     providerRetries: 2,
     providerRetryDelayMs: 1,
     providerDebug: false,
+    subAgentInheritContext: true,
     maxTurns: 20,
     transcriptCompactionChars: 1000,
     remoteSessionTtlDays: 30
+  };
+}
+
+function openAiToolCallResponse(toolCall: { name: string; arguments: Record<string, unknown> }) {
+  return {
+    choices: [
+      {
+        message: {
+          tool_calls: [
+            {
+              id: `call_${toolCall.name}`,
+              type: "function",
+              function: {
+                name: toolCall.name,
+                arguments: JSON.stringify({ reason: "test tool call", ...toolCall.arguments })
+              }
+            }
+          ]
+        }
+      }
+    ]
   };
 }

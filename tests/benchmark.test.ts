@@ -30,13 +30,19 @@ describe("Docker benchmark runner", () => {
   });
 
   it.skipIf(!hasDocker)("runs a minimal passing task in Docker", async () => {
-    const provider = await startFakeProvider(["printf done > result.txt", "chat_out \"done\""], {
-      prompt_tokens: 1000,
-      prompt_tokens_details: { cached_tokens: 800 },
-      completion_tokens: 500,
-      completion_tokens_details: { reasoning_tokens: 300 },
-      total_tokens: 1500
-    });
+    const provider = await startFakeProvider(
+      [
+        { name: "run", arguments: { command: "printf done > result.txt" } },
+        { name: "finish", arguments: { message: "done" } }
+      ],
+      {
+        prompt_tokens: 1000,
+        prompt_tokens_details: { cached_tokens: 800 },
+        completion_tokens: 500,
+        completion_tokens_details: { reasoning_tokens: 300 },
+        total_tokens: 1500
+      }
+    );
     servers.push(provider.server);
 
     const task = mkdtempSync(join(tmpdir(), "smith-benchmark-task-"));
@@ -269,17 +275,42 @@ total_tokens: 320
   });
 });
 
-async function startFakeProvider(commands: string[], usage?: Record<string, unknown>): Promise<{
+type FakeToolCall = {
+  name: "run" | "patch" | "sub_agent" | "finish";
+  arguments: Record<string, unknown>;
+};
+
+async function startFakeProvider(toolCalls: FakeToolCall[], usage?: Record<string, unknown>): Promise<{
   baseUrl: string;
   server: { close: (callback: () => void) => void };
 }> {
   let count = 0;
   const server = createServer((_request, response) => {
     _request.resume();
-    const command = commands[Math.min(count, commands.length - 1)];
+    const toolCall = toolCalls[Math.min(count, toolCalls.length - 1)];
     count += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ choices: [{ message: { content: command } }], ...(usage ? { usage } : {}) }));
+    response.end(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              tool_calls: [
+                {
+                  id: `call_${count}`,
+                  type: "function",
+                  function: {
+                    name: toolCall.name,
+                    arguments: JSON.stringify({ reason: "test tool call", ...toolCall.arguments })
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        ...(usage ? { usage } : {})
+      })
+    );
   });
 
   await new Promise<void>((resolve) => server.listen(0, "0.0.0.0", () => resolve()));

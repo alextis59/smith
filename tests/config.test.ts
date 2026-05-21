@@ -19,6 +19,7 @@ describe("config loading", () => {
     expect(resolveProfile(config).adapter).toBe("openai-chat");
     expect(config.runtime.dangerReview).toBe("llm");
     expect(config.runtime.dangerReviewProfile).toBe("reviewer");
+    expect(config.runtime.subAgentInheritContext).toBe(true);
   });
 
   it("merges user config, project config, and CLI overrides in order", () => {
@@ -58,6 +59,7 @@ provider = { sort = "throughput" }
 
 [runtime]
 timeout_ms = 20
+sub_agent_inherit_context = false
 `,
       "utf8"
     );
@@ -77,6 +79,7 @@ timeout_ms = 20
     expect(profile.headers["X-Test"]).toBe("project");
     expect(profile.body).toEqual({ provider: { sort: "throughput" } });
     expect(config.runtime.timeoutMs).toBe(30);
+    expect(config.runtime.subAgentInheritContext).toBe(false);
     expect(config.files).toHaveLength(2);
   });
 
@@ -126,6 +129,7 @@ timeout_ms = 20
       "--provider-retries",
       "3",
       "--provider-debug",
+      "--no-sub-agent-inherit-context",
       "--provider-message-chain",
       "--log-dir",
       "/tmp/smith",
@@ -158,10 +162,11 @@ timeout_ms = 20
       readOnly: true,
       providerRetries: 3,
       providerDebug: true,
-      providerMessageChain: true,
+      subAgentInheritContext: false,
       logDir: "/tmp/smith",
       dangerReview: "deterministic"
     });
+    expect(parsed.overrides).not.toHaveProperty("providerMessageChain");
     expect(parsed.rest).toEqual(["task"]);
   });
 

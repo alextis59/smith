@@ -99,6 +99,7 @@ max_turns = 20
 provider_retries = 2
 provider_retry_delay_ms = 250
 provider_debug = false
+sub_agent_inherit_context = true
 danger_review = "deterministic"
 read_only = false
 log_dir = "/tmp/smith"
@@ -107,4 +108,4 @@ log_dir = "/tmp/smith"
 default_profile = "local"
 ```
 
-Use `smith config doctor --profile <name>` to confirm which files loaded, which profile is active, and whether the configured API key environment variable is present. `log_dir` can also be set per run with `--log-dir` or `SMITH_LOG_DIR`.
+Use `smith config doctor --profile <name>` to confirm which files loaded, which profile is active, and whether the configured API key environment variable is present. `sub_agent_inherit_context` controls whether delegated `sub_agent` child runs inherit the parent transcript context before receiving their task. `log_dir` can also be set per run with `--log-dir` or `SMITH_LOG_DIR`.

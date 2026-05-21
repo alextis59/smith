@@ -185,7 +185,6 @@ node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan \
   --base-url https://chatgpt.com/backend-api/codex \
   --model gpt-5.4-mini \
   --reasoning-effort high \
-  --provider-message-chain \
   --danger-review off \
   --max-turns 60 \
   --timeout-ms 900000 \
@@ -952,7 +951,7 @@ Smith changes tested:
 - `chatgpt-codex` and `openai-responses` adapters can send prompt-cache hints. `openai-responses` can use `store: true` with `previous_response_id`; `chatgpt-codex` keeps `store: false` because that backend rejects stored responses.
 - If a stateful turn is rejected with 400 or 404, Smith writes `provider state disabled` and retries the turn stateless.
 
-Command used for the single-task stateless message-chain run. This was collected before message-chain rendering was gated; the current equivalent command adds `--provider-message-chain`.
+Command used for the single-task stateless message-chain run. Message-chain rendering is now the default provider view.
 
 ```sh
 node bin/smith.js benchmark run benchmarks/091-command-router-refactor \
@@ -1002,7 +1001,6 @@ node bin/smith.js benchmark run benchmarks/091-command-router-refactor \
   --base-url https://chatgpt.com/backend-api/codex \
   --model gpt-5.4-mini \
   --reasoning-effort high \
-  --provider-message-chain \
   --stateful-responses \
   --provider-debug \
   --danger-review off \
@@ -1088,7 +1086,6 @@ node bin/smith.js benchmark run benchmarks/091-command-router-refactor \
   --cached-input-cost-per-million-tokens 0.075 \
   --output-cost-per-million-tokens 4.5 \
   --prompt-cache-key fea26165-3a71-47d8-9a78-3e11f35d26bf \
-  --provider-message-chain \
   --provider-debug \
   --json
 ```
@@ -1140,7 +1137,6 @@ node bin/smith.js benchmark run swe-bench-pro/006-navidrome-navidrome-7073d18b54
   --cached-input-cost-per-million-tokens 0.075 \
   --output-cost-per-million-tokens 4.5 \
   --prompt-cache-key 036e71b7-176c-4a8e-9be6-f8cd1e2797e0 \
-  --provider-message-chain \
   --provider-debug \
   --json
 ```
@@ -1209,7 +1205,6 @@ node bin/smith.js benchmark run swe-bench-pro/006-navidrome-navidrome-7073d18b54
   --cached-input-cost-per-million-tokens 0.075 \
   --output-cost-per-million-tokens 4.5 \
   --prompt-cache-key 4ec4940c-b4c6-4e85-adb8-a81fc6c0c30b \
-  --provider-message-chain \
   --provider-debug \
   --json
 ```

@@ -5,6 +5,25 @@ export type SmithMessage = {
   content: string;
 };
 
+export type SmithToolName = "run" | "patch" | "sub_agent" | "finish";
+
+export type SmithToolDefinition = {
+  name: SmithToolName;
+  description: string;
+  parameters: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: string[];
+    additionalProperties?: boolean;
+  };
+};
+
+export type SmithToolCall = {
+  id?: string;
+  name: string;
+  arguments: Record<string, unknown>;
+};
+
 export type SmithModelRequest = {
   messages: SmithMessage[];
   model: string;
@@ -14,6 +33,7 @@ export type SmithModelRequest = {
   stop?: string[];
   extra?: Record<string, unknown>;
   providerState?: SmithProviderState;
+  tools?: SmithToolDefinition[];
 };
 
 export type SmithProviderState = {
@@ -29,6 +49,7 @@ export type SmithProviderState = {
 
 export type SmithModelResponse = {
   text: string;
+  toolCalls?: SmithToolCall[];
   raw: unknown;
   usage?: {
     inputTokens?: number;

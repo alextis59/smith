@@ -2,8 +2,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { ProfileConfig } from "../config.js";
-import type { ProviderAdapter, ProviderCompleteOptions, SmithMessage, SmithModelRequest, SmithModelResponse } from "./types.js";
+import type { ProviderAdapter, ProviderCompleteOptions, SmithMessage, SmithModelRequest, SmithModelResponse, SmithToolCall } from "./types.js";
 import { isRecord, joinUrl, numberValue, ProviderError, requireText, textValue } from "./types.js";
+import { parseToolArguments, toolCallSummary } from "./tools.js";
 
 type CodexAuthJson = {
   auth_mode?: string;
@@ -77,7 +78,7 @@ export const chatGptCodexAdapter: ProviderAdapter = {
         cause: error
       });
     }
-    options.debugLog?.("provider response", raw);
+    options.debugLog?.("provider response", traceResponsesSse(raw));
     const responseHeaders = Object.fromEntries(response.headers.entries());
     options.debugJson?.({
       adapter: "chatgpt-codex",
@@ -99,7 +100,8 @@ export const chatGptCodexAdapter: ProviderAdapter = {
     }
     const parsed = parseResponsesSse(raw);
     return {
-      text: requireText("chatgpt-codex", parsed.text),
+      text: parsed.toolCalls.length > 0 ? toolCallSummary(parsed.toolCalls) : requireText("chatgpt-codex", parsed.text),
+      ...(parsed.toolCalls.length > 0 ? { toolCalls: parsed.toolCalls } : {}),
       raw: parsed.events,
       usage: parsed.usage,
       providerState: responseProviderState(request, inputFromBody(body), parsed, responseHeaders)
@@ -120,9 +122,19 @@ function buildBody(request: SmithModelRequest, profile: ProfileConfig): Record<s
     model: request.model,
     ...(instructions ? { instructions } : {}),
     input,
-    tools: [shellCommandTool()],
-    tool_choice: "auto",
-    parallel_tool_calls: false,
+    ...(request.tools && request.tools.length > 0
+      ? {
+          tools: request.tools.map((tool) => ({
+            type: "function",
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+            strict: false
+          })),
+          tool_choice: "required",
+          parallel_tool_calls: false
+        }
+      : {}),
     ...(reasoning ? { reasoning } : {}),
     store: false,
     ...(state?.promptCacheKey ? { prompt_cache_key: state.promptCacheKey } : {}),
@@ -159,7 +171,7 @@ function responseProviderState(
   return {
     ...request.providerState,
     previousResponseId: parsed.responseId,
-    previousToolCallId: parsed.toolCallId,
+    previousToolCallId: parsed.toolCalls[0]?.id,
     toolOutput: undefined,
     responsesInputItems: [...input, ...parsed.outputItems],
     codexTurnState: headerValue(headers, "x-codex-turn-state") ?? request.providerState.codexTurnState
@@ -172,38 +184,6 @@ function inputFromBody(body: Record<string, unknown>): Record<string, unknown>[]
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function shellCommandTool(): Record<string, unknown> {
-  return {
-    type: "function",
-    name: "shell_command",
-    description: [
-      "Runs a shell command and returns its output.",
-      "Use this to inspect files, edit files, and run tests.",
-      "Always set the workdir param. Do not use cd unless absolutely necessary."
-    ].join("\n"),
-    strict: false,
-    parameters: {
-      type: "object",
-      properties: {
-        command: {
-          type: "string",
-          description: "The shell script to execute in the user's default shell"
-        },
-        workdir: {
-          type: "string",
-          description: "The working directory to execute the command in"
-        },
-        timeout_ms: {
-          type: "number",
-          description: "The timeout for the command in milliseconds"
-        }
-      },
-      required: ["command"],
-      additionalProperties: false
-    }
-  };
 }
 
 function toResponseInputMessage(message: SmithMessage): Record<string, unknown> {
@@ -223,9 +203,9 @@ export function parseResponsesSse(raw: string): {
   text: string;
   events: unknown[];
   outputItems: Record<string, unknown>[];
+  toolCalls: SmithToolCall[];
   usage?: SmithModelResponse["usage"];
   responseId?: string;
-  toolCallId?: string;
 } {
   const events: unknown[] = [];
   const outputItems: Record<string, unknown>[] = [];
@@ -288,20 +268,53 @@ export function parseResponsesSse(raw: string): {
     }
   }
 
-  const shellCommand = extractShellCommand(functionCalls);
+  const toolCalls = extractToolCalls(functionCalls);
   outputItems.push(...pendingOutputItems.values());
   if (outputItems.length === 0) {
     const text = doneText ?? chunks.join("");
     if (text.trim().length > 0) outputItems.push(assistantOutputMessage(text));
   }
   return {
-    text: shellCommand?.command ?? doneText ?? chunks.join(""),
+    text: doneText ?? chunks.join(""),
     events,
     outputItems,
+    toolCalls,
     usage,
-    responseId,
-    toolCallId: shellCommand?.callId
+    responseId
   };
+}
+
+function traceResponsesSse(raw: string): string {
+  const kept: string[] = [];
+  let omitted = 0;
+  for (const block of raw.split(/\r?\n\r?\n/)) {
+    if (!block.trim()) continue;
+    if (isResponsesSseDeltaBlock(block)) {
+      omitted += 1;
+      continue;
+    }
+    kept.push(block);
+  }
+  const note = omitted > 0 ? `# omitted ${omitted} streaming delta event${omitted === 1 ? "" : "s"}` : "";
+  return [...kept, note].filter(Boolean).join("\n\n");
+}
+
+function isResponsesSseDeltaBlock(block: string): boolean {
+  const eventType = block
+    .split(/\r?\n/)
+    .find((line) => line.startsWith("event:"))
+    ?.slice("event:".length)
+    .trim();
+  if (eventType?.endsWith(".delta")) return true;
+
+  const data = block
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice("data:".length).trimStart())
+    .join("\n");
+  if (!data || data === "[DONE]") return false;
+  const parsed = parseJson(data);
+  return isRecord(parsed) && textValue(parsed.type)?.endsWith(".delta") === true;
 }
 
 function responseItemKey(item: Record<string, unknown>, fallback: string): string {
@@ -352,25 +365,17 @@ function captureFunctionCall(calls: Map<string, { name?: string; arguments: stri
   });
 }
 
-function extractShellCommand(
-  calls: Map<string, { name?: string; arguments: string; callId?: string }>
-): { command: string; callId?: string } | undefined {
-  for (const call of calls.values()) {
-    if (call.name !== "shell_command") continue;
-    const command = shellCommandFromArguments(call.arguments);
-    if (command && command.trim().length > 0) return { command, callId: call.callId };
-  }
-  return undefined;
-}
-
-function shellCommandFromArguments(args: string): string | undefined {
-  try {
-    const parsed = JSON.parse(args) as unknown;
-    if (isRecord(parsed)) return textValue(parsed.command);
-  } catch {
-    return undefined;
-  }
-  return undefined;
+function extractToolCalls(calls: Map<string, { name?: string; arguments: string; callId?: string }>): SmithToolCall[] {
+  return [...calls.values()]
+    .map((call): SmithToolCall | undefined => {
+      if (!call.name) return undefined;
+      return {
+        id: call.callId,
+        name: call.name,
+        arguments: parseToolArguments(call.arguments)
+      };
+    })
+    .filter((call): call is SmithToolCall => Boolean(call));
 }
 
 function extractCompletedResponseText(response: Record<string, unknown>): string | undefined {

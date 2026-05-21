@@ -7,12 +7,12 @@ Date: 2026-05-15
 | Requirement | Implementation | Tests / validation |
 | --- | --- | --- |
 | Minimal terminal-first CLI coding agent | `src/cli.ts`, `src/loop.ts`, `src/pty.ts` | `tests/integration.test.ts`, `npm run check` |
-| No model tools, MCP, skills, JSON schemas, or provider orchestration | Provider calls use plain text messages in `src/providers/*`; shell input is raw text in `src/loop.ts` | Adapter and integration tests verify text-only responses |
-| Model outputs shell input into PTY | `PtyShellRunner` in `src/pty.ts` | `tests/pty.test.ts`, fake-provider integration |
-| Visible `chat_out`, first `chat_out` ends single-shot and remote | helper generation in `src/pty.ts`, parser in `src/transcript.ts`, loop stop in `src/loop.ts` | `tests/transcript.test.ts`, `tests/pty.test.ts`, `tests/integration.test.ts` |
-| `smith remote` stdout-only first `chat_out` | `src/remote.ts` | `tests/integration.test.ts` |
+| Provider tools for terminal work, patching, delegation, and completion | `run`, `patch`, `sub_agent`, and `finish` definitions in `src/providers/tools.ts`; loop handling in `src/loop.ts` | `tests/providers.test.ts`, `tests/integration.test.ts` |
+| Model `run` calls execute in PTY | `PtyShellRunner` in `src/pty.ts`, loop tool dispatch in `src/loop.ts` | `tests/pty.test.ts`, fake-provider integration |
+| First `finish` ends single-shot and remote | loop stop in `src/loop.ts`; trace summary in `src/session-log.ts` | `tests/integration.test.ts`, `tests/session-log.test.ts` |
+| `smith remote` stdout-only first `finish` message | `src/remote.ts` | `tests/integration.test.ts` |
 | Generated short-id remote resume | `src/remote-sessions.ts`, `src/remote.ts` | `tests/remote-sessions.test.ts`, `tests/integration.test.ts` |
-| `smith_patch` terminal-native helper | `src/patch.ts`, `src/patch-cli.ts`, helper path in `src/pty.ts` | `tests/patch.test.ts` |
+| `smith_patch` terminal-native helper | `src/patch.ts`, `src/patch-cli.ts`, helper path in `src/pty.ts`, provider `patch` dispatch in `src/loop.ts` | `tests/patch.test.ts`, `tests/integration.test.ts` |
 | Provider adapters: `openai-chat`, `openai-responses`, `gemini`, `anthropic-messages` | `src/providers/` | `tests/providers.test.ts` |
 | Custom base URLs, headers, body extras, API key env vars | `src/config.ts`, `src/providers/types.ts` | `tests/config.test.ts`, `tests/providers.test.ts` |
 | TOML config layering | `src/config.ts` | `tests/config.test.ts` |

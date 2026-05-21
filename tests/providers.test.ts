@@ -6,17 +6,19 @@ import type { ProfileConfig } from "../src/config.js";
 import { completeWithProfile, ProviderError } from "../src/providers/index.js";
 import { parseResponsesSse } from "../src/providers/chatgpt-codex.js";
 import {
-  extractAnthropicMessagesText
+  extractAnthropicMessagesText,
+  extractAnthropicToolCalls
 } from "../src/providers/anthropic-messages.js";
-import { extractGeminiText } from "../src/providers/gemini.js";
-import { extractOpenAiChatText } from "../src/providers/openai-chat.js";
-import { extractOpenAiResponsesText } from "../src/providers/openai-responses.js";
+import { extractGeminiText, extractGeminiToolCalls } from "../src/providers/gemini.js";
+import { extractOpenAiChatText, extractOpenAiChatToolCalls } from "../src/providers/openai-chat.js";
+import { extractOpenAiResponsesText, extractOpenAiResponsesToolCalls } from "../src/providers/openai-responses.js";
+import { SMITH_TOOLS } from "../src/providers/tools.js";
 import type { ProviderFetch, SmithModelRequest } from "../src/providers/types.js";
 
 describe("provider adapters", () => {
   it("maps openai-chat requests and extracts responses", async () => {
     const calls = captureFetch({
-      choices: [{ message: { content: "chat_out hello" } }],
+      choices: [{ message: { content: "plain text hello" } }],
       usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 }
     });
 
@@ -36,7 +38,17 @@ describe("provider adapters", () => {
       stop: ["STOP"],
       gateway_extra: true
     });
-    expect(response.text).toBe("chat_out hello");
+	    expect(calls.first.body.tools).toEqual([
+	      expect.objectContaining({ type: "function", function: expect.objectContaining({ name: "run" }) }),
+	      expect.objectContaining({ type: "function", function: expect.objectContaining({ name: "patch" }) }),
+	      expect.objectContaining({ type: "function", function: expect.objectContaining({ name: "sub_agent" }) }),
+	      expect.objectContaining({ type: "function", function: expect.objectContaining({ name: "finish" }) })
+	    ]);
+    expect(calls.first.body.tool_choice).toBe("required");
+    expect((calls.first.body.tools as Array<{ function: { parameters: { required?: string[] } } }>)[0].function.parameters.required).toContain(
+      "reason"
+    );
+    expect(response.text).toBe("plain text hello");
     expect(response.usage).toEqual({ inputTokens: 1, outputTokens: 2, totalTokens: 3 });
   });
 
@@ -52,6 +64,14 @@ describe("provider adapters", () => {
     ]);
     expect(calls.first.body.max_output_tokens).toBe(64);
     expect(calls.first.body.reasoning).toEqual({ effort: "low" });
+	    expect(calls.first.body.tools).toEqual([
+	      expect.objectContaining({ type: "function", name: "run" }),
+	      expect.objectContaining({ type: "function", name: "patch" }),
+	      expect.objectContaining({ type: "function", name: "sub_agent" }),
+	      expect.objectContaining({ type: "function", name: "finish" })
+	    ]);
+    expect(calls.first.body.tool_choice).toBe("required");
+    expect((calls.first.body.tools as Array<{ parameters: { required?: string[] } }>)[0].parameters.required).toContain("reason");
   });
 
   it("maps openai-responses stateful requests", async () => {
@@ -105,6 +125,7 @@ describe("provider adapters", () => {
     );
     const chatgptProfile = { ...profile("chatgpt-codex", "https://chatgpt.example/backend-api/codex"), codexAuthPath: authPath };
     const debugRecords: Record<string, unknown>[] = [];
+    const debugLines: string[] = [];
 
     const response = await completeWithProfile(
       {
@@ -116,6 +137,7 @@ describe("provider adapters", () => {
       chatgptProfile,
       {
       fetch: calls.fetch,
+      debugLog: (section, content) => debugLines.push(`${section}\n${content}`),
       debugJson: (record) => debugRecords.push(record)
       }
     );
@@ -139,22 +161,38 @@ describe("provider adapters", () => {
       { type: "message", role: "user", content: [{ type: "input_text", text: "task" }] },
       { type: "message", role: "assistant", content: [{ type: "output_text", text: "prior" }] }
     ]);
-    expect(calls.first.body.tools).toEqual([
+	    expect(calls.first.body.tools).toEqual([
+	      expect.objectContaining({
+	        type: "function",
+	        name: "run"
+	      }),
+	      expect.objectContaining({
+	        type: "function",
+	        name: "patch"
+	      }),
+	      expect.objectContaining({
+	        type: "function",
+	        name: "sub_agent"
+      }),
       expect.objectContaining({
         type: "function",
-        name: "shell_command"
+        name: "finish"
       })
     ]);
+    expect(calls.first.body.tool_choice).toBe("required");
+    expect((calls.first.body.tools as Array<{ parameters: { required?: string[] } }>)[0].parameters.required).toContain("reason");
     expect(calls.first.body).not.toHaveProperty("max_output_tokens");
     expect(response.text).toBe("done");
-    expect(response.usage).toEqual({
+	    expect(response.usage).toEqual({
       inputTokens: 5,
       cachedInputTokens: 3,
       outputTokens: 6,
       reasoningOutputTokens: 4,
       totalTokens: 11
-    });
-    expect(debugRecords).toHaveLength(2);
+	    });
+	    expect(debugLines.join("\n")).not.toContain("response.output_text.delta");
+	    expect(debugLines.join("\n")).toContain("# omitted 1 streaming delta event");
+	    expect(debugRecords).toHaveLength(2);
     expect(debugRecords[0]).toMatchObject({
       adapter: "chatgpt-codex",
       direction: "request",
@@ -187,7 +225,7 @@ describe("provider adapters", () => {
     writeFileSync(join(dir, "installation_id"), "installation-id", "utf8");
     const calls = captureFetch(
       [
-        'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"id":"fc_2","call_id":"call_2","type":"function_call","name":"shell_command","arguments":"{\\"command\\":\\"pwd\\"}"}}',
+        'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"id":"fc_2","call_id":"call_2","type":"function_call","name":"run","arguments":"{\\"command\\":\\"pwd\\"}"}}',
         'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_2","usage":{"input_tokens":5}}}'
       ].join("\n\n"),
       "text/event-stream",
@@ -198,7 +236,7 @@ describe("provider adapters", () => {
       { type: "message", role: "user", content: [{ type: "input_text", text: "task" }] },
       {
         type: "function_call",
-        name: "shell_command",
+        name: "run",
         arguments: "{\"command\":\"echo hi\"}",
         call_id: "call_1"
       },
@@ -230,7 +268,8 @@ describe("provider adapters", () => {
     expect(calls.first.body).toMatchObject({ store: false, prompt_cache_key: "smith-test" });
     expect(calls.first.body).not.toHaveProperty("previous_response_id");
     expect(calls.first.body.input).toEqual(previousItems);
-    expect(response.text).toBe("pwd");
+    expect(response.text).toBe('run({"command":"pwd"})');
+    expect(response.toolCalls).toEqual([{ id: "call_2", name: "run", arguments: { command: "pwd" } }]);
     expect(response.providerState?.previousResponseId).toBe("resp_2");
     expect(response.providerState?.previousToolCallId).toBe("call_2");
     expect(response.providerState?.codexTurnState).toBe("turn-state-2");
@@ -240,7 +279,7 @@ describe("provider adapters", () => {
         id: "fc_2",
         call_id: "call_2",
         type: "function_call",
-        name: "shell_command",
+        name: "run",
         arguments: "{\"command\":\"pwd\"}"
       }
     ]);
@@ -316,6 +355,14 @@ describe("provider adapters", () => {
       { role: "assistant", content: "prior" }
     ]);
     expect(calls.first.body.stop_sequences).toEqual(["STOP"]);
+	    expect(calls.first.body.tools).toEqual([
+	      expect.objectContaining({ name: "run" }),
+	      expect.objectContaining({ name: "patch" }),
+	      expect.objectContaining({ name: "sub_agent" }),
+	      expect.objectContaining({ name: "finish" })
+	    ]);
+    expect(calls.first.body.tool_choice).toEqual({ type: "any" });
+    expect((calls.first.body.tools as Array<{ input_schema: { required?: string[] } }>)[0].input_schema.required).toContain("reason");
     expect(response.text).toBe("answer");
     expect(response.usage).toEqual({ inputTokens: 3, outputTokens: 4 });
   });
@@ -338,8 +385,54 @@ describe("provider adapters", () => {
       { role: "model", parts: [{ text: "prior" }] }
     ]);
     expect(calls.first.body.generationConfig).toMatchObject({ maxOutputTokens: 64, stopSequences: ["STOP"] });
+    expect(calls.first.body.tools).toEqual([
+      {
+	        functionDeclarations: [
+	          expect.objectContaining({ name: "run" }),
+	          expect.objectContaining({ name: "patch" }),
+	          expect.objectContaining({ name: "sub_agent" }),
+	          expect.objectContaining({ name: "finish" })
+	        ]
+      }
+    ]);
+    expect(calls.first.body.toolConfig).toEqual({
+      functionCallingConfig: {
+	        mode: "ANY",
+	        allowedFunctionNames: ["run", "patch", "sub_agent", "finish"]
+	      }
+	    });
+    expect(
+      (
+        calls.first.body.tools as Array<{
+          functionDeclarations: Array<{ parameters: { required?: string[] } }>;
+        }>
+      )[0].functionDeclarations[0].parameters.required
+    ).toContain("reason");
     expect(response.text).toBe("gemini");
     expect(response.usage).toEqual({ inputTokens: 1, outputTokens: 2, totalTokens: 3 });
+  });
+
+  it("coalesces adjacent Gemini contents with the same provider role", async () => {
+    const calls = captureFetch({ candidates: [{ content: { parts: [{ text: "gemini" }] } }] });
+    await completeWithProfile(
+      {
+        ...baseRequest(),
+        messages: [
+          { role: "system", content: "system" },
+          { role: "user", content: "task" },
+          { role: "user", content: "observation" },
+          { role: "assistant", content: "prior" },
+          { role: "assistant", content: "followup" }
+        ]
+      },
+      profile("gemini", "https://gateway.example"),
+      { fetch: calls.fetch }
+    );
+
+    expect(calls.first.body.contents).toEqual([
+      { role: "user", parts: [{ text: "task\n\nobservation" }] },
+      { role: "model", parts: [{ text: "prior\n\nfollowup" }] }
+    ]);
   });
 
   it("extracts provider response fallback text", () => {
@@ -353,6 +446,32 @@ describe("provider adapters", () => {
     expect(extractGeminiText({ candidates: [{ content: { parts: [{ text: "a" }, { text: "b" }] } }] })).toBe(
       "ab"
     );
+    expect(
+      extractOpenAiChatToolCalls({
+        choices: [
+          {
+            message: {
+              tool_calls: [
+                { id: "call_1", function: { name: "run", arguments: "{\"command\":\"npm test\"}" } }
+              ]
+            }
+          }
+        ]
+      })
+    ).toEqual([{ id: "call_1", name: "run", arguments: { command: "npm test" } }]);
+    expect(
+      extractOpenAiResponsesToolCalls({
+        output: [{ type: "function_call", call_id: "call_1", name: "finish", arguments: "{\"message\":\"done\"}" }]
+      })
+    ).toEqual([{ id: "call_1", name: "finish", arguments: { message: "done" } }]);
+    expect(extractAnthropicToolCalls({ content: [{ type: "tool_use", id: "tool_1", name: "run", input: { command: "pwd" } }] })).toEqual([
+      { id: "tool_1", name: "run", arguments: { command: "pwd" } }
+    ]);
+    expect(
+      extractGeminiToolCalls({
+        candidates: [{ content: { parts: [{ functionCall: { name: "sub_agent", args: { task: "inspect" } } }] } }]
+      })
+    ).toEqual([{ name: "sub_agent", arguments: { task: "inspect" } }]);
     expect(parseResponsesSse('event: response.output_text.done\ndata: {"type":"response.output_text.done","text":"codex"}')).toMatchObject({
       text: "codex"
     });
@@ -369,13 +488,13 @@ describe("provider adapters", () => {
     expect(
       parseResponsesSse(
         [
-          'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"id":"fc_1","type":"function_call","name":"shell_command","arguments":""}}',
+          'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"id":"fc_1","type":"function_call","name":"run","arguments":""}}',
           'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","item_id":"fc_1","delta":"{\\"command\\":\\"npm"}',
           'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","item_id":"fc_1","delta":" test\\"}"}',
           'event: response.function_call_arguments.done\ndata: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"npm test\\"}"}'
         ].join("\n\n")
       )
-    ).toMatchObject({ text: "npm test", toolCallId: "fc_1" });
+    ).toMatchObject({ toolCalls: [{ id: "fc_1", name: "run", arguments: { command: "npm test" } }] });
   });
 
   it("normalizes malformed provider responses", async () => {
@@ -432,6 +551,7 @@ describe("provider adapters", () => {
 function baseRequest(): SmithModelRequest {
   return {
     model: "",
+    tools: SMITH_TOOLS,
     messages: [
       { role: "system", content: "system" },
       { role: "user", content: "task" },

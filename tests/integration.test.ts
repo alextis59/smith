@@ -16,8 +16,11 @@ describe("Smith CLI integration", () => {
     servers.length = 0;
   });
 
-  it("runs against a fake OpenAI-chat provider and stops on chat_out", async () => {
-    const provider = await startFakeProvider(["cat README.md", "chat_out \"Read $(cat README.md)\""]);
+  it("runs against a fake OpenAI-chat provider and stops on finish", async () => {
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "cat README.md" } },
+      { name: "finish", arguments: { message: "Read fake project" } }
+    ]);
     servers.push(provider.server);
 
     const cwd = mkdtempSync(join(tmpdir(), "smith-e2e-"));
@@ -51,17 +54,81 @@ timeout_ms = 5000
     expect(stdout).toContain("Read fake project");
     expect(provider.requests).toHaveLength(2);
     expect(provider.requests[0].headers.authorization).toBe("Bearer test");
+    expect(messages(provider.requests[0].body)[0].role).toBe("system");
+    expect((provider.requests[0].body as { tools?: unknown[] }).tools).toHaveLength(4);
     expect(systemMessage(provider.requests[0].body)).not.toContain("Task memory from SMITH.TASK.md");
     expect(userMessages(provider.requests[0].body)).toContain("inspect README");
     expect(userMessages(provider.requests[0].body)).toContain("No local SMITH.md or SMITH.TASK.md found.");
+    expect(messages(provider.requests[1].body).map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "user",
+      "assistant",
+      "user"
+    ]);
+    expect(messages(provider.requests[1].body)[2].content).toContain("run: test tool call");
+    expect(messages(provider.requests[1].body)[3].content).toBe("cat README.md");
+    expect(messages(provider.requests[1].body)[4].content).toContain("fake project");
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
+  });
+
+  it("applies patch tool calls through smith_patch", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "patched" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-patch-tool-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch note"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Applied patch to note.txt");
+    expect(stdout).toContain("patched");
+    expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("new\n");
+    expect(messages(provider.requests[1].body)[3].content).toBe("patch");
+    expect(messages(provider.requests[1].body)[4].content).toContain("Applied patch to note.txt");
+    expect(messages(provider.requests[1].body)[3].content).not.toContain("Begin Patch");
   });
 
   it("records transcript compaction without refreshing the system prompt", async () => {
     const provider = await startFakeProvider([
-      "printf first",
-      "printf '%s\\n' 'Updated task fact' > SMITH.TASK.md",
-      "chat_out \"done\""
+      { name: "run", arguments: { command: "printf first" } },
+      { name: "run", arguments: { command: "printf '%s\\n' 'Updated task fact' > SMITH.TASK.md" } },
+      { name: "finish", arguments: { message: "done" } }
     ]);
     servers.push(provider.server);
 
@@ -103,8 +170,99 @@ transcript_compaction_hysteresis_turns = 0
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
-  it("remote prints only first chat_out to stdout and supports resume", async () => {
-    const provider = await startFakeProvider(["chat_out \"need info\"", "chat_out \"resumed\""]);
+  it("starts sub_agent runs with inherited context by default", async () => {
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "printf parent-output" } },
+      { name: "sub_agent", arguments: { task: "inspect from child" } },
+      { name: "finish", arguments: { message: "child answer" } },
+      { name: "finish", arguments: { message: "parent done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-sub-agent-inherit-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "parent task"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("parent done");
+    expect(provider.requests).toHaveLength(4);
+    const childBody = provider.requests[2].body;
+    const childUserMessages = userMessages(childBody);
+    const childLastMessage = messages(childBody).at(-1);
+    expect(childUserMessages).toContain("parent task");
+    expect(childUserMessages).toContain("parent-output");
+    expect(childUserMessages).toContain("inspect from child");
+    expect(childUserMessages).not.toContain("sub_agent: test tool call");
+    expect(childLastMessage?.role).toBe("user");
+    expect(childLastMessage?.content).toContain("inspect from child");
+  });
+
+  it("can disable inherited context for sub_agent runs", async () => {
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "printf parent-output" } },
+      { name: "sub_agent", arguments: { task: "inspect from child" } },
+      { name: "finish", arguments: { message: "child answer" } },
+      { name: "finish", arguments: { message: "parent done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-sub-agent-fresh-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+sub_agent_inherit_context = false
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "parent task"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("parent done");
+    expect(provider.requests).toHaveLength(4);
+    const childUserMessages = userMessages(provider.requests[2].body);
+    expect(childUserMessages).toContain("inspect from child");
+    expect(childUserMessages).not.toContain("parent task");
+    expect(childUserMessages).not.toContain("parent-output");
+  });
+
+  it("remote prints only first finish message to stdout and supports resume", async () => {
+    const provider = await startFakeProvider([
+      { name: "finish", arguments: { message: "need info" } },
+      { name: "finish", arguments: { message: "resumed" } }
+    ]);
     servers.push(provider.server);
 
     const cwd = mkdtempSync(join(tmpdir(), "smith-remote-"));
@@ -157,7 +315,10 @@ timeout_ms = 5000
   });
 
   it("supports quiet JSON output for normal runs", async () => {
-    const provider = await startFakeProvider(["printf hidden", "chat_out \"visible\""]);
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "printf hidden" } },
+      { name: "finish", arguments: { message: "visible" } }
+    ]);
     servers.push(provider.server);
 
     const cwd = mkdtempSync(join(tmpdir(), "smith-json-"));
@@ -190,7 +351,12 @@ timeout_ms = 5000
   });
 });
 
-async function startFakeProvider(commands: string[]): Promise<{
+type FakeToolCall = {
+  name: "run" | "patch" | "sub_agent" | "finish";
+  arguments: Record<string, unknown>;
+};
+
+async function startFakeProvider(toolCalls: FakeToolCall[]): Promise<{
   baseUrl: string;
   requests: Array<{ headers: Record<string, string | string[] | undefined>; body: unknown }>;
   server: { close: (callback: () => void) => void };
@@ -204,10 +370,29 @@ async function startFakeProvider(commands: string[]): Promise<{
     });
     request.on("end", () => {
       requests.push({ headers: request.headers, body: JSON.parse(body) });
-      const command = commands[Math.min(count, commands.length - 1)];
+      const toolCall = toolCalls[Math.min(count, toolCalls.length - 1)];
       count += 1;
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ choices: [{ message: { content: command } }] }));
+      response.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                tool_calls: [
+                  {
+                    id: `call_${count}`,
+                    type: "function",
+                    function: {
+                      name: toolCall.name,
+                      arguments: JSON.stringify({ reason: "test tool call", ...toolCall.arguments })
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        })
+      );
     });
   });
 
@@ -223,9 +408,12 @@ function systemMessage(body: unknown): string {
 }
 
 function userMessages(body: unknown): string {
-  const messages = (body as { messages?: Array<{ role?: string; content?: string }> }).messages ?? [];
-  return messages
+  return messages(body)
     .filter((message) => message.role === "user")
     .map((message) => message.content ?? "")
     .join("\n");
+}
+
+function messages(body: unknown): Array<{ role?: string; content?: string }> {
+  return (body as { messages?: Array<{ role?: string; content?: string }> }).messages ?? [];
 }

@@ -82,12 +82,12 @@ export const BENCHMARK_TASK_INSTRUCTIONS = [
   "Complete this benchmark task in the current workspace.",
   "Make only the file changes needed for the task. Do not modify files outside the workspace.",
   "When the task names implementation paths, functions, methods, or interfaces, treat those as primary source-code targets; do not satisfy the task with only documentation, localization, fixture, test, build, or generated-file changes unless those are explicitly requested.",
-  "Inspect and edit files with shell commands. Do not call chat_out until the requested change is actually implemented and, when practical, checked.",
+  "Inspect and edit files with the run tool. Do not call finish until the requested change is actually implemented and, when practical, checked.",
   "After an edit command, read its terminal result. If the command failed or might not have changed files, recover immediately and confirm the intended files changed with a targeted file read or path-specific diff before continuing.",
-  "The benchmark verifier is available at /task/verify.sh; run bash /task/verify.sh before chat_out unless blocked.",
+  "The benchmark verifier is available at /task/verify.sh; run bash /task/verify.sh before finish unless blocked.",
   "After a focused edit, run the verifier directly; avoid optional status, diff, or .git self-checks unless diagnosing a concrete failure.",
   "Do not read /task/verify.sh before the first verifier run; inspect it only after a verifier failure or when you are blocked.",
-  "If files need to change, a response that only calls chat_out is a failed benchmark attempt."
+  "If files need to change, a response that only calls finish is a failed benchmark attempt."
 ];
 
 export const SWE_BENCH_PRO_TASK_INSTRUCTIONS = [

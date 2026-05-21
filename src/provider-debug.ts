@@ -1,4 +1,4 @@
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 
 export type ProviderDebugJsonLogger = {
   path: string;
@@ -7,7 +7,7 @@ export type ProviderDebugJsonLogger = {
 
 export function createProviderDebugJsonLogger(tracePath: string): ProviderDebugJsonLogger {
   const path = `${tracePath}.provider-debug.jsonl`;
-  writeFileSync(path, "", "utf8");
+  if (!existsSync(path)) writeFileSync(path, "", "utf8");
   return {
     path,
     write(record) {

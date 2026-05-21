@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   appendChatIn,
   appendTerminalTurn,
+  appendTranscriptObservation,
   compactTranscript,
   parseChatOutSentinel,
   stripShellFence,
-  transcriptToMessageChain,
   transcriptToMessages
 } from "../src/transcript.js";
 
@@ -22,9 +22,12 @@ describe("transcript helpers", () => {
     expect(parsed.output).toBe("hello\n\n");
   });
 
-  it("formats chat_in and terminal turns", () => {
-    expect(appendChatIn("hello")).toContain("SMITH_USER");
+  it("formats user input and terminal turns", () => {
+    expect(appendChatIn("hello")).toContain("smith$ # user input");
     expect(appendTerminalTurn("", "cat README.md", "smith")).toContain("smith$ cat README.md");
+    expect(appendTranscriptObservation("", "tool reason", "run: inspect files")).toBe(
+      "smith$ # tool reason\nrun: inspect files"
+    );
   });
 
   it("keeps system prompt and truncates transcript to context budget", () => {
@@ -53,11 +56,7 @@ describe("transcript helpers", () => {
       appendTerminalTurn("", "cat README.md", "small project")
     ].join("\n");
 
-    const defaultMessages = transcriptToMessages("system", transcript, 10_000);
-    expect(defaultMessages).toHaveLength(2);
-    expect(defaultMessages[1].content).toContain("smith$ cat README.md");
-
-    const messages = transcriptToMessageChain("system", transcript, 10_000);
+    const messages = transcriptToMessages("system", transcript, 10_000);
 
     expect(messages).toHaveLength(4);
     expect(messages[0]).toEqual({ role: "system", content: "system" });
@@ -76,7 +75,7 @@ describe("transcript helpers", () => {
       appendTerminalTurn("", "sed -n '200,400p' big.go", "y".repeat(200))
     ].join("\n");
 
-    const messages = transcriptToMessageChain("system", transcript, 650);
+    const messages = transcriptToMessages("system", transcript, 650);
 
     expect(messages[0]).toEqual({ role: "system", content: "system" });
     expect(messages[1].content).toContain("Fix the benchmark bug.");

@@ -20,7 +20,7 @@ Pricing uses standard API rates checked on 2026-05-17:
 
 ## Smith gpt-5.4-mini high, project benchmark
 
-- Current command: `node bin/smith.js benchmark run benchmarks --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 60 --timeout-ms 900000 --concurrency 10 --log-dir /tmp/smith --input-cost-per-million-tokens 0.75 --cached-input-cost-per-million-tokens 0.075 --output-cost-per-million-tokens 4.5 --prompt-cache-key auto --provider-message-chain --json`
+- Current command: `node bin/smith.js benchmark run benchmarks --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 60 --timeout-ms 900000 --concurrency 10 --log-dir /tmp/smith --input-cost-per-million-tokens 0.75 --cached-input-cost-per-million-tokens 0.075 --output-cost-per-million-tokens 4.5 --prompt-cache-key auto --json`
 - Concurrency: 10
 - 2026-05-20 provider message-chain + prompt-cache-key rerun: 6m 14s wall; aggregate task duration: 50m 13s
 - Input tokens: 3,228,142
@@ -74,7 +74,7 @@ Pricing uses standard API rates checked on 2026-05-17:
 
 ## Smith gpt-5.4-mini high, SWE-bench Pro
 
-- Current command: `node bin/smith.js benchmark run swe-bench-pro --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 160 --timeout-ms 900000 --concurrency 5 --log-dir /tmp/smith --input-cost-per-million-tokens 0.75 --cached-input-cost-per-million-tokens 0.075 --output-cost-per-million-tokens 4.5 --prompt-cache-key auto --provider-message-chain --json`
+- Current command: `node bin/smith.js benchmark run swe-bench-pro --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 160 --timeout-ms 900000 --concurrency 5 --log-dir /tmp/smith --input-cost-per-million-tokens 0.75 --cached-input-cost-per-million-tokens 0.075 --output-cost-per-million-tokens 4.5 --prompt-cache-key auto --json`
 - Concurrency: 5
 - Max turns: 160
 - 2026-05-20 provider message-chain + prompt-cache-key rerun: 28m 28s wall; aggregate task duration: 1h 42m 10s

@@ -28,12 +28,12 @@ describe("session logs", () => {
     const events = summarizeProviderEvents([
       { type: "response.output_text.delta", delta: "pwd" },
       { type: "response.output_text.done", text: "pwd" },
-      { type: "response.output_item.added", item: { type: "function_call", name: "shell_command" } }
+      { type: "response.output_item.added", item: { type: "function_call", name: "run" } }
     ]);
 
     expect(events).toEqual([
       { type: "response.output_text.done", text: "pwd" },
-      { type: "response.output_item.added", itemType: "function_call", name: "shell_command" }
+      { type: "response.output_item.added", itemType: "function_call", name: "run" }
     ]);
 
     const trace = summarizeTraceText(
@@ -44,7 +44,7 @@ describe("session logs", () => {
         JSON.stringify(events, null, 2),
         "## terminal output",
         "/repo",
-        "## chat_out",
+        "## finish",
         "done"
       ].join("\n")
     );

@@ -107,7 +107,6 @@ Options:
   --danger-review <off|ask|deterministic|llm>
   --read-only
   --provider-debug
-  --provider-message-chain
   --log-dir <dir>
   --agent <smith|codex>
   --concurrency <count>
@@ -182,7 +181,7 @@ async function runCommand(args: string[]): Promise<void> {
     });
     if (outputOptions.json) {
       process.stdout.write(`${JSON.stringify({ chatOut: result.chatOut, turns: result.turns, usage: result.usage, tracePath: trace.path, logPath }, null, 2)}\n`);
-    } else if (outputOptions.quiet) {
+    } else {
       process.stdout.write(`${result.chatOut}\n`);
     }
   } finally {

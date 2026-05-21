@@ -44,7 +44,7 @@ export type RuntimeConfig = {
   providerRetries: number;
   providerRetryDelayMs: number;
   providerDebug: boolean;
-  providerMessageChain: boolean;
+  subAgentInheritContext: boolean;
   remoteSessionTtlDays: number;
   logDir?: string;
 };
@@ -99,7 +99,7 @@ export type CliConfigOverrides = {
   providerRetries?: number;
   providerRetryDelayMs?: number;
   providerDebug?: boolean;
-  providerMessageChain?: boolean;
+  subAgentInheritContext?: boolean;
   remoteSessionTtlDays?: number;
   logDir?: string;
 };
@@ -151,7 +151,7 @@ const DEFAULT_CONFIG: SmithConfig = {
     providerRetries: 2,
     providerRetryDelayMs: 250,
     providerDebug: false,
-    providerMessageChain: false,
+    subAgentInheritContext: true,
     remoteSessionTtlDays: 30
   },
   files: []
@@ -327,8 +327,14 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--provider-debug":
         overrides.providerDebug = true;
         break;
+      case "--sub-agent-inherit-context":
+        overrides.subAgentInheritContext = true;
+        break;
+      case "--no-sub-agent-inherit-context":
+        overrides.subAgentInheritContext = false;
+        break;
       case "--provider-message-chain":
-        overrides.providerMessageChain = true;
+        // Legacy no-op: provider message-chain rendering is always enabled.
         break;
       case "--remote-session-ttl-days":
         overrides.remoteSessionTtlDays = Number.parseInt(readValue(), 10);
@@ -380,6 +386,7 @@ danger_review = "llm"
 danger_review_profile = "reviewer"
 provider_retries = 2
 provider_retry_delay_ms = 250
+sub_agent_inherit_context = true
 remote_session_ttl_days = 30
 `;
 }
@@ -481,7 +488,7 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.providerRetries !== undefined ? { providerRetries: cli.providerRetries } : {}),
     ...(cli.providerRetryDelayMs !== undefined ? { providerRetryDelayMs: cli.providerRetryDelayMs } : {}),
     ...(cli.providerDebug !== undefined ? { providerDebug: cli.providerDebug } : {}),
-    ...(cli.providerMessageChain !== undefined ? { providerMessageChain: cli.providerMessageChain } : {}),
+    ...(cli.subAgentInheritContext !== undefined ? { subAgentInheritContext: cli.subAgentInheritContext } : {}),
     ...(cli.remoteSessionTtlDays !== undefined ? { remoteSessionTtlDays: cli.remoteSessionTtlDays } : {}),
     ...(cli.logDir !== undefined ? { logDir: cli.logDir } : {})
   };
@@ -549,7 +556,9 @@ function mergeRuntime(previous: RuntimeConfig, raw: RawConfig): RuntimeConfig {
     ...(typeof raw.provider_retries === "number" ? { providerRetries: raw.provider_retries } : {}),
     ...(typeof raw.provider_retry_delay_ms === "number" ? { providerRetryDelayMs: raw.provider_retry_delay_ms } : {}),
     ...(typeof raw.provider_debug === "boolean" ? { providerDebug: raw.provider_debug } : {}),
-    ...(typeof raw.provider_message_chain === "boolean" ? { providerMessageChain: raw.provider_message_chain } : {}),
+    ...(typeof raw.sub_agent_inherit_context === "boolean"
+      ? { subAgentInheritContext: raw.sub_agent_inherit_context }
+      : {}),
     ...(typeof raw.remote_session_ttl_days === "number" ? { remoteSessionTtlDays: raw.remote_session_ttl_days } : {}),
     ...(typeof raw.log_dir === "string" ? { logDir: raw.log_dir } : {})
   };

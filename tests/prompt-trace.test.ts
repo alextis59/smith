@@ -34,7 +34,7 @@ describe("prompt and trace", () => {
     expect(handle.created).toBe(true);
     const memory = readFileSync(join(cwd, "SMITH.TASK.md"), "utf8");
     expect(memory).not.toContain("Fix parser");
-    expect(memory).toContain("initial request is preserved in the first chat_in transcript");
+    expect(memory).toContain("initial request is preserved in the first user input transcript");
     expect(memory).toContain("## Working Set");
     expect(memory).toContain("Important files/functions: (unknown yet)");
     expect(memory).toContain("Current hypothesis: (unknown yet)");
@@ -53,7 +53,7 @@ describe("prompt and trace", () => {
     expect(memory.length).toBeLessThan(900);
     expect(memory).not.toContain("Fix parser");
     expect(memory).not.toContain("details");
-    expect(memory).toContain("initial request is preserved in the first chat_in transcript");
+    expect(memory).toContain("initial request is preserved in the first user input transcript");
 
     cleanupTaskMemoryFile(handle);
   });
@@ -83,15 +83,16 @@ describe("prompt and trace", () => {
     expect(prompt).toContain("read the file explicitly");
   });
 
-  it("includes concrete remote delegation guidance", () => {
+  it("includes concrete sub_agent delegation guidance", () => {
     const prompt = loadSystemPrompt("/");
 
-    expect(prompt).toContain("Delegate independent work with remote Smith");
-    expect(prompt).toContain('smith remote --cwd ./path "task"');
+    expect(prompt).toContain("Delegate independent work with sub_agent");
+    expect(prompt).toContain("Every tool call requires a brief reason");
+    expect(prompt).toContain("broad file searches");
     expect(prompt).toContain("Find how authentication tokens are parsed and validated");
     expect(prompt).toContain("Read the local docs for provider configuration");
     expect(prompt).toContain("Remove the deprecated Foo adapter");
-    expect(prompt).toContain("Do not ask two remote Smith runs to edit the same files at the same time");
+    expect(prompt).toContain("Do not ask two sub_agent child runs to edit the same files at the same time");
   });
 
   it("writes trace files under ~/.smith/runs", () => {
@@ -142,6 +143,7 @@ function runtime(): RuntimeConfig {
     providerRetries: 2,
     providerRetryDelayMs: 1,
     providerDebug: false,
+    subAgentInheritContext: true,
     remoteSessionTtlDays: 30
   };
 }
