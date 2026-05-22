@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -93,6 +93,40 @@ describe("danger review", () => {
     expect(result.transcript).toContain("Command too dangerous");
   });
 
+  it("blocks provider patch tool calls in read-only mode", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-readonly-patch-"));
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    const mainToolCalls = [
+      {
+        name: "patch",
+        arguments: {
+          patch: "*** Begin Patch\n*** Update File: note.txt\n@@\n-old\n+new\n*** End Patch"
+        }
+      },
+      { name: "finish", arguments: { message: "blocked" } }
+    ];
+    const fetchImpl: ProviderFetch = async () =>
+      new Response(JSON.stringify(openAiToolCallResponse(mainToolCalls.shift() ?? { name: "finish", arguments: { message: "done" } })), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+
+    const output: string[] = [];
+    const result = await runSmithTask({
+      cwd,
+      prompt: "try patch",
+      profile: profile("main-model"),
+      runtime: { ...runtime("off"), readOnly: true },
+      systemPrompt: "system",
+      fetch: fetchImpl,
+      onTerminalOutput: (chunk) => output.push(chunk)
+    });
+
+    expect(output[0]).toBe("Command too dangerous");
+    expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("old\n");
+    expect(result.chatOut).toBe("blocked");
+  });
+
   it("accumulates token usage and estimated cost", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "smith-cost-"));
     const toolCalls = [
@@ -172,6 +206,57 @@ describe("danger review", () => {
     expect(result.transcript).not.toContain("command not found");
   });
 
+  it("enables prompt cache identity by default for chatgpt-codex runs", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-codex-cache-"));
+    const authPath = join(cwd, "auth.json");
+    writeFileSync(
+      authPath,
+      JSON.stringify({
+        auth_mode: "chatgpt",
+        tokens: { access_token: "access-token" }
+      }),
+      "utf8"
+    );
+    const requests: Array<{ headers: Record<string, string>; body: Record<string, unknown> }> = [];
+    const fetchImpl: ProviderFetch = async (_input, init) => {
+      requests.push({
+        headers: init?.headers as Record<string, string>,
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>
+      });
+      return new Response(codexToolCallResponse({ name: "finish", arguments: { message: "done" } }), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" }
+      });
+    };
+
+    const result = await runSmithTask({
+      cwd,
+      prompt: "finish",
+      profile: {
+        adapter: "chatgpt-codex",
+        baseUrl: "https://chatgpt.example/backend-api/codex",
+        codexAuthPath: authPath,
+        model: "codex-model",
+        statefulResponses: false,
+        headers: {},
+        body: {},
+        strictProviderOptions: false
+      },
+      runtime: runtime("off"),
+      systemPrompt: "system",
+      fetch: fetchImpl
+    });
+
+    const promptCacheKey = requests[0]?.body.prompt_cache_key;
+    expect(result.chatOut).toBe("done");
+    expect(promptCacheKey).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    expect(requests[0]?.headers["x-client-request-id"]).toBe(promptCacheKey);
+    expect(requests[0]?.headers["session-id"]).toBe(promptCacheKey);
+    expect(requests[0]?.headers["thread-id"]).toBe(promptCacheKey);
+  });
+
   it("reports command timeouts and enforces max turns", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "smith-timeout-"));
     const toolCalls = [
@@ -218,10 +303,7 @@ function runtime(dangerReview: RuntimeConfig["dangerReview"]): RuntimeConfig {
   return {
     shell: "bash",
     timeoutMs: 5000,
-    transcriptTurns: 20,
-    transcriptCompactionMinChars: 0,
-    transcriptCompactionHysteresisTurns: 0,
-    maxContextChars: 10000,
+    maxContextTokens: 10000,
     dangerReview,
     dangerReviewProfile: "reviewer",
     traceRaw: false,
@@ -231,7 +313,6 @@ function runtime(dangerReview: RuntimeConfig["dangerReview"]): RuntimeConfig {
     providerDebug: false,
     subAgentInheritContext: true,
     maxTurns: 20,
-    transcriptCompactionChars: 1000,
     remoteSessionTtlDays: 30
   };
 }
@@ -255,4 +336,18 @@ function openAiToolCallResponse(toolCall: { name: string; arguments: Record<stri
       }
     ]
   };
+}
+
+function codexToolCallResponse(toolCall: { name: string; arguments: Record<string, unknown> }): string {
+  const item = {
+    id: `fc_${toolCall.name}`,
+    call_id: `call_${toolCall.name}`,
+    type: "function_call",
+    name: toolCall.name,
+    arguments: JSON.stringify({ reason: "test tool call", ...toolCall.arguments })
+  };
+  return [
+    `event: response.output_item.added\ndata: ${JSON.stringify({ type: "response.output_item.added", item })}`,
+    'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_1","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":1},"total_tokens":5}}}'
+  ].join("\n\n");
 }

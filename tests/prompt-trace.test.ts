@@ -69,6 +69,8 @@ describe("prompt and trace", () => {
     expect(prompt).toContain("source top-level Markdown heading or version label verbatim");
     expect(prompt).toContain("copy factual bullets or labeled facts");
     expect(prompt).toContain("original source bullet text verbatim");
+    expect(prompt).toContain("Prefer patch for all file edits");
+    expect(prompt).toContain("Use run for edits only when patch cannot express the change");
   });
 
   it("includes concise memory guidance", () => {
@@ -130,12 +132,8 @@ function runtime(): RuntimeConfig {
   return {
     shell: "bash",
     timeoutMs: 5000,
-    transcriptTurns: 20,
-    transcriptCompactionMinChars: 0,
-    transcriptCompactionHysteresisTurns: 0,
-    maxContextChars: 10000,
+    maxContextTokens: 10000,
     maxTurns: 20,
-    transcriptCompactionChars: 1000,
     dangerReview: "off",
     dangerReviewProfile: "reviewer",
     traceRaw: false,

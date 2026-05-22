@@ -31,12 +31,8 @@ export type ProfileConfig = {
 export type RuntimeConfig = {
   shell: string;
   timeoutMs: number;
-  transcriptTurns: number;
-  transcriptCompactionMinChars: number;
-  transcriptCompactionHysteresisTurns: number;
-  maxContextChars: number;
+  maxContextTokens: number;
   maxTurns: number;
-  transcriptCompactionChars: number;
   dangerReview: DangerReviewMode;
   dangerReviewProfile: string;
   traceRaw: boolean;
@@ -86,12 +82,8 @@ export type CliConfigOverrides = {
   outputCostPerMillionTokens?: number;
   shell?: string;
   timeoutMs?: number;
-  transcriptTurns?: number;
-  transcriptCompactionMinChars?: number;
-  transcriptCompactionHysteresisTurns?: number;
-  maxContextChars?: number;
+  maxContextTokens?: number;
   maxTurns?: number;
-  transcriptCompactionChars?: number;
   dangerReview?: DangerReviewMode;
   dangerReviewProfile?: string;
   traceRaw?: boolean;
@@ -138,12 +130,8 @@ const DEFAULT_CONFIG: SmithConfig = {
   runtime: {
     shell: "bash",
     timeoutMs: 120_000,
-    transcriptTurns: 20,
-    transcriptCompactionMinChars: 24_000,
-    transcriptCompactionHysteresisTurns: 10,
-    maxContextChars: 120_000,
+    maxContextTokens: 128_000,
     maxTurns: 20,
-    transcriptCompactionChars: 8_000,
     dangerReview: "llm",
     dangerReviewProfile: "reviewer",
     traceRaw: false,
@@ -288,23 +276,14 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--timeout-ms":
         overrides.timeoutMs = Number.parseInt(readValue(), 10);
         break;
-      case "--transcript-turns":
-        overrides.transcriptTurns = Number.parseInt(readValue(), 10);
-        break;
-      case "--transcript-compaction-min-chars":
-        overrides.transcriptCompactionMinChars = Number.parseInt(readValue(), 10);
-        break;
-      case "--transcript-compaction-hysteresis-turns":
-        overrides.transcriptCompactionHysteresisTurns = Number.parseInt(readValue(), 10);
+      case "--max-context-tokens":
+        overrides.maxContextTokens = Number.parseInt(readValue(), 10);
         break;
       case "--max-context-chars":
-        overrides.maxContextChars = Number.parseInt(readValue(), 10);
+        overrides.maxContextTokens = Math.max(1, Math.ceil(Number.parseInt(readValue(), 10) / 4));
         break;
       case "--max-turns":
         overrides.maxTurns = Number.parseInt(readValue(), 10);
-        break;
-      case "--transcript-compaction-chars":
-        overrides.transcriptCompactionChars = Number.parseInt(readValue(), 10);
         break;
       case "--danger-review":
         overrides.dangerReview = parseDangerReview(readValue());
@@ -376,12 +355,8 @@ temperature = 0
 [runtime]
 shell = "bash"
 timeout_ms = 120000
-transcript_turns = 20
-transcript_compaction_min_chars = 24000
-transcript_compaction_hysteresis_turns = 10
-max_context_chars = 120000
+max_context_tokens = 128000
 max_turns = 20
-transcript_compaction_chars = 8000
 danger_review = "llm"
 danger_review_profile = "reviewer"
 provider_retries = 2
@@ -469,18 +444,8 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...next.runtime,
     ...(cli.shell ? { shell: cli.shell } : {}),
     ...(cli.timeoutMs !== undefined ? { timeoutMs: cli.timeoutMs } : {}),
-    ...(cli.transcriptTurns !== undefined ? { transcriptTurns: cli.transcriptTurns } : {}),
-    ...(cli.transcriptCompactionMinChars !== undefined
-      ? { transcriptCompactionMinChars: cli.transcriptCompactionMinChars }
-      : {}),
-    ...(cli.transcriptCompactionHysteresisTurns !== undefined
-      ? { transcriptCompactionHysteresisTurns: cli.transcriptCompactionHysteresisTurns }
-      : {}),
-    ...(cli.maxContextChars !== undefined ? { maxContextChars: cli.maxContextChars } : {}),
+    ...(cli.maxContextTokens !== undefined ? { maxContextTokens: cli.maxContextTokens } : {}),
     ...(cli.maxTurns !== undefined ? { maxTurns: cli.maxTurns } : {}),
-    ...(cli.transcriptCompactionChars !== undefined
-      ? { transcriptCompactionChars: cli.transcriptCompactionChars }
-      : {}),
     ...(cli.dangerReview ? { dangerReview: cli.dangerReview } : {}),
     ...(cli.dangerReviewProfile ? { dangerReviewProfile: cli.dangerReviewProfile } : {}),
     ...(cli.traceRaw !== undefined ? { traceRaw: cli.traceRaw } : {}),
@@ -537,18 +502,12 @@ function mergeRuntime(previous: RuntimeConfig, raw: RawConfig): RuntimeConfig {
     ...previous,
     ...(typeof raw.shell === "string" ? { shell: raw.shell } : {}),
     ...(typeof raw.timeout_ms === "number" ? { timeoutMs: raw.timeout_ms } : {}),
-    ...(typeof raw.transcript_turns === "number" ? { transcriptTurns: raw.transcript_turns } : {}),
-    ...(typeof raw.transcript_compaction_min_chars === "number"
-      ? { transcriptCompactionMinChars: raw.transcript_compaction_min_chars }
-      : {}),
-    ...(typeof raw.transcript_compaction_hysteresis_turns === "number"
-      ? { transcriptCompactionHysteresisTurns: raw.transcript_compaction_hysteresis_turns }
-      : {}),
-    ...(typeof raw.max_context_chars === "number" ? { maxContextChars: raw.max_context_chars } : {}),
+    ...(typeof raw.max_context_tokens === "number"
+      ? { maxContextTokens: raw.max_context_tokens }
+      : typeof raw.max_context_chars === "number"
+        ? { maxContextTokens: Math.max(1, Math.ceil(raw.max_context_chars / 4)) }
+        : {}),
     ...(typeof raw.max_turns === "number" ? { maxTurns: raw.max_turns } : {}),
-    ...(typeof raw.transcript_compaction_chars === "number"
-      ? { transcriptCompactionChars: raw.transcript_compaction_chars }
-      : {}),
     ...(typeof raw.danger_review === "string" ? { dangerReview: parseDangerReview(raw.danger_review) } : {}),
     ...(typeof raw.danger_review_profile === "string" ? { dangerReviewProfile: raw.danger_review_profile } : {}),
     ...(typeof raw.trace_raw === "boolean" ? { traceRaw: raw.trace_raw } : {}),
@@ -651,17 +610,8 @@ export function validateConfig(config: SmithConfig): void {
     if (profile.stop?.some((value) => !value)) throw new Error(`${prefix}.stop must not contain empty values`);
   }
   validateInteger("runtime.timeout_ms", config.runtime.timeoutMs, 1, Number.MAX_SAFE_INTEGER);
-  validateInteger("runtime.transcript_turns", config.runtime.transcriptTurns, 1, Number.MAX_SAFE_INTEGER);
-  validateInteger("runtime.transcript_compaction_min_chars", config.runtime.transcriptCompactionMinChars, 0, Number.MAX_SAFE_INTEGER);
-  validateInteger(
-    "runtime.transcript_compaction_hysteresis_turns",
-    config.runtime.transcriptCompactionHysteresisTurns,
-    0,
-    Number.MAX_SAFE_INTEGER
-  );
-  validateInteger("runtime.max_context_chars", config.runtime.maxContextChars, 1, Number.MAX_SAFE_INTEGER);
+  validateInteger("runtime.max_context_tokens", config.runtime.maxContextTokens, 1, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.max_turns", config.runtime.maxTurns, 1, Number.MAX_SAFE_INTEGER);
-  validateInteger("runtime.transcript_compaction_chars", config.runtime.transcriptCompactionChars, 0, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.provider_retries", config.runtime.providerRetries, 0, 10);
   validateInteger("runtime.provider_retry_delay_ms", config.runtime.providerRetryDelayMs, 0, 60_000);
   validateInteger("runtime.remote_session_ttl_days", config.runtime.remoteSessionTtlDays, 1, 3650);

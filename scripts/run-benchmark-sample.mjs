@@ -16,13 +16,14 @@ const selected = new Set([
   "068-redact-sensitive-fields",
   "080-semver-prerelease-sort",
   "091-command-router-refactor",
-  "100-billing-rules-update"
+  "100-billing-rules-update",
+  "101-workflow-policy-engine"
 ]);
 
 const runAll = process.argv.includes("--all");
 const samples = taskSpecs().filter((spec) => runAll || selected.has(spec.slug));
-const commands = samples.map(solutionCommand);
-const provider = await startFakeProvider(commands);
+const toolCalls = samples.flatMap(solutionToolCalls);
+const provider = await startFakeProvider(toolCalls);
 const tmp = mkdtempSync(join(tmpdir(), "smith-benchmark-sample-"));
 
 try {
@@ -59,19 +60,53 @@ timeout_ms = 10000
   rmSync(tmp, { recursive: true, force: true });
 }
 
-function solutionCommand(spec) {
+function solutionToolCalls(spec) {
   const payload = Buffer.from(JSON.stringify(spec.solution), "utf8").toString("base64");
-  return `node -e 'const fs=require("node:fs");const path=require("node:path");const files=JSON.parse(Buffer.from("${payload}","base64").toString("utf8"));for (const [file,content] of Object.entries(files)){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,content,"utf8");}' && chat_out "sample solved ${spec.slug}"\n`;
+  return [
+    {
+      name: "run",
+      arguments: {
+        reason: "apply generated benchmark solution",
+        command: `node -e 'const fs=require("node:fs");const path=require("node:path");const files=JSON.parse(Buffer.from("${payload}","base64").toString("utf8"));for (const [file,content] of Object.entries(files)){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,content,"utf8");}'`
+      }
+    },
+    {
+      name: "finish",
+      arguments: {
+        reason: "sample solution applied",
+        message: `sample solved ${spec.slug}`
+      }
+    }
+  ];
 }
 
-async function startFakeProvider(commands) {
+async function startFakeProvider(toolCalls) {
   let count = 0;
   const server = createServer((request, response) => {
     request.resume();
-    const command = commands[Math.min(count, commands.length - 1)];
+    const toolCall = toolCalls[Math.min(count, toolCalls.length - 1)];
     count += 1;
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ choices: [{ message: { content: command } }] }));
+    response.end(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              tool_calls: [
+                {
+                  id: `call_${count}`,
+                  type: "function",
+                  function: {
+                    name: toolCall.name,
+                    arguments: JSON.stringify(toolCall.arguments)
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      })
+    );
   });
 
   await new Promise((resolve) => server.listen(0, "0.0.0.0", () => resolve()));

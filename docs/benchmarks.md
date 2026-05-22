@@ -20,7 +20,7 @@ verify.sh
 
 ## Taxonomy
 
-The 100-task suite is organized into ten groups:
+The 101-task suite is organized into ten groups:
 
 | Range | Category | Focus |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ The 100-task suite is organized into ten groups:
 | 061-070 | Data transformation | Deterministic report generation from local data files |
 | 071-080 | Edge cases | Boundary conditions in small utility functions |
 | 081-090 | Documentation | Verified docs updates tied to concrete project behavior |
-| 091-100 | Hard tasks | Multi-step refactors with implementation, tests, and docs |
+| 091-101 | Hard tasks | Multi-step refactors with implementation, tests, docs, and cross-file discovery |
 
 ## Running Benchmarks
 

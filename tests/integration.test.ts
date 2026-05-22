@@ -72,7 +72,7 @@ timeout_ms = 5000
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
-  it("applies patch tool calls through smith_patch", async () => {
+  it("applies patch tool calls without exposing patch contents in the transcript", async () => {
     const provider = await startFakeProvider([
       {
         name: "patch",
@@ -124,6 +124,58 @@ timeout_ms = 5000
     expect(messages(provider.requests[1].body)[3].content).not.toContain("Begin Patch");
   });
 
+  it("applies tab-indented patch tool calls without shell tab completion", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: main.go",
+            "@@",
+            " func main() {",
+            '-\tprintln("old")',
+            '+\tprintln("new")',
+            " }",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "patched" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-patch-tabs-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "main.go"), 'func main() {\n\tprintln("old")\n}\n', "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch go file"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Applied patch to main.go");
+    expect(readFileSync(join(cwd, "main.go"), "utf8")).toBe('func main() {\n\tprintln("new")\n}\n');
+    expect(messages(provider.requests[1].body)[3].content).toBe("patch");
+    expect(messages(provider.requests[1].body)[4].content).not.toContain("smith_patch <<");
+  });
+
   it("records transcript compaction without refreshing the system prompt", async () => {
     const provider = await startFakeProvider([
       { name: "run", arguments: { command: "printf first" } },
@@ -147,9 +199,7 @@ model = "fake-model"
 [runtime]
 danger_review = "off"
 timeout_ms = 5000
-transcript_turns = 1
-transcript_compaction_min_chars = 0
-transcript_compaction_hysteresis_turns = 0
+max_context_tokens = 800
 `,
       "utf8"
     );

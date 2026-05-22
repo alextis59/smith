@@ -79,8 +79,7 @@ temperature = 0
 [runtime]
 shell = "bash"
 timeout_ms = 120000
-transcript_turns = 20
-max_context_chars = 120000
+max_context_tokens = 128000
 danger_review = "llm"
 danger_review_profile = "reviewer"
 max_turns = 20
@@ -92,7 +91,7 @@ read_only = false
 # log_dir = "/tmp/smith"
 ```
 
-Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--codex-auth-path`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--danger-review`, `--read-only`, `--no-sub-agent-inherit-context`, and `--log-dir`.
+Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--codex-auth-path`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--max-context-tokens`, `--danger-review`, `--read-only`, `--no-sub-agent-inherit-context`, and `--log-dir`.
 
 When a provider response includes token usage, Smith records per-turn and total usage in the run trace. If `input_cost_per_million_tokens` and/or `output_cost_per_million_tokens` are set on the active profile, traces also include estimated USD cost.
 
@@ -128,6 +127,7 @@ reasoning_effort = "high"
 ```
 
 Run `codex login` first and choose ChatGPT sign-in. Smith reuses that local Codex auth file and refreshes the OAuth token when needed.
+This adapter sends a deterministic per-run prompt cache key and matching Codex session headers by default.
 
 ## Provider Tools
 

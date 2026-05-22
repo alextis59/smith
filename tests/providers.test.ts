@@ -488,13 +488,17 @@ describe("provider adapters", () => {
     expect(
       parseResponsesSse(
         [
+          'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"id":"rs_1","type":"reasoning","encrypted_content":"secret"}}',
           'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"id":"fc_1","type":"function_call","name":"run","arguments":""}}',
           'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","item_id":"fc_1","delta":"{\\"command\\":\\"npm"}',
           'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","item_id":"fc_1","delta":" test\\"}"}',
           'event: response.function_call_arguments.done\ndata: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\\"command\\":\\"npm test\\"}"}'
         ].join("\n\n")
       )
-    ).toMatchObject({ toolCalls: [{ id: "fc_1", name: "run", arguments: { command: "npm test" } }] });
+    ).toMatchObject({
+      toolCalls: [{ id: "fc_1", name: "run", arguments: { command: "npm test" } }],
+      outputItems: [expect.objectContaining({ type: "function_call", name: "run" })]
+    });
   });
 
   it("normalizes malformed provider responses", async () => {

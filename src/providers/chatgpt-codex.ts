@@ -235,7 +235,7 @@ export function parseResponsesSse(raw: string): {
     const itemId = textValue(event.item_id);
     if (event.type === "response.output_item.added" || event.type === "response.output_item.done") {
       captureFunctionCall(functionCalls, event.item);
-      if (isRecord(event.item)) {
+      if (isRecord(event.item) && shouldPreserveResponseInputItem(event.item)) {
         const key = responseItemKey(event.item, itemId ?? `item_${pendingOutputItems.size}`);
         if (event.type === "response.output_item.done") {
           outputItems.push(event.item);
@@ -282,6 +282,11 @@ export function parseResponsesSse(raw: string): {
     usage,
     responseId
   };
+}
+
+function shouldPreserveResponseInputItem(item: Record<string, unknown>): boolean {
+  const type = textValue(item.type);
+  return type === "message" || type === "function_call";
 }
 
 function traceResponsesSse(raw: string): string {

@@ -102,8 +102,7 @@ Options:
   --input-cost-per-million-tokens <usd>
   --output-cost-per-million-tokens <usd>
   --max-turns <count>
-  --transcript-compaction-min-chars <chars>
-  --transcript-compaction-hysteresis-turns <count>
+  --max-context-tokens <tokens>
   --danger-review <off|ask|deterministic|llm>
   --read-only
   --provider-debug

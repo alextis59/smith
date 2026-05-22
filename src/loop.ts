@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import type { ProfileConfig, RuntimeConfig } from "./config.js";
 import { addUsageCost, formatUsageCost, summarizeUsage, type TokenUsageCost } from "./cost.js";
 import { reviewDangerousCommand } from "./danger-review.js";
+import { applySmithPatch } from "./patch.js";
 import { createProviderDebugJsonLogger } from "./provider-debug.js";
 import { completeWithProfile, ProviderError, type ProviderFetch } from "./providers/index.js";
 import { smithToolName, SMITH_TOOLS, toolReason, toolTextArgument } from "./providers/tools.js";
@@ -16,8 +17,7 @@ import {
   appendProviderUserObservation,
   appendTerminalTurn,
   appendTranscriptObservation,
-  compactProviderMessages,
-  compactTranscript,
+  compactTranscriptToTokenBudget,
   providerMessagesToMessages,
   transcriptToProviderMessages,
   type TranscriptEntry
@@ -197,33 +197,30 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       }
       responsesInputItems = nextResponsesInputItems;
       pendingStatefulOutput = nextPendingOutput;
-      const compactedTranscript = compactTranscript(transcript, {
-        keepTurns: options.runtime.transcriptTurns,
-        maxSummaryChars: options.runtime.transcriptCompactionChars,
-        minChars: options.runtime.transcriptCompactionMinChars,
-        hysteresisTurns: options.runtime.transcriptCompactionHysteresisTurns
+      const compaction = compactTranscriptToTokenBudget(transcript, {
+        maxTokens: options.runtime.maxContextTokens,
+        systemPrompt
       });
-      if (compactedTranscript !== transcript) {
-        const beforeChars = transcript.length;
-        transcript = compactedTranscript;
-        providerMessages = compactProviderMessages(providerMessages, {
-          keepTurns: options.runtime.transcriptTurns,
-          maxSummaryChars: options.runtime.transcriptCompactionChars
-        });
+      if (compaction.changed) {
+        transcript = compaction.transcript;
+        providerMessages = transcriptToProviderMessages(transcript);
         responsesInputItems = undefined;
         options.trace?.write(
           "transcript compacted",
           [
             `turn: ${turn}`,
-            `chars_before: ${beforeChars}`,
-            `chars_after: ${transcript.length}`,
-            `keep_turns: ${options.runtime.transcriptTurns}`,
-            `min_chars: ${options.runtime.transcriptCompactionMinChars}`,
-            `hysteresis_turns: ${options.runtime.transcriptCompactionHysteresisTurns}`
-          ].join("\n")
+            `tokens_before: ${compaction.beforeTokens}`,
+            `tokens_after: ${compaction.afterTokens}`,
+            `max_tokens: ${options.runtime.maxContextTokens}`,
+            `redacted_actions: ${compaction.redactedActions}`,
+            `removed_actions: ${compaction.removedActions}`,
+            compaction.targetTokens ? `backup_target_tokens: ${compaction.targetTokens}` : ""
+          ]
+            .filter(Boolean)
+            .join("\n")
         );
       } else {
-        transcript = compactedTranscript;
+        transcript = compaction.transcript;
       }
     }
   } finally {
@@ -298,7 +295,7 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
     if (!patch || patch.trim().length === 0) {
       return appendToolObservation(parentContext, callId, "patch failed: missing required string argument 'patch'.");
     }
-    return runShellCommandTool(parentContext, callId, smithPatchCommand(patch), "patch");
+    return runPatchTool(parentContext, callId, patch);
   }
 
   const command = toolTextArgument(parentContext.toolCall.arguments, ["command", "cmd"]);
@@ -306,6 +303,48 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
     return appendToolObservation(parentContext, callId, "run failed: missing required string argument 'command'.");
   }
   return runShellCommandTool(parentContext, callId, command);
+}
+
+async function runPatchTool(
+  parentContext: ToolCallContext,
+  callId: string | undefined,
+  rawPatch: string
+): Promise<ToolActionResult> {
+  const review = await reviewDangerousCommand({
+    command: "smith_patch",
+    cwd: parentContext.options.cwd,
+    recentTranscript: parentContext.transcript,
+    runtime: parentContext.options.runtime,
+    reviewerProfile: parentContext.options.reviewerProfile,
+    env: parentContext.options.env,
+    fetch: parentContext.options.fetch
+  });
+  const totalUsage = addUsageCost(parentContext.totalUsage, review.usage);
+  if (review.usage) parentContext.options.trace?.write("danger review usage", formatUsageCost(review.usage));
+  if (!review.allowed) {
+    const blockedOutput = "Command too dangerous";
+    const transcript = appendTerminalTurn(parentContext.transcript, "patch", blockedOutput);
+    const providerMessages = appendProviderTerminalTurn(parentContext.providerMessages, "patch", blockedOutput);
+    const responsesInputItems = appendResponsesTerminalOutput(parentContext.responsesInputItems, callId, blockedOutput);
+    parentContext.options.trace?.write("tool output", blockedOutput);
+    parentContext.options.onTerminalOutput?.(blockedOutput);
+    return { transcript, providerMessages, responsesInputItems, toolOutput: blockedOutput, totalUsage };
+  }
+
+  const patch = stripPatchFence(rawPatch).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  let output: string;
+  try {
+    const result = applySmithPatch(patch, parentContext.options.cwd);
+    output = `Applied patch to ${result.changedFiles.join(", ")}`;
+  } catch (error) {
+    output = `patch failed: ${errorMessage(error)}`;
+  }
+  const transcript = appendTerminalTurn(parentContext.transcript, "patch", output);
+  const providerMessages = appendProviderTerminalTurn(parentContext.providerMessages, "patch", output);
+  const responsesInputItems = appendResponsesTerminalOutput(parentContext.responsesInputItems, callId, output);
+  parentContext.options.trace?.write("tool output", output);
+  if (output) parentContext.options.onTerminalOutput?.(output);
+  return { transcript, providerMessages, responsesInputItems, toolOutput: output, totalUsage };
 }
 
 async function runShellCommandTool(
@@ -455,16 +494,6 @@ function missingToolCallOutput(text: string): string {
     .join("\n");
 }
 
-function smithPatchCommand(rawPatch: string): string {
-  const patch = stripPatchFence(rawPatch).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  let delimiter = `SMITH_PATCH_${createHash("sha256").update(patch).digest("hex").slice(0, 16)}`;
-  for (let attempt = 0; patch.includes(delimiter); attempt += 1) {
-    delimiter = `SMITH_PATCH_${createHash("sha256").update(`${patch}\0${attempt}`).digest("hex").slice(0, 16)}`;
-  }
-  const body = patch.endsWith("\n") ? patch : `${patch}\n`;
-  return `smith_patch <<'${delimiter}'\n${body}${delimiter}`;
-}
-
 function stripPatchFence(value: string): string {
   const trimmed = value.trim();
   const match = /^(?:```|~~~)(?:patch|diff)?\s*\n([\s\S]*?)\n(?:```|~~~)\s*$/i.exec(trimmed);
@@ -506,12 +535,12 @@ async function completeModelTurn(context: {
       ? providerMessagesToMessages(
           context.systemPrompt,
           [{ role: "user", content: context.providerState.toolOutput || "(no terminal output)" }],
-          context.options.runtime.maxContextChars
+          context.options.runtime.maxContextTokens
         )
       : providerMessagesToMessages(
           context.systemPrompt,
           context.providerMessages,
-          context.options.runtime.maxContextChars
+          context.options.runtime.maxContextTokens
         );
   return completeWithProfile(
     {
@@ -610,7 +639,9 @@ function appendResponsesUserMessage(
 
 function resolvePromptCacheKey(profile: ProfileConfig, cwd: string, prompt: string): string | undefined {
   if (profile.promptCacheKey && profile.promptCacheKey !== "auto") return profile.promptCacheKey;
-  if (profile.promptCacheKey === "auto" || profile.statefulResponses) return promptCacheKeyForRun(profile, cwd, prompt);
+  if (profile.promptCacheKey === "auto" || profile.statefulResponses || profile.adapter === "chatgpt-codex") {
+    return promptCacheKeyForRun(profile, cwd, prompt);
+  }
   return undefined;
 }
 

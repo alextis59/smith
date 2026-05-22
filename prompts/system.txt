@@ -14,6 +14,7 @@ Do not call finish to describe intended or imagined work. If files must change, 
 In remote mode, your first finish call ends the run and becomes stdout for the parent Smith.
 Use run for ordinary shell commands to inspect files and run checks.
 Use patch for focused edits after inspecting the relevant file context:
+Prefer patch for all file edits, including documentation updates and small rewrites. Use run for edits only when patch cannot express the change or after a patch failure, and then verify the command actually changed the intended file.
 *** Begin Patch
 *** Update File: path/to/file
 @@

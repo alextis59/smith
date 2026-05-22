@@ -7,12 +7,17 @@ import { taskSpecs } from "./generate-benchmarks.mjs";
 
 const root = new URL("../benchmarks/", import.meta.url).pathname;
 const specs = taskSpecs();
+const expectedCount = specs.length;
+const expectedSlugs = new Set(specs.map((spec) => spec.slug));
 const taskDirs = existsSync(root)
   ? readdirSync(root).filter((name) => statSync(join(root, name)).isDirectory() && existsSync(join(root, name, "Task.md"))).sort()
   : [];
 
-if (taskDirs.length !== 100) fail(`expected 100 task directories, found ${taskDirs.length}`);
+if (taskDirs.length !== expectedCount) fail(`expected ${expectedCount} task directories, found ${taskDirs.length}`);
 if (new Set(taskDirs).size !== taskDirs.length) fail("duplicate task directory names found");
+for (const taskDir of taskDirs) {
+  if (!expectedSlugs.has(taskDir)) fail(`unexpected task directory ${taskDir}`);
+}
 
 for (const spec of specs) {
   const taskDir = join(root, spec.slug);
@@ -43,7 +48,7 @@ try {
   rmSync(tmp, { recursive: true, force: true });
 }
 
-console.log("validated 100 benchmark task structures and solved-state verifiers");
+console.log(`validated ${expectedCount} benchmark task structures and solved-state verifiers`);
 
 function fail(message) {
   console.error(message);

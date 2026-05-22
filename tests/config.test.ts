@@ -121,10 +121,8 @@ sub_agent_inherit_context = false
       "--output-cost-per-million-tokens=10",
       "--max-turns",
       "7",
-      "--transcript-compaction-min-chars",
+      "--max-context-tokens",
       "12000",
-      "--transcript-compaction-hysteresis-turns=5",
-      "--transcript-compaction-chars=500",
       "--read-only",
       "--provider-retries",
       "3",
@@ -156,9 +154,7 @@ sub_agent_inherit_context = false
       cachedInputCostPerMillionTokens: 0.125,
       outputCostPerMillionTokens: 10,
       maxTurns: 7,
-      transcriptCompactionMinChars: 12000,
-      transcriptCompactionHysteresisTurns: 5,
-      transcriptCompactionChars: 500,
+      maxContextTokens: 12000,
       readOnly: true,
       providerRetries: 3,
       providerDebug: true,
@@ -193,6 +189,32 @@ output_cost_per_million_tokens = 10
     expect(profile.inputCostPerMillionTokens).toBe(1.25);
     expect(profile.cachedInputCostPerMillionTokens).toBe(0.125);
     expect(profile.outputCostPerMillionTokens).toBe(10);
+  });
+
+  it("loads max context tokens and migrates legacy max context chars", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `[runtime]
+max_context_tokens = 12345
+`,
+      "utf8"
+    );
+
+    expect(loadConfig({ homeDir: tempDir(), cwd }).runtime.maxContextTokens).toBe(12345);
+
+    const legacyCwd = tempDir();
+    mkdirSync(join(legacyCwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(legacyCwd, ".smith", "config.toml"),
+      `[runtime]
+max_context_chars = 120000
+`,
+      "utf8"
+    );
+
+    expect(loadConfig({ homeDir: tempDir(), cwd: legacyCwd }).runtime.maxContextTokens).toBe(30000);
   });
 
   it("loads ChatGPT Codex auth profile fields", () => {

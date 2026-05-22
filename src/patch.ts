@@ -16,40 +16,59 @@ type Hunk = {
   newLines: string[];
 };
 
+type StagedFile = {
+  content?: string;
+};
+
 export function applySmithPatch(patch: string, cwd = process.cwd()): PatchResult {
   const operations = parseSmithPatch(patch);
   const changedFiles: string[] = [];
+  const staged = new Map<string, StagedFile>();
 
   for (const operation of operations) {
     const file = resolvePatchPath(cwd, operation.path);
     if (operation.type === "add") {
-      if (existsSync(file)) throw new Error(`file already exists: ${operation.path}`);
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, `${operation.lines.join("\n")}${operation.lines.length ? "\n" : ""}`, "utf8");
+      if (readStagedOrFile(staged, file) !== undefined) throw new Error(`file already exists: ${operation.path}`);
+      staged.set(file, { content: `${operation.lines.join("\n")}${operation.lines.length ? "\n" : ""}` });
       changedFiles.push(operation.path);
       continue;
     }
 
     if (operation.type === "delete") {
-      if (!existsSync(file)) throw new Error(`file does not exist: ${operation.path}`);
-      rmSync(file);
+      if (readStagedOrFile(staged, file) === undefined) throw new Error(`file does not exist: ${operation.path}`);
+      staged.set(file, {});
       changedFiles.push(operation.path);
       continue;
     }
 
-    if (!existsSync(file)) throw new Error(`file does not exist: ${operation.path}`);
-    const content = applyUpdateHunks(readFileSync(file, "utf8"), operation.path, operation.hunks);
-    writeFileSync(file, content, "utf8");
+    const current = readStagedOrFile(staged, file);
+    if (current === undefined) throw new Error(`file does not exist: ${operation.path}`);
+    const content = applyUpdateHunks(current, operation.path, operation.hunks);
+    staged.set(file, { content });
     changedFiles.push(operation.path);
+  }
+
+  for (const [file, change] of staged) {
+    if (change.content === undefined) {
+      if (existsSync(file)) rmSync(file);
+      continue;
+    }
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, change.content, "utf8");
   }
 
   return { changedFiles };
 }
 
+function readStagedOrFile(staged: Map<string, StagedFile>, file: string): string | undefined {
+  if (staged.has(file)) return staged.get(file)?.content;
+  return existsSync(file) ? readFileSync(file, "utf8") : undefined;
+}
+
 function applyUpdateHunks(initialContent: string, path: string, hunks: Hunk[]): string {
   let content = initialContent;
   let cursor = 0;
-  for (const hunk of hunks) {
+  for (const [index, hunk] of hunks.entries()) {
     const oldBlock = hunk.oldLines.join("\n");
     const newBlock = hunk.newLines.join("\n");
     const oldWithNewline = `${oldBlock}\n`;
@@ -74,7 +93,7 @@ function applyUpdateHunks(initialContent: string, path: string, hunks: Hunk[]): 
       continue;
     }
 
-    throw new Error(`hunk context not found in ${path}`);
+    throw new Error(`hunk context not found in ${path} (hunk ${index + 1})`);
   }
   return content;
 }

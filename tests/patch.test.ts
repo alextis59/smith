@@ -54,6 +54,31 @@ describe("smith_patch", () => {
     ).toThrow("hunk context not found");
   });
 
+  it("does not leave partial changes when a later operation fails", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "first.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "second.txt"), "actual\n", "utf8");
+
+    expect(() =>
+      applySmithPatch(
+        `*** Begin Patch
+*** Update File: first.txt
+@@
+-old
++new
+*** Update File: second.txt
+@@
+-missing
++changed
+*** End Patch`,
+        cwd
+      )
+    ).toThrow("hunk context not found");
+
+    expect(readFileSync(join(cwd, "first.txt"), "utf8")).toBe("old\n");
+    expect(readFileSync(join(cwd, "second.txt"), "utf8")).toBe("actual\n");
+  });
+
   it("applies repeated update contexts in file order instead of matching earlier replacements", () => {
     const cwd = tempDir();
     writeFileSync(join(cwd, "file.txt"), "section\nvalue\nsection\nvalue\n", "utf8");

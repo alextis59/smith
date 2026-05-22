@@ -29,6 +29,7 @@ reasoning_effort = "medium"
 ## ChatGPT Subscription via Codex Auth
 
 Run `codex login` and choose ChatGPT sign-in first. Smith reads the same Codex auth file, uses `https://chatgpt.com/backend-api/codex/responses`, and refreshes the OAuth token when it is near expiry.
+This adapter sends a deterministic per-run prompt cache key and matching Codex session headers by default.
 
 ```toml
 [profiles.codex-chatgpt]
