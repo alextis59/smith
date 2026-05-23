@@ -656,6 +656,7 @@ async function completeModelTurn(context: {
       fetch: context.options.fetch,
       retries: context.options.runtime.providerRetries,
       retryDelayMs: context.options.runtime.providerRetryDelayMs,
+      timeoutMs: context.options.runtime.providerTimeoutMs,
       debugLog: context.options.runtime.providerDebug
         ? (section, content) => context.options.trace?.write(section, content)
         : undefined,

@@ -344,6 +344,35 @@ describe("provider adapters", () => {
     });
   });
 
+  it("times out and retries stalled provider attempts", async () => {
+    let count = 0;
+    let firstSignal: AbortSignal | undefined;
+    const fetchImpl: ProviderFetch = async (_input, init) => {
+      count += 1;
+      if (count === 1) {
+        firstSignal = init?.signal ?? undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          firstSignal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    };
+
+    const response = await completeWithProfile(baseRequest(), profile("openai-chat"), {
+      fetch: fetchImpl,
+      retries: 1,
+      retryDelayMs: 1,
+      timeoutMs: 5
+    });
+
+    expect(response.text).toBe("ok");
+    expect(count).toBe(2);
+    expect(firstSignal?.aborted).toBe(true);
+  });
+
   it("maps anthropic messages requests", async () => {
     const calls = captureFetch({ content: [{ text: "answer" }], usage: { input_tokens: 3, output_tokens: 4 } });
     const response = await completeWithProfile(baseRequest(), profile("anthropic-messages", "https://gateway.example"), {

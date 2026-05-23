@@ -401,3 +401,29 @@ Decision:
 - The earlier `008` pass is invalid target evidence under the user's benchmark-integrity rule because it occurred before SWE-specific prompt coaching was removed.
 - Current clean evidence remains `3/10` from the previous full-run baseline until generic changes recover additional tasks.
 - Next work should investigate generic task-memory or act-after-inspection behavior without benchmark-specific instructions.
+
+## 2026-05-23 Generic Provider Timeout
+
+Evidence:
+
+- The prior clean `008` trace ended with a provider-side disconnect/reset before headers near the end of the run, and Smith had no model-call timeout separate from shell command timeouts.
+- This is a generic reliability issue: a stalled provider attempt can consume an entire long-running Smith task.
+
+Generic change:
+
+- Added `runtime.provider_timeout_ms` and `--provider-timeout-ms`.
+- Each provider attempt is now bounded, aborts its fetch signal on timeout, and flows through existing transient provider retry handling.
+- Default is `300000ms`; `0` disables the timeout.
+
+Validation:
+
+- `npm test -- tests/providers.test.ts tests/config.test.ts`: passed `25` tests.
+- `npm run build`: passed.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `97984ms`, log `/tmp/smith/2026-05-23T17-51-02-052Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun `008`: failed by Docker timeout in `905936ms`, log `/tmp/smith/2026-05-23T18-06-19-919Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-zp1tyt/home/.smith/runs/2026-05-23T17-51-14-751Z.trace`.
+- The 008 retained workspace had no tracked source diff, only `SMITH.TASK.md`; trace search found no `provider request timed out` evidence before the outer Docker timeout.
+
+Decision:
+
+- Keep the change as generic provider reliability, but do not count it as SWE recovery evidence.
+- Current valid score evidence remains `3/10`.

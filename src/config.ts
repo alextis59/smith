@@ -40,6 +40,7 @@ export type RuntimeConfig = {
   readOnly: boolean;
   providerRetries: number;
   providerRetryDelayMs: number;
+  providerTimeoutMs: number;
   providerDebug: boolean;
   subAgentInheritContext: boolean;
   remoteSessionTtlDays: number;
@@ -92,6 +93,7 @@ export type CliConfigOverrides = {
   readOnly?: boolean;
   providerRetries?: number;
   providerRetryDelayMs?: number;
+  providerTimeoutMs?: number;
   providerDebug?: boolean;
   subAgentInheritContext?: boolean;
   remoteSessionTtlDays?: number;
@@ -141,6 +143,7 @@ const DEFAULT_CONFIG: SmithConfig = {
     readOnly: false,
     providerRetries: 2,
     providerRetryDelayMs: 250,
+    providerTimeoutMs: 300_000,
     providerDebug: false,
     subAgentInheritContext: true,
     remoteSessionTtlDays: 30
@@ -309,6 +312,9 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--provider-retry-delay-ms":
         overrides.providerRetryDelayMs = Number.parseInt(readValue(), 10);
         break;
+      case "--provider-timeout-ms":
+        overrides.providerTimeoutMs = Number.parseInt(readValue(), 10);
+        break;
       case "--provider-debug":
         overrides.providerDebug = true;
         break;
@@ -368,6 +374,7 @@ danger_review = "llm"
 danger_review_profile = "reviewer"
 provider_retries = 2
 provider_retry_delay_ms = 250
+provider_timeout_ms = 300000
 sub_agent_inherit_context = true
 remote_session_ttl_days = 30
 `;
@@ -460,6 +467,7 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.readOnly !== undefined ? { readOnly: cli.readOnly } : {}),
     ...(cli.providerRetries !== undefined ? { providerRetries: cli.providerRetries } : {}),
     ...(cli.providerRetryDelayMs !== undefined ? { providerRetryDelayMs: cli.providerRetryDelayMs } : {}),
+    ...(cli.providerTimeoutMs !== undefined ? { providerTimeoutMs: cli.providerTimeoutMs } : {}),
     ...(cli.providerDebug !== undefined ? { providerDebug: cli.providerDebug } : {}),
     ...(cli.subAgentInheritContext !== undefined ? { subAgentInheritContext: cli.subAgentInheritContext } : {}),
     ...(cli.remoteSessionTtlDays !== undefined ? { remoteSessionTtlDays: cli.remoteSessionTtlDays } : {}),
@@ -523,6 +531,7 @@ function mergeRuntime(previous: RuntimeConfig, raw: RawConfig): RuntimeConfig {
     ...(typeof raw.read_only === "boolean" ? { readOnly: raw.read_only } : {}),
     ...(typeof raw.provider_retries === "number" ? { providerRetries: raw.provider_retries } : {}),
     ...(typeof raw.provider_retry_delay_ms === "number" ? { providerRetryDelayMs: raw.provider_retry_delay_ms } : {}),
+    ...(typeof raw.provider_timeout_ms === "number" ? { providerTimeoutMs: raw.provider_timeout_ms } : {}),
     ...(typeof raw.provider_debug === "boolean" ? { providerDebug: raw.provider_debug } : {}),
     ...(typeof raw.sub_agent_inherit_context === "boolean"
       ? { subAgentInheritContext: raw.sub_agent_inherit_context }
@@ -624,6 +633,7 @@ export function validateConfig(config: SmithConfig): void {
   validateInteger("runtime.max_turns", config.runtime.maxTurns, 1, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.provider_retries", config.runtime.providerRetries, 0, 10);
   validateInteger("runtime.provider_retry_delay_ms", config.runtime.providerRetryDelayMs, 0, 60_000);
+  validateInteger("runtime.provider_timeout_ms", config.runtime.providerTimeoutMs, 0, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.remote_session_ttl_days", config.runtime.remoteSessionTtlDays, 1, 3650);
   if (config.runtime.logDir !== undefined && !config.runtime.logDir.trim()) {
     throw new Error("runtime.log_dir must not be empty");

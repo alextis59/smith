@@ -1367,3 +1367,85 @@ Rejected ideas:
 
 - Do not reintroduce instructions about source-only edits, selected-test behavior, verifier timing, Go toolchain absence, or any other SWE-bench-specific workflow.
 - Do not tune prompts or code for the Vuls task path specifically.
+
+## 2026-05-23 Generic Change: Provider Attempt Timeout
+
+Hypothesis:
+
+- Clean `008` trace `.smith-bench/run-lohmzj/home/.smith/runs/2026-05-23T17-26-23-635Z.trace` ended with provider-side reset/disconnect text near the final provider response area.
+- Smith had shell command timeouts and provider retries, but no timeout around a model/provider attempt itself.
+- A hung or stalled provider attempt can consume an entire long-running Smith task. This is a generic reliability problem, not SWE-specific behavior.
+
+Code change:
+
+- Added `runtime.provider_timeout_ms`, default `300000`.
+- Added CLI override `--provider-timeout-ms`.
+- Passed the runtime timeout into `completeWithProfile`.
+- Wrapped each provider attempt with a timeout that aborts the fetch signal and rejects with a transient `ProviderError`, so existing retry handling can retry the attempt.
+- Documented the setting in `README.md` and `docs/architecture.md`.
+
+Focused validation:
+
+```sh
+npm test -- tests/providers.test.ts tests/config.test.ts
+npm run build
+```
+
+Results:
+
+- Provider/config tests passed: `25` tests.
+- Build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result:
+
+- Passed in `97984ms`.
+- Log: `/tmp/smith/2026-05-23T17-51-02-052Z-smith-091-command-router-refactor.json`
+- Trace: `.smith-bench/run-qVQs3z/home/.smith/runs/2026-05-23T17-49-24-315Z.trace`
+- Usage: `53199` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by timeout in `905936ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T18-06-19-919Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`
+- `tracePath`: `.smith-bench/run-zp1tyt/home/.smith/runs/2026-05-23T17-51-14-751Z.trace`
+- Sandbox: `.smith-bench/run-zp1tyt`
+- Usage: `1302350` total tokens.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-zp1tyt/workspace status --short
+git -C .smith-bench/run-zp1tyt/workspace diff --stat
+```
+
+Observed:
+
+```text
+?? SMITH.TASK.md
+```
+
+Trace evidence:
+
+- Search for `provider request timed out` found no matches; the provider timeout did not fire before the outer Docker timeout.
+- Search for `provider retry` found no useful retry evidence.
+- The run recorded `SMITH.TASK.md`, continued inspecting supporting model/reference code, and did not produce a tracked source patch or verifier run.
+
+Decision:
+
+- Keep provider attempt timeouts as a generic reliability feature because it is tested, documented, configurable, and protects ordinary Smith tasks from indefinite provider stalls.
+- Do not count the change as SWE recovery evidence.
+- Current valid target evidence remains `3/10`.
+- Next evidence should come from Codex-passed failures (`001`, `005`, `010`) or a generic runtime/tool issue that appears across tasks, not from Vuls-specific prompt or implementation guidance.

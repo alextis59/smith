@@ -110,6 +110,7 @@ Options:
   --agent <smith|codex>
   --concurrency <count>
   --cached-input-cost-per-million-tokens <usd>
+  --provider-timeout-ms <milliseconds>
 
 Examples:
   smith --profile fast "summarize failing tests"
