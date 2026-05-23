@@ -115,3 +115,28 @@ Validation:
 Next step:
 
 - Re-evaluate remaining failed tasks. With `006` plausibly recovered, expected full-run score is at least `4/10` if previous passes remain stable; still short of the `>=7/10` target.
+
+## 2026-05-23 Milestone: Run SWE Verifiers Through Bash Entrypoint
+
+Problem found:
+
+- Targeted `003-ansible` rerun produced a plausible source-only fix, but the external verifier failed before running tests.
+- Docker stderr showed `exec: "-lc": executable file not found in $PATH`.
+- The SWE verifier container path passed `-lc` directly to the task image without setting `bash` as the entrypoint, unlike the Smith editing container path.
+
+Change:
+
+- Add `buildSweBenchProVerifierDockerArgs()` and run SWE-bench Pro verifier containers with `--entrypoint bash`.
+- Cover the verifier Docker argument shape in `tests/benchmark.test.ts`.
+
+Validation:
+
+- `npm test -- tests/benchmark.test.ts`: passed.
+- `npm run build`: passed.
+- Project benchmark retry: `benchmarks/091-command-router-refactor`, passed in `241403ms`, log `/tmp/smith/2026-05-23T11-55-31-941Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun: `swe-bench-pro/003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5`, passed in `678879ms`, log `/tmp/smith/2026-05-23T12-07-19-667Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`, trace `.smith-bench/run-DH6Xqp/home/.smith/runs/2026-05-23T11-56-02-828Z.trace`.
+- External verifier ran the selected Ansible tests and reported `{"passed": 175}`.
+
+Next step:
+
+- Continue with another previously failed task, likely `008` or `009`, before considering a full SWE-bench Pro run. With `003` and `006` plausibly recovered, expected score is around `5/10` if the original `002`, `004`, and `007` passes remain stable.

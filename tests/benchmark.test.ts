@@ -10,6 +10,7 @@ import {
   DEFAULT_SMITH_BENCHMARK_IMAGE,
   SWE_BENCH_PRO_TASK_INSTRUCTIONS,
   buildSmithBenchmarkDockerArgs,
+  buildSweBenchProVerifierDockerArgs,
   buildSweBenchProSmithScript,
   buildSweBenchProVerifierScript,
   parseSmithTraceUsage,
@@ -292,6 +293,21 @@ total_tokens: 320
     expect(args[args.indexOf("--entrypoint") + 1]).toBe("bash");
     expect(args.slice(-3)).toEqual([DEFAULT_SMITH_BENCHMARK_IMAGE, "-lc", "echo ok"]);
     expect(args).not.toContain("bash -lc");
+  });
+
+  it("runs SWE-bench Pro verifier containers through a bash entrypoint", () => {
+    const args = buildSweBenchProVerifierDockerArgs({
+      containerName: "smith-bench-verify-test",
+      image: "example/image:tag",
+      workspace: "/workspace-copy",
+      taskCopy: "/task-copy",
+      resultsDir: "/results-copy",
+      script: "echo verify"
+    });
+
+    expect(args).toContain("--entrypoint");
+    expect(args[args.indexOf("--entrypoint") + 1]).toBe("bash");
+    expect(args.slice(-3)).toEqual(["example/image:tag", "-lc", "echo verify"]);
   });
 
   it("marks mounted SWE-bench Pro workspaces as safe for git before verification", () => {

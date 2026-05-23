@@ -483,26 +483,12 @@ async function runSweBenchProVerifier(context: {
   const resultsDir = join(sandbox, "benchmark-results");
   mkdirSync(resultsDir, { recursive: true });
   const script = buildSweBenchProVerifierScript(metadata);
-  const command = `docker run --rm -v ${workspace}:/app -v ${taskCopy}:/task:ro ${metadata.dockerImage} -lc <verifier>`;
+  const command = `docker run --rm --entrypoint bash -v ${workspace}:/app -v ${taskCopy}:/task:ro -v ${resultsDir}:/benchmark-results ${metadata.dockerImage} -lc <verifier>`;
   const containerName = dockerContainerName(sandbox, "verify");
   try {
     const result = await runDockerBenchmarkContainer(
       containerName,
-      [
-        "run",
-        "--rm",
-        "--name",
-        containerName,
-        "-v",
-        `${workspace}:/app`,
-        "-v",
-        `${taskCopy}:/task:ro`,
-        "-v",
-        `${resultsDir}:/benchmark-results`,
-        metadata.dockerImage,
-        "-lc",
-        script
-      ],
+      buildSweBenchProVerifierDockerArgs({ containerName, image: metadata.dockerImage, workspace, taskCopy, resultsDir, script }),
       { timeout: timeoutMs, maxBuffer: 1024 * 1024 * 50 }
     );
     return { command, exitCode: 0, stdout: result.stdout, stderr: result.stderr };
@@ -522,6 +508,34 @@ async function runSweBenchProVerifier(context: {
   } finally {
     await cleanupDockerContainer(containerName);
   }
+}
+
+export function buildSweBenchProVerifierDockerArgs(context: {
+  containerName: string;
+  image: string;
+  workspace: string;
+  taskCopy: string;
+  resultsDir: string;
+  script: string;
+}): string[] {
+  const { containerName, image, workspace, taskCopy, resultsDir, script } = context;
+  return [
+    "run",
+    "--rm",
+    "--name",
+    containerName,
+    "--entrypoint",
+    "bash",
+    "-v",
+    `${workspace}:/app`,
+    "-v",
+    `${taskCopy}:/task:ro`,
+    "-v",
+    `${resultsDir}:/benchmark-results`,
+    image,
+    "-lc",
+    script
+  ];
 }
 
 export function buildSweBenchProVerifierScript(metadata: SweBenchProTaskMetadata): string {

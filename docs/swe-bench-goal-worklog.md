@@ -461,3 +461,87 @@ Decision:
 - Keep this milestone; it turned one failed SWE-bench Pro task into a targeted pass.
 - Do not update `LeaderBoard.md` yet because no full SWE-bench Pro run has been completed with an improved aggregate score.
 - Do not run a full SWE-bench Pro benchmark yet; estimated score improvement is only from `3/10` to plausibly `4/10`.
+
+## 2026-05-23 Evidence: Ansible 003 Exposed Verifier Docker Entrypoint Bug
+
+Target:
+
+- `003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5`
+
+Initial targeted rerun after the no-test-edit/check prompt:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result: failed in `583951ms`, but not because of selected tests. Important fields:
+
+- `logPath`: `/tmp/smith/2026-05-23T11-45-06-033Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`
+- `tracePath`: `.smith-bench/run-DH6Xqp/home/.smith/runs/2026-05-23T11-35-25-931Z.trace`
+- `sandboxDir`: `.smith-bench/run-DH6Xqp`
+- Verifier stderr: `exec: "-lc": executable file not found in $PATH`
+- Verifier command in result: `docker run --rm -v ... jefzda/sweap-images:ansible... -lc <verifier>`
+
+Agent behavior:
+
+- Source-only candidate patch.
+- Changed:
+  - `lib/ansible/galaxy/dependency_resolution/dataclasses.py`
+  - `lib/ansible/utils/collection_loader/_collection_finder.py`
+- Did not rely on repository test edits.
+- Ran `python -m py_compile` and reported missing local `yaml` for import-based checks.
+
+Classification:
+
+- Harness reliability bug, not a model repair failure.
+- The SWE Smith editing container already used `--entrypoint bash`; the separate SWE verifier Docker path did not.
+
+Implementation:
+
+- Add exported `buildSweBenchProVerifierDockerArgs()` in `src/benchmark/runner.ts`.
+- Use `--entrypoint bash` for SWE-bench Pro verifier containers and pass `-lc <script>` as bash arguments.
+- Update the verifier command string in result logs to show the entrypoint and mounted result directory.
+- Add a focused unit test that the verifier Docker args include `--entrypoint bash` and end with `[image, "-lc", script]`.
+
+Focused validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+```
+
+Result: both passed.
+
+Representative project benchmark:
+
+First run:
+
+- Command: `node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json`
+- Result: failed by timeout in `305339ms`, log `/tmp/smith/2026-05-23T11-51-06-746Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-3Ha73f/home/.smith/runs/2026-05-23T11-46-01-649Z.trace`.
+- Trace ended after a successful source/README edit command; no finish or verifier run. Treated as provider/model stall, not evidence against the harness change.
+
+Retry:
+
+- Same command.
+- Result: passed in `241403ms`, verifier exit `0`, log `/tmp/smith/2026-05-23T11-55-31-941Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-6XzVjY/home/.smith/runs/2026-05-23T11-51-30-760Z.trace`.
+
+Target SWE rerun after verifier entrypoint fix:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result: passed in `678879ms`. Important fields:
+
+- `logPath`: `/tmp/smith/2026-05-23T12-07-19-667Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`
+- `tracePath`: `.smith-bench/run-DH6Xqp/home/.smith/runs/2026-05-23T11-56-02-828Z.trace`
+- Usage: `613535` total tokens.
+- External verifier selected tests ran:
+  - `test/units/utils/collection_loader/test_collection_loader.py`
+  - `test/units/cli/test_galaxy.py`
+- Verifier reported `110 passed` at pytest level and final parser check `{"passed": 175}`.
+
+Decision:
+
+- Keep the harness change. It is not a scoring/parser change; it allows the existing official task verifier to execute in Docker images whose default command cannot interpret `-lc`.
+- Do not run a full SWE-bench Pro benchmark yet; estimated score with recovered `003` and `006` is around `5/10`, still below the `>=7/10` target.
