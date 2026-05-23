@@ -1,13 +1,15 @@
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import type { ProfileConfig, RuntimeConfig } from "./config.js";
 import { addUsageCost, formatUsageCost, summarizeUsage, type TokenUsageCost } from "./cost.js";
 import { reviewDangerousCommand } from "./danger-review.js";
 import { applySmithPatch } from "./patch.js";
 import { createProviderDebugJsonLogger } from "./provider-debug.js";
 import { completeWithProfile, ProviderError, type ProviderFetch } from "./providers/index.js";
-import { smithToolName, SMITH_TOOLS, toolReason, toolTextArgument } from "./providers/tools.js";
+import { smithToolName, SMITH_TOOLS, toolBooleanArgument, toolReason, toolTextArgument } from "./providers/tools.js";
 import type { SmithModelResponse, SmithProviderState, SmithToolCall } from "./providers/types.js";
 import { PtyShellRunner } from "./pty.js";
 import { summarizeProviderEvents } from "./session-log.js";
@@ -26,6 +28,14 @@ import type { TraceLogger } from "./trace.js";
 
 export type RunMode = "single" | "remote" | "interactive";
 
+const MAX_SUB_AGENT_DEPTH = 2;
+const RIPGREP_CHECK_TIMEOUT_MS = 5_000;
+const RIPGREP_BOOTSTRAP_MAX_TURNS = 6;
+const RIPGREP_UNAVAILABLE_PROMPT_NOTE =
+  "Environment note: the `rg` command is not available in this environment. Smith already checked at startup and, when allowed, attempted a straightforward install without confirming `rg` on PATH. Use grep, find, or language-specific tools instead, and do not spend task time trying to install `rg` unless the user explicitly asks.";
+
+const execFileAsync = promisify(execFile);
+
 export type SmithRunOptions = {
   cwd: string;
   prompt: string;
@@ -42,6 +52,7 @@ export type SmithRunOptions = {
   onModelOutput?: (output: string) => void;
   trace?: TraceLogger;
   subAgentDepth?: number;
+  initialUsage?: TokenUsageCost;
 };
 
 export type SmithRunResult = {
@@ -51,12 +62,88 @@ export type SmithRunResult = {
   usage?: TokenUsageCost;
 };
 
+export class SmithRunFailure extends Error {
+  usage?: TokenUsageCost;
+
+  constructor(message: string, options: { usage?: TokenUsageCost } = {}) {
+    super(message);
+    this.name = "SmithRunFailure";
+    this.usage = options.usage;
+  }
+}
+
+export type SmithEnvironmentPreparation = {
+  systemPrompt: string;
+  ripgrepAvailable: boolean;
+  ripgrepBootstrapAttempted: boolean;
+  usage?: TokenUsageCost;
+};
+
+export async function prepareSmithEnvironment(options: SmithRunOptions): Promise<SmithEnvironmentPreparation> {
+  if (await isRipgrepAvailable(options)) {
+    options.trace?.write("ripgrep startup check", "available: true");
+    return {
+      systemPrompt: options.systemPrompt,
+      ripgrepAvailable: true,
+      ripgrepBootstrapAttempted: false
+    };
+  }
+
+  options.trace?.write(
+    "ripgrep startup check",
+    [
+      "available: false",
+      options.runtime.readOnly ? "bootstrap: skipped because read_only mode is active" : "bootstrap: starting install agent"
+    ].join("\n")
+  );
+
+  if (options.runtime.readOnly) {
+    return {
+      systemPrompt: systemPromptWithRipgrepUnavailableNote(options.systemPrompt),
+      ripgrepAvailable: false,
+      ripgrepBootstrapAttempted: false
+    };
+  }
+
+  let usage: TokenUsageCost | undefined;
+  try {
+    const result = await runSmithTask({
+      ...options,
+      prompt: ripgrepBootstrapPrompt(),
+      initialTranscript: undefined,
+      maxTurns: Math.min(options.maxTurns ?? options.runtime.maxTurns, RIPGREP_BOOTSTRAP_MAX_TURNS),
+      onTerminalOutput: undefined,
+      onModelOutput: undefined,
+      subAgentDepth: MAX_SUB_AGENT_DEPTH
+    });
+    usage = result.usage;
+    options.trace?.write(
+      "ripgrep bootstrap output",
+      [`turns: ${result.turns}`, result.chatOut].filter(Boolean).join("\n")
+    );
+  } catch (error) {
+    usage = error instanceof SmithRunFailure ? error.usage : undefined;
+    options.trace?.write("ripgrep bootstrap failed", errorMessage(error));
+  }
+
+  if (usage) options.trace?.write("ripgrep bootstrap usage", formatUsageCost(usage));
+
+  const available = await isRipgrepAvailable(options);
+  options.trace?.write("ripgrep startup check", `available_after_bootstrap: ${available ? "true" : "false"}`);
+  return {
+    systemPrompt: available ? options.systemPrompt : systemPromptWithRipgrepUnavailableNote(options.systemPrompt),
+    ripgrepAvailable: available,
+    ripgrepBootstrapAttempted: true,
+    ...(usage ? { usage } : {})
+  };
+}
+
 export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunResult> {
   const maxTurns = options.maxTurns ?? options.runtime.maxTurns;
   let transcript = options.initialTranscript ?? initialTranscript(options.cwd, options.prompt);
   let providerMessages = transcriptToProviderMessages(transcript);
   let systemPrompt = options.systemPrompt;
-  let totalUsage: TokenUsageCost | undefined;
+  let totalUsage: TokenUsageCost | undefined = options.initialUsage;
   let statefulResponses = options.profile.adapter === "chatgpt-codex" ? false : options.profile.statefulResponses;
   let previousResponseId: string | undefined;
   let previousToolCallId: string | undefined;
@@ -155,7 +242,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       let nextResponsesInputItems = responseItemsWithOutput;
       let nextPendingOutput = "";
       if (toolCalls.length === 0) {
-        const output = missingToolCallOutput(response.text);
+        const output = missingToolCallOutput(response.text, availableSmithTools(options).map((tool) => tool.name));
         transcript = appendTerminalTurn(transcript, "# tool observation", output);
         providerMessages = appendProviderUserObservation(providerMessages, output);
         nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, output);
@@ -229,7 +316,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
     shell.kill();
   }
 
-  throw new Error(`model did not call finish within ${maxTurns} turns`);
+  throw new SmithRunFailure(`model did not call finish within ${maxTurns} turns`, { usage: totalUsage });
 }
 
 type ToolActionResult = {
@@ -269,12 +356,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
   );
   const reasonState = appendToolReason(context.transcript, context.providerMessages, toolName ?? context.toolCall.name, reason);
   const parentContext = { ...context, transcript: reasonState.transcript, providerMessages: reasonState.providerMessages };
+  const availableToolNames = availableSmithTools(context.options).map((tool) => tool.name);
 
-  if (!toolName) {
+  if (!toolName || !availableToolNames.includes(toolName)) {
     return appendToolObservation(
       parentContext,
       callId,
-      `Unknown tool '${context.toolCall.name}'. Available tools: run, patch, sub_agent, finish.`
+      `Unknown or unavailable tool '${context.toolCall.name}'. Available tools: ${availableToolNames.join(", ")}.`
     );
   }
 
@@ -376,7 +464,10 @@ async function runShellCommandTool(
 
   const timeoutMs = timeoutFromToolCall(parentContext.toolCall.arguments, parentContext.options.runtime.timeoutMs);
   const result = await parentContext.shell.run(command, timeoutMs);
-  const terminalOutput = formatTerminalOutput(result.output, result.exitCode);
+  const terminalOutput = limitToolOutput(
+    formatTerminalOutput(result.output, result.exitCode),
+    parentContext.options.runtime.maxToolOutputChars
+  );
   const recordedCommand = transcriptCommand ?? result.command;
   const transcript = appendTerminalTurn(parentContext.transcript, recordedCommand, terminalOutput);
   const providerMessages = appendProviderTerminalTurn(parentContext.providerMessages, recordedCommand, terminalOutput);
@@ -395,7 +486,9 @@ async function runShellCommandTool(
     toolOutput: terminalOutput,
     totalUsage,
     timedOut: result.timedOut,
-    timeoutOutput: result.timedOut ? formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput) : undefined
+    timeoutOutput: result.timedOut
+      ? limitToolOutput(formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput), parentContext.options.runtime.maxToolOutputChars)
+      : undefined
   };
 }
 
@@ -409,28 +502,36 @@ async function runSubAgentTool(
     return appendToolObservation(context, callId, "sub_agent failed: missing required string argument 'task'.");
   }
   const depth = context.options.subAgentDepth ?? 0;
-  if (depth >= 2) {
+  if (depth >= MAX_SUB_AGENT_DEPTH) {
     return appendToolObservation(context, callId, "sub_agent failed: maximum sub_agent nesting depth reached.");
   }
   const cwdArg = toolTextArgument(context.toolCall.arguments, ["cwd", "workdir"]);
   const cwd = cwdArg ? resolve(context.options.cwd, cwdArg) : context.options.cwd;
-  const maxTurns = maxTurnsFromToolCall(context.toolCall.arguments, context.options.runtime.maxTurns);
+  const maxTurns = context.options.maxTurns ?? context.options.runtime.maxTurns;
   const inheritContext = context.options.runtime.subAgentInheritContext !== false;
-  const initialTranscript = inheritContext ? appendSubAgentTaskToTranscript(inheritedTranscript, task) : undefined;
+  const explicitReadOnly = toolBooleanArgument(context.toolCall.arguments, ["read_only", "readonly"]);
+  const readOnly = context.options.runtime.readOnly || (explicitReadOnly ?? inferSubAgentReadOnly(task));
+  const childPrompt = subAgentTaskPrompt(task, readOnly);
+  const initialTranscript = inheritContext ? appendSubAgentTaskToTranscript(inheritedTranscript, childPrompt) : undefined;
   context.options.trace?.write(
     "sub_agent",
-    [`cwd: ${cwd}`, `max_turns: ${maxTurns}`, `inherit_context: ${inheritContext ? "true" : "false"}`, `task: ${task}`].join(
-      "\n"
-    )
+    [
+      `cwd: ${cwd}`,
+      `max_turns: ${maxTurns}`,
+      `inherit_context: ${inheritContext ? "true" : "false"}`,
+      `read_only: ${readOnly ? "true" : "false"}`,
+      `task: ${task}`
+    ].join("\n")
   );
 
   try {
     const result = await runSmithTask({
       ...context.options,
       cwd,
-      prompt: task,
+      prompt: childPrompt,
       initialTranscript,
       maxTurns,
+      runtime: { ...context.options.runtime, readOnly },
       onTerminalOutput: undefined,
       onModelOutput: undefined,
       subAgentDepth: depth + 1
@@ -445,8 +546,9 @@ async function runSubAgentTool(
     context.options.onTerminalOutput?.(output);
     return { transcript, providerMessages, responsesInputItems, toolOutput: output, totalUsage };
   } catch (error) {
+    const totalUsage = addUsageCost(context.totalUsage, error instanceof SmithRunFailure ? error.usage : undefined);
     const output = `sub_agent failed: ${errorMessage(error)}`;
-    return appendToolObservation(context, callId, output);
+    return appendToolObservation({ ...context, totalUsage }, callId, output);
   }
 }
 
@@ -484,10 +586,10 @@ function appendToolReason(
   };
 }
 
-function missingToolCallOutput(text: string): string {
+function missingToolCallOutput(text: string, toolNames: string[]): string {
   const trimmed = text.trim();
   return [
-    "Model response did not call a Smith tool. Use run, patch, sub_agent, or finish.",
+    `Model response did not call a Smith tool. Use ${toolNames.join(", ")}.`,
     trimmed ? `Provider text:\n${trimmed}` : ""
   ]
     .filter(Boolean)
@@ -505,20 +607,14 @@ function timeoutFromToolCall(args: Record<string, unknown>, fallback: number): n
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
-function maxTurnsFromToolCall(args: Record<string, unknown>, fallback: number): number {
-  const value = args.max_turns;
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return Math.min(fallback, 20);
-  return Math.max(1, Math.min(Math.floor(value), fallback));
-}
-
 function subAgentTranscriptLabel(task: string): string {
   const compact = task.replace(/\s+/g, " ").trim();
   const label = compact.length > 160 ? `${compact.slice(0, 157)}...` : compact;
   return `sub_agent ${JSON.stringify(label)}`;
 }
 
-function appendSubAgentTaskToTranscript(transcript: string, task: string): string {
-  const taskEntry = appendChatIn(task);
+function appendSubAgentTaskToTranscript(transcript: string, taskPrompt: string): string {
+  const taskEntry = appendChatIn(taskPrompt);
   return transcript ? `${transcript}\n${taskEntry}` : taskEntry;
 }
 
@@ -530,15 +626,17 @@ async function completeModelTurn(context: {
   providerState?: SmithProviderState;
   debugJson?: (record: Record<string, unknown>) => void;
 }): Promise<SmithModelResponse> {
+  const tools = availableSmithTools(context.options);
+  const systemPrompt = systemPromptForAvailableTools(context.systemPrompt, tools, context.options);
   const messages =
     context.statefulTurn && context.providerState?.previousResponseId
       ? providerMessagesToMessages(
-          context.systemPrompt,
+          systemPrompt,
           [{ role: "user", content: context.providerState.toolOutput || "(no terminal output)" }],
           context.options.runtime.maxContextTokens
         )
       : providerMessagesToMessages(
-          context.systemPrompt,
+          systemPrompt,
           context.providerMessages,
           context.options.runtime.maxContextTokens
         );
@@ -547,7 +645,7 @@ async function completeModelTurn(context: {
       model: context.options.profile.model,
       messages,
       providerState: context.providerState,
-      tools: SMITH_TOOLS
+      tools
     },
     context.options.profile,
     {
@@ -561,6 +659,39 @@ async function completeModelTurn(context: {
       debugJson: context.debugJson
     }
   );
+}
+
+function availableSmithTools(options: SmithRunOptions) {
+  const depth = options.subAgentDepth ?? 0;
+  let tools = SMITH_TOOLS;
+  if (options.runtime.readOnly) {
+    tools = tools.filter((tool) => tool.name !== "patch");
+  }
+  if (depth >= MAX_SUB_AGENT_DEPTH) {
+    tools = tools.filter((tool) => tool.name !== "sub_agent");
+  }
+  return tools;
+}
+
+function systemPromptForAvailableTools(systemPrompt: string, tools: typeof SMITH_TOOLS, options: SmithRunOptions): string {
+  const notes: string[] = [];
+  if ((options.subAgentDepth ?? 0) > 0) {
+    notes.push(
+      "You are running as a Smith sub-agent. Your final user input is your only delegated objective; earlier transcript entries are background context and do not expand the task."
+    );
+  }
+  if (!tools.some((tool) => tool.name === "sub_agent")) {
+    const available = tools.map((tool) => tool.name).join(", ");
+    notes.push(
+      `Sub-agent depth limit has been reached for this run. The sub_agent tool is unavailable; complete the delegated work directly with available tools: ${available}.`
+    );
+  }
+  if (options.runtime.readOnly) {
+    notes.push(
+      "Read-only mode is active. The patch tool is unavailable, and run commands that write files are blocked. Inspect files and finish with findings only."
+    );
+  }
+  return notes.length > 0 ? [systemPrompt, ...notes].join("\n\n") : systemPrompt;
 }
 
 function isProviderStateFallbackError(error: unknown): boolean {
@@ -654,6 +785,56 @@ function promptCacheKeyForRun(profile: ProfileConfig, cwd: string, prompt: strin
   return `${uuid.slice(0, 8)}-${uuid.slice(8, 12)}-${uuid.slice(12, 16)}-${uuid.slice(16, 20)}-${uuid.slice(20)}`;
 }
 
+function subAgentTaskPrompt(task: string, readOnly: boolean): string {
+  return [
+    "You are running as a Smith sub-agent.",
+    "The task below is your only objective. Earlier transcript entries are background context only; they do not authorize extra work or broaden this task.",
+    readOnly
+      ? "This sub-agent is read-only. Do not edit, create, delete, move, or format files. Do not call patch. Use run only for inspection, then finish with concise findings."
+      : "You may edit files only when this sub-agent task explicitly asks for implementation work.",
+    "When complete, call finish with the result for the parent Smith run.",
+    "",
+    "Sub-agent task:",
+    task.trim()
+  ].join("\n");
+}
+
+function inferSubAgentReadOnly(task: string): boolean {
+  return /\b(?:do not|don't)\s+(?:edit|modify|change|write)\b|\bwithout editing\b|\bread[- ]only\b|\bno edits?\b/i.test(task);
+}
+
+async function isRipgrepAvailable(options: SmithRunOptions): Promise<boolean> {
+  try {
+    await execFileAsync(options.runtime.shell, ["-lc", "command -v rg >/dev/null 2>&1"], {
+      cwd: options.cwd,
+      env: { ...process.env, ...options.env },
+      timeout: RIPGREP_CHECK_TIMEOUT_MS,
+      maxBuffer: 1024
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ripgrepBootstrapPrompt(): string {
+  return [
+    "Smith startup check found that ripgrep (`rg`) is not available on PATH in this environment.",
+    "Try to install ripgrep so the `rg` command is available for later Smith run tool calls in this same environment.",
+    "Use only straightforward package-manager or standard installation paths that are appropriate for this environment.",
+    "Do not use `set -e` or shell options that can close the interactive shell on a failed install command; capture failures explicitly and continue to finish.",
+    "Do not use sudo, doas, su, or other privilege escalation. If the current user lacks permission to install, report that `rg` remains unavailable.",
+    "Do not modify project files. Do not use hacks, brittle PATH tricks, unrelated downloads, source builds, or risky system changes.",
+    "If installation is not straightforward, or you hit permission, network, or package-manager issues, stop and call finish explaining that `rg` remains unavailable. It is better to continue without `rg` than to break the environment.",
+    "After any install attempt, verify with `command -v rg` before calling finish."
+  ].join("\n");
+}
+
+function systemPromptWithRipgrepUnavailableNote(systemPrompt: string): string {
+  if (systemPrompt.includes(RIPGREP_UNAVAILABLE_PROMPT_NOTE)) return systemPrompt;
+  return [systemPrompt, RIPGREP_UNAVAILABLE_PROMPT_NOTE].join("\n\n");
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -686,4 +867,17 @@ function formatTerminalOutput(output: string, exitCode: number | undefined): str
   if (exitCode === undefined) return output;
   const status = `exit_status: ${exitCode}`;
   return output.trim().length > 0 ? `${output.trimEnd()}\n${status}` : status;
+}
+
+function limitToolOutput(output: string, maxChars: number): string {
+  if (maxChars <= 0 || output.length <= maxChars) return output;
+  const marker = `[smith truncated tool output: ${output.length} chars exceeded max_tool_output_chars=${maxChars}; showing head and tail]`;
+  const separator = (omitted: number) => `\n[... omitted ${omitted} chars ...]\n`;
+  const overhead = marker.length + separator(0).length;
+  const budget = Math.max(0, maxChars - overhead);
+  const headChars = Math.ceil(budget / 2);
+  const tailChars = Math.floor(budget / 2);
+  const omitted = Math.max(0, output.length - headChars - tailChars);
+  const tail = tailChars > 0 ? output.slice(output.length - tailChars) : "";
+  return `${marker}\n${output.slice(0, headChars)}${separator(omitted)}${tail}`;
 }

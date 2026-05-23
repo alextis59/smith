@@ -34,7 +34,8 @@ export const SMITH_TOOLS: SmithToolDefinition[] = [
     description: [
       "Apply a focused Smith patch to files in the task workspace and return the patch result.",
       "Use this for source edits after inspecting the relevant file context.",
-      "The patch text must use Smith's patch format with Begin Patch and End Patch markers."
+      "The patch text must use Smith's patch format with Begin Patch and End Patch markers.",
+      "After each hunk prefix, preserve exact leading tabs and spaces from the file; inspect tab-heavy blocks with cat -vet when needed."
     ].join("\n"),
     parameters: {
       type: "object",
@@ -62,7 +63,8 @@ export const SMITH_TOOLS: SmithToolDefinition[] = [
       "Launch a Smith sub_agent child run for independent repo-local work and return its final answer.",
       "Use this for broad file searches, subsystem reconnaissance, documentation reading, or scoped edits that can run independently.",
       "By default, the child run starts from the current transcript context with task as its final user input.",
-      "Give the sub_agent child run clear ownership and a bounded task. Do not delegate work that depends on the next immediate result."
+      "The task is the child run's only objective; earlier transcript entries are background context.",
+      "Use read_only=true for reconnaissance. Set read_only=false only for delegated implementation work."
     ].join("\n"),
     parameters: {
       type: "object",
@@ -79,9 +81,10 @@ export const SMITH_TOOLS: SmithToolDefinition[] = [
           type: "string",
           description: "Optional workspace-relative or absolute directory for the sub_agent child run."
         },
-        max_turns: {
-          type: "number",
-          description: "Optional maximum turns for the sub_agent child run."
+        read_only: {
+          type: "boolean",
+          description:
+            "Whether to run the sub_agent in read-only mode. Smith also infers read-only mode from explicit do-not-edit task wording."
         }
       },
       required: ["reason", "task"],
@@ -137,6 +140,19 @@ export function toolTextArgument(args: Record<string, unknown>, names: string[])
   for (const name of names) {
     const value = textValue(args[name]);
     if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+export function toolBooleanArgument(args: Record<string, unknown>, names: string[]): boolean | undefined {
+  for (const name of names) {
+    const value = args[name];
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "true") return true;
+      if (normalized === "false") return false;
+    }
   }
   return undefined;
 }

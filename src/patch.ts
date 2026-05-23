@@ -20,6 +20,29 @@ type StagedFile = {
   content?: string;
 };
 
+type LineSpan = {
+  line: string;
+  start: number;
+  end: number;
+  hasNewline: boolean;
+  lineNumber: number;
+};
+
+type IndentDelta =
+  | { type: "none" }
+  | { type: "add"; value: string }
+  | { type: "remove"; value: string };
+
+type IndentInsensitiveCandidate = {
+  start: number;
+  end: number;
+  hasTrailingNewline: boolean;
+  lineNumber: number;
+  lines: string[];
+  indentDelta?: IndentDelta;
+  unsafeReason?: string;
+};
+
 export function applySmithPatch(patch: string, cwd = process.cwd()): PatchResult {
   const operations = parseSmithPatch(patch);
   const changedFiles: string[] = [];
@@ -93,9 +116,208 @@ function applyUpdateHunks(initialContent: string, path: string, hunks: Hunk[]): 
       continue;
     }
 
-    throw new Error(`hunk context not found in ${path} (hunk ${index + 1})`);
+    const candidates = findIndentInsensitiveCandidates(content, hunk.oldLines, cursor);
+    const candidate = candidates.length === 1 ? candidates[0] : undefined;
+    const indentDelta = candidate?.indentDelta;
+    if (candidate && indentDelta && !candidate.unsafeReason) {
+      const adjustedNewLines = adjustNewLinesIndent(hunk.newLines, hunk.oldLines, indentDelta);
+      if (adjustedNewLines) {
+        const replacement = `${adjustedNewLines.join("\n")}${candidate.hasTrailingNewline ? "\n" : ""}`;
+        content = `${content.slice(0, candidate.start)}${replacement}${content.slice(candidate.end)}`;
+        cursor = candidate.start + replacement.length;
+        continue;
+      }
+      candidate.unsafeReason = "new lines could not be safely reindented";
+    }
+
+    throw new Error(hunkFailureMessage(content, path, hunk, index, cursor, candidates));
   }
   return content;
+}
+
+function findIndentInsensitiveCandidates(content: string, oldLines: string[], cursor: number): IndentInsensitiveCandidate[] {
+  if (oldLines.length === 0) return [];
+  const spans = lineSpans(content);
+  const startIndex = spans.findIndex((span) => span.end > cursor);
+  if (startIndex === -1) return [];
+  const candidates: IndentInsensitiveCandidate[] = [];
+  for (let index = startIndex; index <= spans.length - oldLines.length; index += 1) {
+    const window = spans.slice(index, index + oldLines.length);
+    if (!oldLines.every((line, offset) => stripLeadingWhitespace(line) === stripLeadingWhitespace(window[offset].line))) {
+      continue;
+    }
+    const indentDelta = inferIndentDelta(oldLines, window.map((span) => span.line));
+    const candidate: IndentInsensitiveCandidate = {
+      start: window[0].start,
+      end: window[window.length - 1].end,
+      hasTrailingNewline: window[window.length - 1].hasNewline,
+      lineNumber: window[0].lineNumber,
+      lines: window.map((span) => span.line)
+    };
+    if (indentDelta) {
+      candidate.indentDelta = indentDelta;
+    } else {
+      candidate.unsafeReason = "leading whitespace differs inconsistently";
+    }
+    candidates.push(candidate);
+  }
+  return candidates;
+}
+
+function lineSpans(content: string): LineSpan[] {
+  const spans: LineSpan[] = [];
+  let start = 0;
+  let lineNumber = 1;
+  while (start < content.length) {
+    const newline = content.indexOf("\n", start);
+    if (newline === -1) {
+      spans.push({ line: content.slice(start), start, end: content.length, hasNewline: false, lineNumber });
+      break;
+    }
+    spans.push({ line: content.slice(start, newline), start, end: newline + 1, hasNewline: true, lineNumber });
+    start = newline + 1;
+    lineNumber += 1;
+  }
+  return spans;
+}
+
+function inferIndentDelta(oldLines: string[], actualLines: string[]): IndentDelta | undefined {
+  let delta: IndentDelta | undefined;
+  for (let index = 0; index < oldLines.length; index += 1) {
+    const expected = oldLines[index];
+    const actual = actualLines[index];
+    if (stripLeadingWhitespace(expected).length === 0) continue;
+    const expectedIndent = leadingWhitespace(expected);
+    const actualIndent = leadingWhitespace(actual);
+    const nextDelta = compareIndent(expectedIndent, actualIndent);
+    if (!nextDelta || nextDelta.type === "none") continue;
+    if (!delta) {
+      delta = nextDelta;
+      continue;
+    }
+    if (delta.type !== nextDelta.type || ("value" in delta && "value" in nextDelta && delta.value !== nextDelta.value)) {
+      return undefined;
+    }
+  }
+  return delta ?? { type: "none" };
+}
+
+function compareIndent(expected: string, actual: string): IndentDelta | undefined {
+  if (expected === actual) return { type: "none" };
+  if (actual.startsWith(expected)) return { type: "add", value: actual.slice(expected.length) };
+  if (expected.startsWith(actual)) return { type: "remove", value: expected.slice(actual.length) };
+  return undefined;
+}
+
+function adjustNewLinesIndent(newLines: string[], oldLines: string[], delta: IndentDelta): string[] | undefined {
+  if (delta.type === "none") return newLines;
+  const commonIndent = commonLeadingWhitespace(oldLines);
+  const adjusted: string[] = [];
+  for (const line of newLines) {
+    if (stripLeadingWhitespace(line).length === 0) {
+      adjusted.push(line);
+      continue;
+    }
+    if (delta.type === "add") {
+      if (!leadingWhitespace(line).startsWith(commonIndent)) return undefined;
+      adjusted.push(`${delta.value}${line}`);
+      continue;
+    }
+    if (!line.startsWith(delta.value)) return undefined;
+    adjusted.push(line.slice(delta.value.length));
+  }
+  return adjusted;
+}
+
+function commonLeadingWhitespace(lines: string[]): string {
+  const indents = lines
+    .filter((line) => stripLeadingWhitespace(line).length > 0)
+    .map(leadingWhitespace);
+  if (indents.length === 0) return "";
+  let prefix = indents[0];
+  for (const indent of indents.slice(1)) {
+    while (!indent.startsWith(prefix)) {
+      prefix = prefix.slice(0, -1);
+      if (!prefix) return "";
+    }
+  }
+  return prefix;
+}
+
+function hunkFailureMessage(
+  content: string,
+  path: string,
+  hunk: Hunk,
+  index: number,
+  cursor: number,
+  candidates: IndentInsensitiveCandidate[]
+): string {
+  const lines = [`hunk context not found in ${path} (hunk ${index + 1})`];
+  const nearest = candidates[0] ?? nearestLineWindow(content, hunk.oldLines, cursor);
+  if (candidates.length > 1) {
+    lines.push(`indentation-insensitive context matched ${candidates.length} locations; refusing ambiguous fallback`);
+  } else if (candidates.length === 1 && candidates[0].unsafeReason) {
+    lines.push(`indentation-insensitive context matched line ${candidates[0].lineNumber}, but ${candidates[0].unsafeReason}`);
+  } else if (candidates.length === 0 && nearest) {
+    lines.push(`nearest partial context starts at line ${nearest.lineNumber}`);
+  }
+  if (nearest) {
+    lines.push(...formatWhitespaceComparison(hunk.oldLines, nearest.lines, nearest.lineNumber));
+    lines.push(`tip: inspect exact leading whitespace with: sed -n '${nearest.lineNumber},${nearest.lineNumber + nearest.lines.length - 1}p' ${path} | cat -vet`);
+  }
+  return lines.join("\n");
+}
+
+function nearestLineWindow(content: string, oldLines: string[], cursor: number): IndentInsensitiveCandidate | undefined {
+  if (oldLines.length === 0) return undefined;
+  const spans = lineSpans(content);
+  const startIndex = spans.findIndex((span) => span.end > cursor);
+  if (startIndex === -1) return undefined;
+  let best: { score: number; window: LineSpan[] } | undefined;
+  for (let index = startIndex; index <= spans.length - oldLines.length; index += 1) {
+    const window = spans.slice(index, index + oldLines.length);
+    const score = oldLines.reduce(
+      (total, line, offset) => total + (stripLeadingWhitespace(line) === stripLeadingWhitespace(window[offset].line) ? 1 : 0),
+      0
+    );
+    if (score > 0 && (!best || score > best.score)) best = { score, window };
+  }
+  if (!best) return undefined;
+  return {
+    start: best.window[0].start,
+    end: best.window[best.window.length - 1].end,
+    hasTrailingNewline: best.window[best.window.length - 1].hasNewline,
+    lineNumber: best.window[0].lineNumber,
+    lines: best.window.map((span) => span.line)
+  };
+}
+
+function formatWhitespaceComparison(oldLines: string[], actualLines: string[], firstLineNumber: number): string[] {
+  const limit = Math.min(oldLines.length, actualLines.length, 6);
+  const output = ["leading whitespace comparison:"];
+  for (let index = 0; index < limit; index += 1) {
+    const expected = oldLines[index];
+    const actual = actualLines[index];
+    output.push(`patch line ${index + 1}: ${whitespaceSummary(expected)} ${JSON.stringify(stripLeadingWhitespace(expected))}`);
+    output.push(`file  line ${firstLineNumber + index}: ${whitespaceSummary(actual)} ${JSON.stringify(stripLeadingWhitespace(actual))}`);
+  }
+  if (oldLines.length > limit) output.push(`... ${oldLines.length - limit} more hunk lines omitted`);
+  return output;
+}
+
+function whitespaceSummary(line: string): string {
+  const indent = leadingWhitespace(line);
+  const tabs = [...indent].filter((char) => char === "\t").length;
+  const spaces = [...indent].filter((char) => char === " ").length;
+  return `tabs=${tabs} spaces=${spaces}`;
+}
+
+function leadingWhitespace(line: string): string {
+  return /^[\t ]*/.exec(line)?.[0] ?? "";
+}
+
+function stripLeadingWhitespace(line: string): string {
+  return line.replace(/^[\t ]+/, "");
 }
 
 export function parseSmithPatch(patch: string): Operation[] {

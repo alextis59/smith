@@ -19,6 +19,7 @@ describe("config loading", () => {
     expect(resolveProfile(config).adapter).toBe("openai-chat");
     expect(config.runtime.dangerReview).toBe("llm");
     expect(config.runtime.dangerReviewProfile).toBe("reviewer");
+    expect(config.runtime.maxToolOutputChars).toBe(24000);
     expect(config.runtime.subAgentInheritContext).toBe(true);
   });
 
@@ -123,6 +124,8 @@ sub_agent_inherit_context = false
       "7",
       "--max-context-tokens",
       "12000",
+      "--max-tool-output-chars",
+      "4096",
       "--read-only",
       "--provider-retries",
       "3",
@@ -155,6 +158,7 @@ sub_agent_inherit_context = false
       outputCostPerMillionTokens: 10,
       maxTurns: 7,
       maxContextTokens: 12000,
+      maxToolOutputChars: 4096,
       readOnly: true,
       providerRetries: 3,
       providerDebug: true,
@@ -191,18 +195,21 @@ output_cost_per_million_tokens = 10
     expect(profile.outputCostPerMillionTokens).toBe(10);
   });
 
-  it("loads max context tokens and migrates legacy max context chars", () => {
+  it("loads max context tokens, max tool output chars, and migrates legacy max context chars", () => {
     const cwd = tempDir();
     mkdirSync(join(cwd, ".smith"), { recursive: true });
     writeFileSync(
       join(cwd, ".smith", "config.toml"),
       `[runtime]
 max_context_tokens = 12345
+max_tool_output_chars = 6789
 `,
       "utf8"
     );
 
-    expect(loadConfig({ homeDir: tempDir(), cwd }).runtime.maxContextTokens).toBe(12345);
+    const runtime = loadConfig({ homeDir: tempDir(), cwd }).runtime;
+    expect(runtime.maxContextTokens).toBe(12345);
+    expect(runtime.maxToolOutputChars).toBe(6789);
 
     const legacyCwd = tempDir();
     mkdirSync(join(legacyCwd, ".smith"), { recursive: true });

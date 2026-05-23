@@ -80,6 +80,7 @@ temperature = 0
 shell = "bash"
 timeout_ms = 120000
 max_context_tokens = 128000
+max_tool_output_chars = 24000
 danger_review = "llm"
 danger_review_profile = "reviewer"
 max_turns = 20
@@ -91,7 +92,7 @@ read_only = false
 # log_dir = "/tmp/smith"
 ```
 
-Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--codex-auth-path`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--max-context-tokens`, `--danger-review`, `--read-only`, `--no-sub-agent-inherit-context`, and `--log-dir`.
+Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--codex-auth-path`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--max-context-tokens`, `--max-tool-output-chars`, `--danger-review`, `--read-only`, `--no-sub-agent-inherit-context`, and `--log-dir`.
 
 When a provider response includes token usage, Smith records per-turn and total usage in the run trace. If `input_cost_per_million_tokens` and/or `output_cost_per_million_tokens` are set on the active profile, traces also include estimated USD cost.
 
@@ -138,7 +139,9 @@ Smith exposes four model-visible tools:
 - `sub_agent`: launch an independent Smith child run for bounded repo-local work.
 - `finish`: end the run with the final answer, blocker report, or user question.
 
-Each tool call includes a required short `reason`, which Smith records in the transcript before the tool output. By default, `sub_agent` child runs inherit the parent transcript context and receive the delegated task as the final user input; set `runtime.sub_agent_inherit_context = false` or pass `--no-sub-agent-inherit-context` to start them fresh. The first `finish` ends single-shot and remote runs. A legacy `chat_out` shell helper remains available for older traces and compatibility, but the packaged prompt directs models to use `finish`.
+Each tool call includes a required short `reason`, which Smith records in the transcript before the tool output. By default, `sub_agent` child runs inherit the parent transcript context, receive a narrowed delegated task as the final user input, and inherit the parent run's max-turn budget; set `runtime.sub_agent_inherit_context = false` or pass `--no-sub-agent-inherit-context` to start them fresh. Sub-agent tasks can pass `read_only = true`; Smith also infers read-only mode from explicit do-not-edit wording, removes `patch`, and blocks common write commands for that child run. Smith removes the `sub_agent` tool from child runs once the maximum sub-agent depth is reached. `runtime.max_tool_output_chars` caps large terminal outputs before replaying them to the model. The first `finish` ends single-shot and remote runs. A legacy `chat_out` shell helper remains available for older traces and compatibility, but the packaged prompt directs models to use `finish`.
+
+At startup, Smith checks whether `rg` is available on PATH. If it is missing, Smith runs a short bootstrap Smith agent that may attempt a straightforward ripgrep install, with explicit instructions to stop rather than use brittle or risky installation tricks. If `rg` is still unavailable afterward, Smith appends a system-prompt environment note telling the main agent to use alternatives such as `grep` or `find`.
 
 ## Remote Mode
 
@@ -183,7 +186,7 @@ smith_patch <<'PATCH'
 PATCH
 ```
 
-It supports focused add, update, and delete operations, rejects malformed patches, and prevents paths from escaping the working directory.
+It supports focused add, update, and delete operations, rejects malformed patches, and prevents paths from escaping the working directory. Update hunks are exact, but when a hunk only misses because leading indentation differs, Smith can apply it against a single unique indentation-insensitive match and adjust the replacement indentation to the file. Ambiguous matches still fail, and the error includes visible tab/space counts plus a `cat -vet` inspection hint.
 
 ## Danger Review
 

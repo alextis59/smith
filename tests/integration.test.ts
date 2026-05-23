@@ -72,6 +72,51 @@ timeout_ms = 5000
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
+  it("attempts a startup rg bootstrap and warns the main agent when rg remains unavailable", async () => {
+    const provider = await startFakeProvider([
+      { name: "finish", arguments: { message: "rg remains unavailable" } },
+      { name: "finish", arguments: { message: "main done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-rg-bootstrap-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    const pathWithoutRg = mkdtempSync(join(tmpdir(), "smith-no-rg-path-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+shell = "/bin/bash"
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync(process.execPath, [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "main task"], {
+      env: { ...process.env, HOME: home, PATH: pathWithoutRg },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("main done");
+    expect(provider.requests).toHaveLength(2);
+    expect(userMessages(provider.requests[0].body)).toContain("ripgrep (`rg`) is not available");
+    expect(userMessages(provider.requests[0].body)).toContain("Do not use hacks");
+    expect(systemMessage(provider.requests[0].body)).not.toContain("Environment note: the `rg` command is not available");
+    expect(systemMessage(provider.requests[1].body)).toContain("Environment note: the `rg` command is not available");
+    const traceDir = join(home, ".smith", "runs");
+    const trace = readFileSync(join(traceDir, readdirSync(traceDir)[0]), "utf8");
+    expect(trace).toContain("## ripgrep startup check");
+    expect(trace).toContain("available_after_bootstrap: false");
+  });
+
   it("applies patch tool calls without exposing patch contents in the transcript", async () => {
     const provider = await startFakeProvider([
       {
@@ -263,6 +308,8 @@ timeout_ms = 5000
     expect(childUserMessages).toContain("inspect from child");
     expect(childUserMessages).not.toContain("sub_agent: test tool call");
     expect(childLastMessage?.role).toBe("user");
+    expect(childLastMessage?.content).toContain("only objective");
+    expect(childLastMessage?.content).toContain("Sub-agent task:");
     expect(childLastMessage?.content).toContain("inspect from child");
   });
 
@@ -306,6 +353,236 @@ sub_agent_inherit_context = false
     expect(childUserMessages).toContain("inspect from child");
     expect(childUserMessages).not.toContain("parent task");
     expect(childUserMessages).not.toContain("parent-output");
+  });
+
+  it("sub_agent runs inherit the parent max-turn budget instead of model-provided caps", async () => {
+    const provider = await startFakeProvider([
+      { name: "sub_agent", arguments: { task: "inspect from child", max_turns: 1 } },
+      { name: "run", arguments: { command: "printf child-output" } },
+      { name: "finish", arguments: { message: "child answer" } },
+      { name: "finish", arguments: { message: "parent done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-sub-agent-max-turns-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 4
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "parent task"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("parent done");
+    expect(provider.requests).toHaveLength(4);
+  });
+
+  it("counts usage from sub_agent runs that fail before finish", async () => {
+    const provider = await startFakeProvider(
+      [
+        { name: "sub_agent", arguments: { task: "inspect from child" } },
+        { name: "run", arguments: { command: "printf child-output-1" } },
+        { name: "run", arguments: { command: "printf child-output-2" } },
+        { name: "finish", arguments: { message: "parent done" } }
+      ],
+      {
+        prompt_tokens: 10,
+        prompt_tokens_details: { cached_tokens: 6 },
+        completion_tokens: 5,
+        completion_tokens_details: { reasoning_tokens: 2 },
+        total_tokens: 15
+      }
+    );
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-sub-agent-failed-usage-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 2
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync(
+      "node",
+      [join(process.cwd(), "bin/smith.js"), "--quiet", "--json", "--cwd", cwd, "parent task"],
+      { env: { ...process.env, HOME: home }, timeout: 10_000 }
+    );
+
+    const parsed = JSON.parse(stdout);
+    expect(parsed.chatOut).toBe("parent done");
+    expect(parsed.usage).toMatchObject({
+      inputTokens: 40,
+      cachedInputTokens: 24,
+      outputTokens: 20,
+      reasoningOutputTokens: 8,
+      totalTokens: 60
+    });
+    expect(provider.requests).toHaveLength(4);
+  });
+
+  it("does not expose sub_agent inside child runs once max sub-agent depth is reached", async () => {
+    const provider = await startFakeProvider([
+      { name: "sub_agent", arguments: { task: "inspect from child" } },
+      { name: "sub_agent", arguments: { task: "inspect from grandchild" } },
+      { name: "finish", arguments: { message: "grandchild answer" } },
+      { name: "finish", arguments: { message: "child answer" } },
+      { name: "finish", arguments: { message: "parent done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-sub-agent-depth-tools-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 6
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "parent task"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("parent done");
+    expect(provider.requests).toHaveLength(5);
+    expect(toolNames(provider.requests[0].body)).toContain("sub_agent");
+    expect(toolNames(provider.requests[1].body)).toContain("sub_agent");
+    expect(toolNames(provider.requests[2].body)).toEqual(["run", "patch", "finish"]);
+  });
+
+  it("infers read-only sub_agent runs from do-not-edit tasks and removes patch", async () => {
+    const provider = await startFakeProvider([
+      { name: "sub_agent", arguments: { task: "Identify relevant files. Do not edit files." } },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "child report" } },
+      { name: "finish", arguments: { message: "parent done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-sub-agent-readonly-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "parent task"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("parent done");
+    expect(provider.requests).toHaveLength(4);
+    expect(systemMessage(provider.requests[1].body)).toContain("Read-only mode is active");
+    expect(toolNames(provider.requests[1].body)).toEqual(["run", "sub_agent", "finish"]);
+    expect(userMessages(provider.requests[2].body)).toContain("Unknown or unavailable tool 'patch'");
+    expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("old\n");
+  });
+
+  it("truncates oversized run output before replaying it to the provider", async () => {
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "node -e \"process.stdout.write('A'.repeat(500))\"" } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-tool-output-cap-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_tool_output_chars = 180
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "print a lot"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    const replayedOutput = messages(provider.requests[1].body).at(-1)?.content ?? "";
+    expect(stdout).toContain("smith truncated tool output");
+    expect(replayedOutput).toContain("smith truncated tool output");
+    expect(replayedOutput).toContain("omitted");
+    expect(replayedOutput.length).toBeLessThan(230);
+    expect(replayedOutput).not.toContain("A".repeat(250));
   });
 
   it("remote prints only first finish message to stdout and supports resume", async () => {
@@ -406,7 +683,7 @@ type FakeToolCall = {
   arguments: Record<string, unknown>;
 };
 
-async function startFakeProvider(toolCalls: FakeToolCall[]): Promise<{
+async function startFakeProvider(toolCalls: FakeToolCall[], usage?: Record<string, unknown>): Promise<{
   baseUrl: string;
   requests: Array<{ headers: Record<string, string | string[] | undefined>; body: unknown }>;
   server: { close: (callback: () => void) => void };
@@ -440,7 +717,8 @@ async function startFakeProvider(toolCalls: FakeToolCall[]): Promise<{
                 ]
               }
             }
-          ]
+          ],
+          ...(usage ? { usage } : {})
         })
       );
     });
@@ -466,4 +744,9 @@ function userMessages(body: unknown): string {
 
 function messages(body: unknown): Array<{ role?: string; content?: string }> {
   return (body as { messages?: Array<{ role?: string; content?: string }> }).messages ?? [];
+}
+
+function toolNames(body: unknown): string[] {
+  const tools = (body as { tools?: Array<{ name?: string; function?: { name?: string } }> }).tools ?? [];
+  return tools.map((tool) => tool.name ?? tool.function?.name).filter((name): name is string => Boolean(name));
 }

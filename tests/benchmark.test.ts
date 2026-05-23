@@ -41,6 +41,9 @@ describe("Docker benchmark runner", () => {
         completion_tokens: 500,
         completion_tokens_details: { reasoning_tokens: 300 },
         total_tokens: 1500
+      },
+      {
+        bootstrapToolCall: { name: "finish", arguments: { message: "rg remains unavailable" } }
       }
     );
     servers.push(provider.server);
@@ -76,13 +79,14 @@ timeout_ms = 5000
     });
     expect(result.passed, result.stderr).toBe(true);
     expect(result.stdout).toContain("done");
+    const providerTurns = provider.requests.length;
     expect(result.usage).toEqual({
-      inputTokens: 2000,
-      cachedInputTokens: 1600,
-      outputTokens: 1000,
-      reasoningOutputTokens: 600,
-      totalTokens: 3000,
-      costUsd: 0.00256
+      inputTokens: 1000 * providerTurns,
+      cachedInputTokens: 800 * providerTurns,
+      outputTokens: 500 * providerTurns,
+      reasoningOutputTokens: 300 * providerTurns,
+      totalTokens: 1500 * providerTurns,
+      costUsd: Number((0.00128 * providerTurns).toFixed(8))
     });
   }, 180_000);
 
@@ -280,41 +284,57 @@ type FakeToolCall = {
   arguments: Record<string, unknown>;
 };
 
-async function startFakeProvider(toolCalls: FakeToolCall[], usage?: Record<string, unknown>): Promise<{
+async function startFakeProvider(
+  toolCalls: FakeToolCall[],
+  usage?: Record<string, unknown>,
+  options: { bootstrapToolCall?: FakeToolCall } = {}
+): Promise<{
   baseUrl: string;
+  requests: unknown[];
   server: { close: (callback: () => void) => void };
 }> {
   let count = 0;
-  const server = createServer((_request, response) => {
-    _request.resume();
-    const toolCall = toolCalls[Math.min(count, toolCalls.length - 1)];
-    count += 1;
-    response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(
-      JSON.stringify({
-        choices: [
-          {
-            message: {
-              tool_calls: [
-                {
-                  id: `call_${count}`,
-                  type: "function",
-                  function: {
-                    name: toolCall.name,
-                    arguments: JSON.stringify({ reason: "test tool call", ...toolCall.arguments })
+  const requests: unknown[] = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += String(chunk);
+    });
+    request.on("end", () => {
+      const parsed = body ? JSON.parse(body) : {};
+      requests.push(parsed);
+      const bootstrapRequest = body.includes("ripgrep (`rg`) is not available");
+      const toolCall =
+        bootstrapRequest && options.bootstrapToolCall
+          ? options.bootstrapToolCall
+          : toolCalls[Math.min(count++, toolCalls.length - 1)];
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                tool_calls: [
+                  {
+                    id: `call_${requests.length}`,
+                    type: "function",
+                    function: {
+                      name: toolCall.name,
+                      arguments: JSON.stringify({ reason: "test tool call", ...toolCall.arguments })
+                    }
                   }
-                }
-              ]
+                ]
+              }
             }
-          }
-        ],
-        ...(usage ? { usage } : {})
-      })
-    );
+          ],
+          ...(usage ? { usage } : {})
+        })
+      );
+    });
   });
 
   await new Promise<void>((resolve) => server.listen(0, "0.0.0.0", () => resolve()));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("expected TCP server address");
-  return { baseUrl: `http://host.docker.internal:${address.port}`, server };
+  return { baseUrl: `http://host.docker.internal:${address.port}`, requests, server };
 }

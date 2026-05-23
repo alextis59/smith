@@ -32,6 +32,7 @@ export type RuntimeConfig = {
   shell: string;
   timeoutMs: number;
   maxContextTokens: number;
+  maxToolOutputChars: number;
   maxTurns: number;
   dangerReview: DangerReviewMode;
   dangerReviewProfile: string;
@@ -83,6 +84,7 @@ export type CliConfigOverrides = {
   shell?: string;
   timeoutMs?: number;
   maxContextTokens?: number;
+  maxToolOutputChars?: number;
   maxTurns?: number;
   dangerReview?: DangerReviewMode;
   dangerReviewProfile?: string;
@@ -131,6 +133,7 @@ const DEFAULT_CONFIG: SmithConfig = {
     shell: "bash",
     timeoutMs: 120_000,
     maxContextTokens: 128_000,
+    maxToolOutputChars: 24_000,
     maxTurns: 20,
     dangerReview: "llm",
     dangerReviewProfile: "reviewer",
@@ -282,6 +285,9 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--max-context-chars":
         overrides.maxContextTokens = Math.max(1, Math.ceil(Number.parseInt(readValue(), 10) / 4));
         break;
+      case "--max-tool-output-chars":
+        overrides.maxToolOutputChars = Number.parseInt(readValue(), 10);
+        break;
       case "--max-turns":
         overrides.maxTurns = Number.parseInt(readValue(), 10);
         break;
@@ -356,6 +362,7 @@ temperature = 0
 shell = "bash"
 timeout_ms = 120000
 max_context_tokens = 128000
+max_tool_output_chars = 24000
 max_turns = 20
 danger_review = "llm"
 danger_review_profile = "reviewer"
@@ -445,6 +452,7 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.shell ? { shell: cli.shell } : {}),
     ...(cli.timeoutMs !== undefined ? { timeoutMs: cli.timeoutMs } : {}),
     ...(cli.maxContextTokens !== undefined ? { maxContextTokens: cli.maxContextTokens } : {}),
+    ...(cli.maxToolOutputChars !== undefined ? { maxToolOutputChars: cli.maxToolOutputChars } : {}),
     ...(cli.maxTurns !== undefined ? { maxTurns: cli.maxTurns } : {}),
     ...(cli.dangerReview ? { dangerReview: cli.dangerReview } : {}),
     ...(cli.dangerReviewProfile ? { dangerReviewProfile: cli.dangerReviewProfile } : {}),
@@ -507,6 +515,7 @@ function mergeRuntime(previous: RuntimeConfig, raw: RawConfig): RuntimeConfig {
       : typeof raw.max_context_chars === "number"
         ? { maxContextTokens: Math.max(1, Math.ceil(raw.max_context_chars / 4)) }
         : {}),
+    ...(typeof raw.max_tool_output_chars === "number" ? { maxToolOutputChars: raw.max_tool_output_chars } : {}),
     ...(typeof raw.max_turns === "number" ? { maxTurns: raw.max_turns } : {}),
     ...(typeof raw.danger_review === "string" ? { dangerReview: parseDangerReview(raw.danger_review) } : {}),
     ...(typeof raw.danger_review_profile === "string" ? { dangerReviewProfile: raw.danger_review_profile } : {}),
@@ -611,6 +620,7 @@ export function validateConfig(config: SmithConfig): void {
   }
   validateInteger("runtime.timeout_ms", config.runtime.timeoutMs, 1, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.max_context_tokens", config.runtime.maxContextTokens, 1, Number.MAX_SAFE_INTEGER);
+  validateInteger("runtime.max_tool_output_chars", config.runtime.maxToolOutputChars, 0, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.max_turns", config.runtime.maxTurns, 1, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.provider_retries", config.runtime.providerRetries, 0, 10);
   validateInteger("runtime.provider_retry_delay_ms", config.runtime.providerRetryDelayMs, 0, 60_000);

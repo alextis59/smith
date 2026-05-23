@@ -71,6 +71,7 @@ describe("prompt and trace", () => {
     expect(prompt).toContain("original source bullet text verbatim");
     expect(prompt).toContain("Prefer patch for all file edits");
     expect(prompt).toContain("Use run for edits only when patch cannot express the change");
+    expect(prompt).toContain("cat -vet");
   });
 
   it("includes concise memory guidance", () => {
@@ -94,6 +95,8 @@ describe("prompt and trace", () => {
     expect(prompt).toContain("Find how authentication tokens are parsed and validated");
     expect(prompt).toContain("Read the local docs for provider configuration");
     expect(prompt).toContain("Remove the deprecated Foo adapter");
+    expect(prompt).toContain("read_only=true");
+    expect(prompt).toContain("only objective");
     expect(prompt).toContain("Do not ask two sub_agent child runs to edit the same files at the same time");
   });
 
@@ -133,6 +136,7 @@ function runtime(): RuntimeConfig {
     shell: "bash",
     timeoutMs: 5000,
     maxContextTokens: 10000,
+    maxToolOutputChars: 24000,
     maxTurns: 20,
     dangerReview: "off",
     dangerReviewProfile: "reviewer",

@@ -15,6 +15,7 @@ In remote mode, your first finish call ends the run and becomes stdout for the p
 Use run for ordinary shell commands to inspect files and run checks.
 Use patch for focused edits after inspecting the relevant file context:
 Prefer patch for all file edits, including documentation updates and small rewrites. Use run for edits only when patch cannot express the change or after a patch failure, and then verify the command actually changed the intended file.
+Patch hunk lines are exact after the first prefix character. Preserve every leading tab and space from the file after "-", "+", or " ". For tab-heavy files, inspect the target block with cat -vet, for example: sed -n '110,130p' path/to/file | cat -vet.
 *** Begin Patch
 *** Update File: path/to/file
 @@
@@ -36,8 +37,10 @@ For requested bullet-list reports, prefer bullets that contain the original sour
 When preserving exact text, do not add Markdown backticks, quotes, capitalization changes, or punctuation inside the literal phrase.
 Delegate independent work with sub_agent when it can reduce main-context load or run in a bounded workspace.
 Use sub_agent for work that can be answered or completed independently, especially broad file searches, subsystem reconnaissance, long documentation reading, or repetitive edits.
+Sub-agent runs inherit the parent max-turn budget, so keep delegated tasks scoped and finish with the requested result. The delegated task is the sub-agent's only objective; earlier transcript entries are background context only.
+For reconnaissance, pass read_only=true or include explicit do-not-edit wording in the task. For scoped implementation, only delegate edits when the task names the files or bounded area to change.
 Good delegation tasks include:
-- Ask how a subsystem works before you change it: task="Find how authentication tokens are parsed and validated. Do not edit files. Return the key files, functions, and any tests that cover them.", cwd="."
+- Ask how a subsystem works before you change it: task="Find how authentication tokens are parsed and validated. Do not edit files. Return the key files, functions, and any tests that cover them.", cwd=".", read_only=true
 - Ask a documentation question with a specific goal: task="Read the local docs for provider configuration. How should a new profile set headers and body fields? Return a concise answer with source paths.", cwd="."
 - Assign scoped code work: task="Remove the deprecated Foo adapter and update directly related tests. Keep changes scoped and report modified files.", cwd="packages/api"
 - Split independent implementation slices: task="Refactor the cache cleanup helper in src/cache.ts only. Preserve behavior and report the exact diff summary.", cwd="."

@@ -1,6 +1,6 @@
 import type { CliConfigOverrides } from "./config.js";
 import { loadConfig, parseCliConfigOverrides, resolveProfile } from "./config.js";
-import { runSmithTask } from "./loop.js";
+import { prepareSmithEnvironment, runSmithTask } from "./loop.js";
 import { loadSystemPrompt } from "./prompt.js";
 import {
   cleanupRemoteSessions,
@@ -91,7 +91,7 @@ async function startRemote(options: RemoteCliOptions): Promise<void> {
   const reviewerProfile = resolveProfile(config, config.runtime.dangerReviewProfile);
   const systemPrompt = loadSystemPrompt(cwd);
   const trace = createTraceLogger({ cwd, profileName: selectedProfile, profile, runtime: config.runtime, systemPrompt });
-  const result = await runSmithTask({
+  const environment = await prepareSmithEnvironment({
     cwd,
     prompt: options.prompt,
     profile,
@@ -100,6 +100,19 @@ async function startRemote(options: RemoteCliOptions): Promise<void> {
     systemPrompt,
     reloadSystemPrompt: () => loadSystemPrompt(cwd),
     maxTurns: options.maxTurns,
+    env: { ...process.env, SMITH_PROFILE: selectedProfile },
+    trace
+  });
+  const result = await runSmithTask({
+    cwd,
+    prompt: options.prompt,
+    profile,
+    reviewerProfile,
+    runtime: config.runtime,
+    systemPrompt: environment.systemPrompt,
+    reloadSystemPrompt: () => loadSystemPrompt(cwd),
+    maxTurns: options.maxTurns,
+    initialUsage: environment.usage,
     env: { ...process.env, SMITH_PROFILE: selectedProfile },
     trace
   });
@@ -132,6 +145,18 @@ async function resumeRemote(options: RemoteCliOptions): Promise<void> {
   const reviewerProfile = resolveProfile(config, config.runtime.dangerReviewProfile);
   const systemPrompt = loadSystemPrompt(cwd);
   const trace = createTraceLogger({ cwd, profileName, profile, runtime: config.runtime, systemPrompt });
+  const environment = await prepareSmithEnvironment({
+    cwd,
+    prompt: answer,
+    profile,
+    reviewerProfile,
+    runtime: config.runtime,
+    systemPrompt,
+    reloadSystemPrompt: () => loadSystemPrompt(cwd),
+    maxTurns: options.maxTurns,
+    env: { ...process.env, SMITH_PROFILE: profileName },
+    trace
+  });
   const result = await runSmithTask({
     cwd,
     prompt: answer,
@@ -139,9 +164,10 @@ async function resumeRemote(options: RemoteCliOptions): Promise<void> {
     profile,
     reviewerProfile,
     runtime: config.runtime,
-    systemPrompt,
+    systemPrompt: environment.systemPrompt,
     reloadSystemPrompt: () => loadSystemPrompt(cwd),
     maxTurns: options.maxTurns,
+    initialUsage: environment.usage,
     env: { ...process.env, SMITH_PROFILE: profileName },
     trace
   });

@@ -72,6 +72,11 @@ describe("provider adapters", () => {
 	    ]);
     expect(calls.first.body.tool_choice).toBe("required");
     expect((calls.first.body.tools as Array<{ parameters: { required?: string[] } }>)[0].parameters.required).toContain("reason");
+    const subAgentTool = (calls.first.body.tools as Array<{ name: string; parameters: { properties: Record<string, unknown> } }>).find(
+      (tool) => tool.name === "sub_agent"
+    );
+    expect(subAgentTool?.parameters.properties).not.toHaveProperty("max_turns");
+    expect(subAgentTool?.parameters.properties).toHaveProperty("read_only");
   });
 
   it("maps openai-responses stateful requests", async () => {

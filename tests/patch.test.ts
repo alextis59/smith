@@ -54,6 +54,44 @@ describe("smith_patch", () => {
     ).toThrow("hunk context not found");
   });
 
+  it("reports visible whitespace details when indentation-insensitive context is ambiguous", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "file.txt"), "\t\talpha\n\t\tbeta\nmiddle\n\t\talpha\n\t\tbeta\n", "utf8");
+
+    expect(() =>
+      applySmithPatch(
+        `*** Begin Patch
+*** Update File: file.txt
+@@
+-	alpha
+-	beta
++	alpha
++	gamma
+*** End Patch`,
+        cwd
+      )
+    ).toThrow(/indentation-insensitive context matched 2 locations[\s\S]*patch line 1: tabs=1 spaces=0[\s\S]*file  line 1: tabs=2 spaces=0/);
+  });
+
+  it("applies a unique indentation-insensitive hunk and preserves the file indentation", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "file.txt"), "before\n\t\talpha\n\t\tbeta\n", "utf8");
+
+    applySmithPatch(
+      `*** Begin Patch
+*** Update File: file.txt
+@@
+-	alpha
+-	beta
++	alpha
++		child
+*** End Patch`,
+      cwd
+    );
+
+    expect(readFileSync(join(cwd, "file.txt"), "utf8")).toBe("before\n\t\talpha\n\t\t\tchild\n");
+  });
+
   it("does not leave partial changes when a later operation fails", () => {
     const cwd = tempDir();
     writeFileSync(join(cwd, "first.txt"), "old\n", "utf8");

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stdin as input, stdout as output } from "node:process";
 import { initConfig, loadConfig, parseCliConfigOverrides, resolveApiKey, resolveProfile, userConfigPath } from "./config.js";
-import { runSmithTask } from "./loop.js";
+import { prepareSmithEnvironment, runSmithTask } from "./loop.js";
 import { loadSystemPrompt } from "./prompt.js";
 import { runRemoteCommand } from "./remote.js";
 import { summarizeTrace, writeSessionLog } from "./session-log.js";
@@ -149,7 +149,7 @@ async function runCommand(args: string[]): Promise<void> {
       return;
     }
 
-    const result = await runSmithTask({
+    const environment = await prepareSmithEnvironment({
       cwd,
       prompt,
       profile,
@@ -158,6 +158,19 @@ async function runCommand(args: string[]): Promise<void> {
       systemPrompt,
       reloadSystemPrompt: () => loadSystemPrompt(cwd),
       trace,
+      env: process.env
+    });
+
+    const result = await runSmithTask({
+      cwd,
+      prompt,
+      profile,
+      reviewerProfile,
+      runtime: config.runtime,
+      systemPrompt: environment.systemPrompt,
+      reloadSystemPrompt: () => loadSystemPrompt(cwd),
+      trace,
+      initialUsage: environment.usage,
       env: process.env,
       onTerminalOutput: (terminalOutput) => {
         if (!outputOptions.quiet && !outputOptions.json) process.stdout.write(`${terminalOutput}\n`);
@@ -197,6 +210,20 @@ async function runInteractive(
 ): Promise<void> {
   const rl = createInterface({ input, output });
   try {
+    const trace = createTraceLogger({ cwd, profileName: "interactive-startup", profile, runtime, systemPrompt });
+    const environment = await prepareSmithEnvironment({
+      cwd,
+      prompt: "Prepare this interactive Smith session environment.",
+      profile,
+      reviewerProfile,
+      runtime,
+      systemPrompt,
+      reloadSystemPrompt: () => loadSystemPrompt(cwd),
+      trace,
+      env: process.env
+    });
+    systemPrompt = environment.systemPrompt;
+    let initialUsage = environment.usage;
     while (true) {
       const prompt = (await rl.question("smith> ")).trim();
       if (!prompt || prompt === "exit" || prompt === "quit") return;
@@ -207,6 +234,7 @@ async function runInteractive(
         reviewerProfile,
         runtime,
         systemPrompt,
+        initialUsage,
         reloadSystemPrompt: () => loadSystemPrompt(cwd),
         trace: createTraceLogger({ cwd, profileName: "interactive", profile, runtime, systemPrompt }),
         env: process.env,
@@ -214,6 +242,7 @@ async function runInteractive(
           process.stdout.write(`${terminalOutput}\n`);
         }
       });
+      initialUsage = undefined;
     }
   } finally {
     rl.close();
