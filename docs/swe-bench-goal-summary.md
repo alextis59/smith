@@ -508,3 +508,21 @@ Decision:
 - Reverted the cap change; `12000` remains the default.
 - Do not count this as a recovery.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Raw-Prompt 001 Revalidation Failed
+
+Evidence:
+
+- Target SWE rerun `001-nodebb-nodebb-vnan` under the raw SWE prompt path failed by Docker timeout in `918355ms`.
+- Log: `/tmp/smith/2026-05-23T19-29-51-286Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-mZoSKB/home/.smith/runs/2026-05-23T19-14-46-118Z.trace`.
+- Usage: `755880` total tokens.
+- Session log recorded `34` model-selected tool calls.
+- Retained workspace had no tracked source diff; only `?? appendonlydir/`.
+- Trace search found no benchmark wrapper text and Docker cleanup left no live Smith benchmark container.
+
+Decision:
+
+- `001` remains unrecovered under the strict prompt rule.
+- Failure class is generic no-edit reconnaissance churn after useful read-only sub-agent findings.
+- Current valid score evidence remains `3/10`.
