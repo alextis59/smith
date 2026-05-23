@@ -526,3 +526,21 @@ Decision:
 - `001` remains unrecovered under the strict prompt rule.
 - Failure class is generic no-edit reconnaissance churn after useful read-only sub-agent findings.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Raw-Prompt 010 Revalidation Failed
+
+Evidence:
+
+- Target SWE rerun `010-future-architect-vuls` under the raw SWE prompt path failed by Docker timeout in `906159ms`.
+- Log: `/tmp/smith/2026-05-23T19-46-13-204Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-ZSnre0/home/.smith/runs/2026-05-23T19-31-08-064Z.trace`.
+- Usage: `728971` total tokens.
+- Session log recorded `33` model-selected tool calls.
+- Retained workspace had no tracked source diff; only `?? SMITH.TASK.md`.
+- Trace search found no benchmark wrapper text and Docker cleanup left no live Smith benchmark container.
+
+Decision:
+
+- `010` remains unrecovered under the strict prompt rule.
+- Failure class again looks like generic no-edit reconnaissance churn after useful local notes.
+- Current valid score evidence remains `3/10`.

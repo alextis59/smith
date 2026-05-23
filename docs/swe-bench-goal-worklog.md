@@ -1784,3 +1784,67 @@ Classification:
 - Similar broad failure class to raw-prompt `005`, but lower total token use.
 - `001` remains unrecovered under the strict prompt rule.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Raw-Prompt 010 Revalidation
+
+Reason:
+
+- `001` and `005` both showed no-edit reconnaissance churn under the raw SWE prompt path.
+- To avoid overfocusing those tasks, the next evidence target was `010`, another Codex-passed Smith failure.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by Docker timeout in `906159ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T19-46-13-204Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`
+- `tracePath`: `.smith-bench/run-ZSnre0/home/.smith/runs/2026-05-23T19-31-08-064Z.trace`
+- Sandbox: `.smith-bench/run-ZSnre0`
+- Usage: `728971` total tokens.
+- Model-selected tool calls in session log: `33`.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-ZSnre0/workspace status --short
+git -C .smith-bench/run-ZSnre0/workspace diff --stat
+```
+
+Observed:
+
+```text
+?? SMITH.TASK.md
+```
+
+- No tracked source diff.
+
+Prompt-integrity and cleanup checks:
+
+```sh
+rg -n "Complete this benchmark task|primary source-code targets|/task/verify.sh|run the verifier directly" .smith-bench/run-ZSnre0/home/.smith/runs/2026-05-23T19-31-08-064Z.trace || true
+docker ps --format '{{.Names}}' | rg 'smith-bench-run-ZSnre0-smith|smith-bench-run-.*-smith' || true
+```
+
+Observed:
+
+- No benchmark wrapper text.
+- No live Smith benchmark containers.
+
+Behavior notes:
+
+- The run launched a read-only sub-agent that returned a useful map of Alpine parsing, source-package model usage, and OVAL source-package matching.
+- The parent continued inspecting Alpine scanner, OVAL utility, models, Debian source-package parsing, scan flow, and package command references.
+- It patched only `SMITH.TASK.md` to record a working set.
+- It never produced a tracked source patch and never reached a verifier.
+
+Classification:
+
+- Generic no-edit reconnaissance churn, with task memory written but no implementation.
+- Same broad class as raw-prompt `001` and `005`.
+- `010` remains unrecovered under the strict prompt rule.
+- Current valid score evidence remains `3/10`.
