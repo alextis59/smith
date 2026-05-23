@@ -43,6 +43,7 @@ export type RuntimeConfig = {
   providerTimeoutMs: number;
   providerDebug: boolean;
   subAgentInheritContext: boolean;
+  subAgentMaxTurns: number;
   remoteSessionTtlDays: number;
   logDir?: string;
 };
@@ -96,6 +97,7 @@ export type CliConfigOverrides = {
   providerTimeoutMs?: number;
   providerDebug?: boolean;
   subAgentInheritContext?: boolean;
+  subAgentMaxTurns?: number;
   remoteSessionTtlDays?: number;
   logDir?: string;
 };
@@ -146,6 +148,7 @@ const DEFAULT_CONFIG: SmithConfig = {
     providerTimeoutMs: 300_000,
     providerDebug: false,
     subAgentInheritContext: true,
+    subAgentMaxTurns: 12,
     remoteSessionTtlDays: 30
   },
   files: []
@@ -324,6 +327,9 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--no-sub-agent-inherit-context":
         overrides.subAgentInheritContext = false;
         break;
+      case "--sub-agent-max-turns":
+        overrides.subAgentMaxTurns = Number.parseInt(readValue(), 10);
+        break;
       case "--provider-message-chain":
         // Legacy no-op: provider message-chain rendering is always enabled.
         break;
@@ -376,6 +382,7 @@ provider_retries = 2
 provider_retry_delay_ms = 250
 provider_timeout_ms = 300000
 sub_agent_inherit_context = true
+sub_agent_max_turns = 12
 remote_session_ttl_days = 30
 `;
 }
@@ -470,6 +477,7 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.providerTimeoutMs !== undefined ? { providerTimeoutMs: cli.providerTimeoutMs } : {}),
     ...(cli.providerDebug !== undefined ? { providerDebug: cli.providerDebug } : {}),
     ...(cli.subAgentInheritContext !== undefined ? { subAgentInheritContext: cli.subAgentInheritContext } : {}),
+    ...(cli.subAgentMaxTurns !== undefined ? { subAgentMaxTurns: cli.subAgentMaxTurns } : {}),
     ...(cli.remoteSessionTtlDays !== undefined ? { remoteSessionTtlDays: cli.remoteSessionTtlDays } : {}),
     ...(cli.logDir !== undefined ? { logDir: cli.logDir } : {})
   };
@@ -536,6 +544,7 @@ function mergeRuntime(previous: RuntimeConfig, raw: RawConfig): RuntimeConfig {
     ...(typeof raw.sub_agent_inherit_context === "boolean"
       ? { subAgentInheritContext: raw.sub_agent_inherit_context }
       : {}),
+    ...(typeof raw.sub_agent_max_turns === "number" ? { subAgentMaxTurns: raw.sub_agent_max_turns } : {}),
     ...(typeof raw.remote_session_ttl_days === "number" ? { remoteSessionTtlDays: raw.remote_session_ttl_days } : {}),
     ...(typeof raw.log_dir === "string" ? { logDir: raw.log_dir } : {})
   };
@@ -634,6 +643,7 @@ export function validateConfig(config: SmithConfig): void {
   validateInteger("runtime.provider_retries", config.runtime.providerRetries, 0, 10);
   validateInteger("runtime.provider_retry_delay_ms", config.runtime.providerRetryDelayMs, 0, 60_000);
   validateInteger("runtime.provider_timeout_ms", config.runtime.providerTimeoutMs, 0, Number.MAX_SAFE_INTEGER);
+  validateInteger("runtime.sub_agent_max_turns", config.runtime.subAgentMaxTurns, 0, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.remote_session_ttl_days", config.runtime.remoteSessionTtlDays, 1, 3650);
   if (config.runtime.logDir !== undefined && !config.runtime.logDir.trim()) {
     throw new Error("runtime.log_dir must not be empty");

@@ -355,7 +355,7 @@ sub_agent_inherit_context = false
     expect(childUserMessages).not.toContain("parent-output");
   });
 
-  it("sub_agent runs inherit the parent max-turn budget instead of model-provided caps", async () => {
+  it("sub_agent runs use the configured cap instead of model-provided caps", async () => {
     const provider = await startFakeProvider([
       { name: "sub_agent", arguments: { task: "inspect from child", max_turns: 1 } },
       { name: "run", arguments: { command: "printf child-output" } },
@@ -380,6 +380,7 @@ model = "fake-model"
 danger_review = "off"
 timeout_ms = 5000
 max_turns = 4
+sub_agent_max_turns = 2
 `,
       "utf8"
     );

@@ -507,7 +507,11 @@ async function runSubAgentTool(
   }
   const cwdArg = toolTextArgument(context.toolCall.arguments, ["cwd", "workdir"]);
   const cwd = cwdArg ? resolve(context.options.cwd, cwdArg) : context.options.cwd;
-  const maxTurns = context.options.maxTurns ?? context.options.runtime.maxTurns;
+  const parentMaxTurns = context.options.maxTurns ?? context.options.runtime.maxTurns;
+  const maxTurns =
+    context.options.runtime.subAgentMaxTurns > 0
+      ? Math.min(parentMaxTurns, context.options.runtime.subAgentMaxTurns)
+      : parentMaxTurns;
   const inheritContext = context.options.runtime.subAgentInheritContext !== false;
   const explicitReadOnly = toolBooleanArgument(context.toolCall.arguments, ["read_only", "readonly"]);
   const readOnly = context.options.runtime.readOnly || (explicitReadOnly ?? inferSubAgentReadOnly(task));

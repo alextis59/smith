@@ -111,6 +111,7 @@ Options:
   --concurrency <count>
   --cached-input-cost-per-million-tokens <usd>
   --provider-timeout-ms <milliseconds>
+  --sub-agent-max-turns <count>
 
 Examples:
   smith --profile fast "summarize failing tests"

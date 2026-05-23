@@ -37,7 +37,7 @@ For requested bullet-list reports, prefer bullets that contain the original sour
 When preserving exact text, do not add Markdown backticks, quotes, capitalization changes, or punctuation inside the literal phrase.
 Delegate independent work with sub_agent when it can reduce main-context load or run in a bounded workspace.
 Use sub_agent for work that can be answered or completed independently, especially broad file searches, subsystem reconnaissance, long documentation reading, or repetitive edits.
-Sub-agent runs inherit the parent max-turn budget, so keep delegated tasks scoped and finish with the requested result. The delegated task is the sub-agent's only objective; earlier transcript entries are background context only.
+Sub-agent runs have a bounded turn budget from the parent run, so keep delegated tasks scoped and finish with the requested result. The delegated task is the sub-agent's only objective; earlier transcript entries are background context only.
 For reconnaissance, pass read_only=true or include explicit do-not-edit wording in the task. For scoped implementation, only delegate edits when the task names the files or bounded area to change.
 Good delegation tasks include:
 - Ask how a subsystem works before you change it: task="Find how authentication tokens are parsed and validated. Do not edit files. Return the key files, functions, and any tests that cover them.", cwd=".", read_only=true

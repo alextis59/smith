@@ -427,3 +427,31 @@ Decision:
 
 - Keep the change as generic provider reliability, but do not count it as SWE recovery evidence.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Generic Sub-Agent Turn Cap
+
+Evidence:
+
+- Clean `005` after the `rg` shim used a long read-only sub-agent but still ended with no tracked source changes.
+- With `--max-turns 240`, sub-agents inherited too much of the parent budget for scoped reconnaissance.
+
+Generic change:
+
+- Added `runtime.sub_agent_max_turns` and `--sub-agent-max-turns`.
+- Default cap is `12`; setting it to `0` restores full parent-budget inheritance.
+- Updated the system prompt only to describe the generic bounded child-run behavior.
+
+Validation:
+
+- `npm test -- tests/config.test.ts tests/integration.test.ts tests/prompt-trace.test.ts`: passed `34` tests.
+- `npm run build`: passed.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `114065ms`, log `/tmp/smith/2026-05-23T18-13-25-823Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun `005`: failed by Docker timeout in `911134ms`, log `/tmp/smith/2026-05-23T18-28-43-427Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-Z1HvqB/home/.smith/runs/2026-05-23T18-13-38-136Z.trace`.
+- Target `005` did improve from no tracked source diff to a partial `lib/kube/proxy/forwarder.go` patch; sub-agents finished in `6` and `2` turns.
+- Token use worsened to `2111572` total tokens, and no verifier ran.
+
+Decision:
+
+- Keep as a generic, configurable runtime improvement because it bounded delegated reconnaissance and helped `005` reach a source patch.
+- Do not count `005` as recovered.
+- Current valid score evidence remains `3/10`.

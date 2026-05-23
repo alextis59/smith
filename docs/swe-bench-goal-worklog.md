@@ -1449,3 +1449,92 @@ Decision:
 - Do not count the change as SWE recovery evidence.
 - Current valid target evidence remains `3/10`.
 - Next evidence should come from Codex-passed failures (`001`, `005`, `010`) or a generic runtime/tool issue that appears across tasks, not from Vuls-specific prompt or implementation guidance.
+
+## 2026-05-23 Generic Change: Bound Sub-Agent Turn Budgets
+
+Hypothesis:
+
+- Clean `005` after the improved `rg` shim still failed with no tracked source changes.
+- Its trace showed delegated read-only reconnaissance consuming significant parent time while the main agent never reached implementation.
+- In benchmark runs with `--max-turns 240`, child agents inherited the same large max-turn budget even though sub-agent tasks are supposed to be scoped.
+- A generic cap on child turns should keep delegated reconnaissance bounded for normal user tasks too.
+
+Code change:
+
+- Added `runtime.sub_agent_max_turns`, default `12`.
+- Added CLI override `--sub-agent-max-turns`.
+- `runSubAgentTool()` now uses `min(parentMaxTurns, runtime.subAgentMaxTurns)` when the cap is positive; `0` restores full parent-budget inheritance.
+- Updated prompt wording to say child runs have a bounded turn budget from the parent run.
+- Updated `README.md` and `docs/architecture.md`.
+
+Focused validation:
+
+```sh
+npm test -- tests/config.test.ts tests/integration.test.ts tests/prompt-trace.test.ts
+npm run build
+```
+
+Results:
+
+- Focused tests passed: `34` tests.
+- Build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result:
+
+- Passed in `114065ms`.
+- Log: `/tmp/smith/2026-05-23T18-13-25-823Z-smith-091-command-router-refactor.json`
+- Trace: `.smith-bench/run-pq3P15/home/.smith/runs/2026-05-23T18-11-31-988Z.trace`
+- Usage: `40877` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by timeout in `911134ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T18-28-43-427Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`
+- `tracePath`: `.smith-bench/run-Z1HvqB/home/.smith/runs/2026-05-23T18-13-38-136Z.trace`
+- Sandbox: `.smith-bench/run-Z1HvqB`
+- Usage: `2111572` total tokens.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-Z1HvqB/workspace status --short
+git -C .smith-bench/run-Z1HvqB/workspace diff --stat
+```
+
+Observed:
+
+```text
+ M lib/kube/proxy/forwarder.go
+ lib/kube/proxy/forwarder.go | 62 ++++++++++++++++++++++++++++++++-------------
+ 1 file changed, 45 insertions(+), 17 deletions(-)
+```
+
+Trace evidence:
+
+- Sub-agent outputs reported completion in `6` and `2` turns.
+- The parent reached an implementation patch in `lib/kube/proxy/forwarder.go`.
+- No external verifier ran; the outer Docker timeout still ended the task.
+
+Comparison to prior clean 005 after the `rg` shim:
+
+- Prior: `642602` total tokens, no tracked source diff.
+- This run: `2111572` total tokens, partial source patch, no verifier.
+
+Decision:
+
+- Keep the sub-agent cap because it is generic, configurable, validated on the project benchmark, and moved a Codex-passed failed task from no source diff to a partial source patch.
+- Do not count `005` as recovered.
+- The next useful improvement needs to reduce post-patch overrun or help Smith reach verifier/finish without adding benchmark-specific prompt coaching.

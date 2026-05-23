@@ -133,6 +133,8 @@ sub_agent_inherit_context = false
       "12345",
       "--provider-debug",
       "--no-sub-agent-inherit-context",
+      "--sub-agent-max-turns",
+      "9",
       "--provider-message-chain",
       "--log-dir",
       "/tmp/smith",
@@ -166,6 +168,7 @@ sub_agent_inherit_context = false
       providerTimeoutMs: 12345,
       providerDebug: true,
       subAgentInheritContext: false,
+      subAgentMaxTurns: 9,
       logDir: "/tmp/smith",
       dangerReview: "deterministic"
     });
