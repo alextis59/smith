@@ -238,6 +238,27 @@ total_tokens: 320
     expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toEqual([]);
   });
 
+  it("does not wrap SWE-bench Pro prompts in benchmark coaching", () => {
+    const script = buildSweBenchProSmithScript(
+      {
+        format: "swe-bench-pro-v1",
+        repo: "owner/repo",
+        instanceId: "instance_owner__repo-abc",
+        baseCommit: "abc123",
+        repoLanguage: "go",
+        dockerImage: "example/image:tag",
+        selectedTestFilesToRun: ["TestFeature"],
+        failToPass: ["TestFeature"],
+        passToPass: []
+      },
+      "node /smith/bin/smith.js --cwd /workspace --quiet --json \"$TASK\""
+    );
+
+    expect(script).not.toContain("Complete this benchmark task");
+    expect(script).not.toContain("primary source-code targets");
+    expect(script).not.toContain("/task/verify.sh");
+  });
+
   it("hides SWE-bench Pro git history from editing agents and restores it for verification", () => {
     const sandbox = mkdtempSync(join(tmpdir(), "smith-swe-git-sandbox-"));
     const workspace = join(sandbox, "workspace");

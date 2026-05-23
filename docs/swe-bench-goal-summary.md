@@ -11,7 +11,8 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - Latest Smith mini high failures: `001`, `003`, `005`, `006`, `008`, `009`, `010`.
 - Integrity correction: user clarified that prompt edits made specifically for the SWE benchmark are cheating for this goal. Earlier SWE-specific prompt milestones and any passes produced under them are retained below only as historical investigation notes, not valid target evidence.
 - Current valid evidence should count only the baseline full-run passes plus results produced after `befac0f` removed SWE-specific prompt coaching and kept only generic Smith/runtime or harness-integrity changes.
-- Current clean targeted status under the stricter rule: `001`, `005`, `008`, and `010` have all failed targeted reruns after the prompt cleanup. Do not run the full SWE-bench Pro suite until generic changes recover enough Codex-passed failures to plausibly reach `>=7/10`.
+- Stricter prompt rule: SWE-bench Pro tasks now receive the raw task prompt only, with no Smith benchmark wrapper or SWE-specific coaching. Local project benchmarks still keep their normal `/task/verify.sh` harness framing.
+- Current clean targeted status: `001`, `005`, `008`, and `010` have all failed targeted reruns after SWE-specific coaching was removed; `005` has also failed after the stricter raw-SWE-prompt cleanup. Do not run the full SWE-bench Pro suite until generic changes recover enough Codex-passed failures to plausibly reach `>=7/10`.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 
@@ -455,3 +456,33 @@ Decision:
 - Keep as a generic, configurable runtime improvement because it bounded delegated reconnaissance and helped `005` reach a source patch.
 - Do not count `005` as recovered.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Integrity Cleanup: Raw SWE Prompts Only
+
+User clarification:
+
+- Any prompt or instruction change specifically aimed at SWE-bench Pro behavior is cheating for this goal.
+- Generic Smith improvements are still allowed only when they apply to ordinary user tasks too.
+
+Change:
+
+- SWE-bench Pro task prompts now use the raw task text only.
+- Removed inherited generic benchmark wrapper instructions from the SWE prompt path, including source-target nudges and benchmark verifier framing.
+- Added a regression test that the SWE container script does not include benchmark wrapper text.
+- Local `benchmarks/` tasks are unchanged because they are authored around the local `/task/verify.sh` harness.
+
+Validation:
+
+- `npm test -- tests/benchmark.test.ts`: passed `18` tests.
+- `npm run build`: passed.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `102422ms`, log `/tmp/smith/2026-05-23T18-36-02-905Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun `005-gravitational-teleport`: failed by Docker timeout in `911033ms`, log `/tmp/smith/2026-05-23T18-51-20-140Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-thu0Df/home/.smith/runs/2026-05-23T18-36-14-879Z.trace`.
+- Retained `005` workspace had no tracked or untracked source diff.
+- Trace search found no benchmark wrapper text such as `Complete this benchmark task`, `primary source-code targets`, `/task/verify.sh`, or `run the verifier directly`.
+- Docker cleanup left no live Smith benchmark container.
+
+Decision:
+
+- This is an integrity cleanup, not a score improvement.
+- Current valid score evidence remains `3/10`.
+- Resume only with generic runtime/tool/harness changes and prioritize Codex-passed Smith failures such as `001`, `005`, and `010`.

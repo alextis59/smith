@@ -30,6 +30,7 @@ Integrity correction recorded after user clarification:
 - Historical sections that added SWE-specific task guidance are preserved as investigation notes only.
 - Passes produced while those instructions were active are not valid target evidence.
 - Valid ongoing work is limited to generic Smith behavior, generic tool/runtime/harness reliability, provider/tool adapters, logging, and benchmark-integrity controls that do not coach the agent on SWE-bench-specific behavior.
+- Stricter follow-up: SWE-bench Pro now receives raw task text only. It does not inherit the generic Smith benchmark wrapper used for local `benchmarks/` tasks.
 - Current clean targeted evidence after removing SWE-specific prompt coaching: `001`, `005`, `008`, and `010` failed targeted reruns; the only valid passing evidence remains the earlier full-run baseline `002`, `004`, and `007` until generic changes prove otherwise.
 
 Existing code context:
@@ -1538,3 +1539,99 @@ Decision:
 - Keep the sub-agent cap because it is generic, configurable, validated on the project benchmark, and moved a Codex-passed failed task from no source diff to a partial source patch.
 - Do not count `005` as recovered.
 - The next useful improvement needs to reduce post-patch overrun or help Smith reach verifier/finish without adding benchmark-specific prompt coaching.
+
+## 2026-05-23 Integrity Cleanup: Remove SWE Benchmark Wrapper
+
+User clarification:
+
+- The user reviewed the progress summary and clarified that prompt edits specifically for the SWE benchmark are cheating.
+- They also consider similar benchmark-runtime instructions cheating if they are not generic improvements applicable to ordinary user tasks.
+- Decision: remove ambiguity by giving SWE-bench Pro the raw task text only. Keep local `benchmarks/` wrapper instructions because those tasks are authored for the local benchmark harness and are not the target score.
+
+Code change:
+
+- `benchmarkPrompt()` now returns the task text unchanged when the instruction list is empty.
+- `benchmarkInstructionsForTask()` now returns only `SWE_BENCH_PRO_TASK_INSTRUCTIONS`, which remains an empty array.
+- Added a regression test asserting the SWE Smith container script does not contain wrapper text:
+  - `Complete this benchmark task`
+  - `primary source-code targets`
+  - `/task/verify.sh`
+
+Focused validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+```
+
+Results:
+
+- Benchmark tests passed: `18` tests.
+- Build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result:
+
+- Passed in `102422ms`.
+- Log: `/tmp/smith/2026-05-23T18-36-02-905Z-smith-091-command-router-refactor.json`
+- Trace: `.smith-bench/run-ySXPnm/home/.smith/runs/2026-05-23T18-34-20-724Z.trace`
+- Usage: `40792` total tokens.
+
+Target SWE rerun under raw task prompt:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by Docker timeout in `911033ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T18-51-20-140Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`
+- `tracePath`: `.smith-bench/run-thu0Df/home/.smith/runs/2026-05-23T18-36-14-879Z.trace`
+- Sandbox: `.smith-bench/run-thu0Df`
+- Usage: `2984214` total tokens.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-thu0Df/workspace status --short
+git -C .smith-bench/run-thu0Df/workspace diff --stat
+```
+
+Observed:
+
+- No tracked source diff.
+- No untracked files reported.
+
+Prompt-integrity check:
+
+```sh
+rg -n "Complete this benchmark task|primary source-code targets|/task/verify.sh|run the verifier directly|SWE-bench Pro instruction" .smith-bench/run-thu0Df/home/.smith/runs/2026-05-23T18-36-14-879Z.trace || true
+```
+
+Observed:
+
+- No matches.
+
+Cleanup check:
+
+```sh
+docker ps --format '{{.Names}}' | rg 'smith-bench-run-thu0Df-smith|smith-bench-run-.*-smith' || true
+```
+
+Observed:
+
+- No live Smith benchmark containers.
+
+Decision:
+
+- Treat this as a stricter evidence baseline and integrity cleanup, not as a benchmark improvement.
+- Previous post-`befac0f` targeted failures remain useful for diagnosing generic runtime failure modes, but future score claims should use the raw SWE prompt path.
+- Current valid score evidence remains `3/10`.
+- Next useful work should target generic causes of no-edit/overrun behavior on Codex-passed Smith failures, starting with `001`, `005`, or `010`.

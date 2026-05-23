@@ -894,6 +894,7 @@ async function runCodexBenchmarkTask(context: BenchmarkTaskContext): Promise<Ben
 }
 
 function benchmarkPrompt(taskPrompt: string, instructions = BENCHMARK_TASK_INSTRUCTIONS): string {
+  if (instructions.length === 0) return taskPrompt;
   return [
     ...instructions,
     "",
@@ -1016,10 +1017,7 @@ function readSweBenchProTaskMetadata(task: string): SweBenchProTaskMetadata {
 }
 
 function benchmarkInstructionsForTask(metadata: SweBenchProTaskMetadata): string[] {
-  return [
-    ...BENCHMARK_TASK_INSTRUCTIONS.filter((instruction) => !instruction.includes("/task/verify.sh") && !instruction.includes("run the verifier directly")),
-    ...SWE_BENCH_PRO_TASK_INSTRUCTIONS
-  ];
+  return SWE_BENCH_PRO_TASK_INSTRUCTIONS;
 }
 
 function optionalTracePath(home: string, stdout: string): { tracePath?: string } {
