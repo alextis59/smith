@@ -31,7 +31,8 @@ Integrity correction recorded after user clarification:
 - Passes produced while those instructions were active are not valid target evidence.
 - Valid ongoing work is limited to generic Smith behavior, generic tool/runtime/harness reliability, provider/tool adapters, logging, and benchmark-integrity controls that do not coach the agent on SWE-bench-specific behavior.
 - Stricter follow-up: SWE-bench Pro now receives raw task text only. It does not inherit the generic Smith benchmark wrapper used for local `benchmarks/` tasks.
-- Current clean targeted evidence after removing SWE-specific prompt coaching: `001`, `005`, `008`, and `010` failed targeted reruns; the only valid passing evidence remains the earlier full-run baseline `002`, `004`, and `007` until generic changes prove otherwise.
+- User reinforcement on 2026-05-23: prompt or runtime instructions written specifically for SWE-bench Pro are cheating for this goal. Treat the older SWE-specific prompt sections as rejected historical experiments only; do not count their scores, reintroduce their wording, or use them as design direction.
+- Current strict targeted evidence: baseline full-run passes `002`, `004`, `007`, plus recovered `008` after generic raw-prompt changes, for `4/10` evidence.
 
 Existing code context:
 
@@ -2660,4 +2661,77 @@ Decision:
 - Do not count `005` as recovered.
 - Retain the soft-deadline change: it improved `005` from timeout/no-diff failures to source edits, `finish`, and verifier evidence.
 - New generic failure class: fallback edit images can still lack the project toolchain (`go` here), so local compile feedback may be unavailable even though the official verifier can build. Any follow-up must remain generic and cannot become SWE-specific test-edit coaching.
+- Current strict valid evidence remains `4/10`.
+
+## 2026-05-23 Follow-up: 001 After Soft Deadline
+
+Reason for target:
+
+- `001-nodebb-nodebb-vnan` is a Codex `gpt-5.4` high pass and a Smith failure.
+- Prior strict-rule runs generally timed out before a complete candidate and often had little or no source diff.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by Docker timeout in `919847ms`.
+- Log: `/tmp/smith/2026-05-23T23-17-22-127Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-vtmiCD/home/.smith/runs/2026-05-23T23-02-16-898Z.trace`.
+- Sandbox: `.smith-bench/run-vtmiCD`.
+- Usage: `1733129` total tokens.
+- Smith did not call `finish`; no verifier ran.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-vtmiCD/workspace status --short
+git -C .smith-bench/run-vtmiCD/workspace diff --stat
+```
+
+Observed:
+
+```text
+ M src/controllers/admin/users.js
+ M src/database/redis/main.js
+ M src/socket.io/admin/user.js
+ M src/user/email.js
+?? appendonlydir/
+```
+
+```text
+ src/controllers/admin/users.js | 28 ++++++++++++++++-
+ src/database/redis/main.js     |  9 ++++++
+ src/socket.io/admin/user.js    |  7 ++++-
+ src/user/email.js              | 69 ++++++++++++++++++++++++++++++++----------
+ 4 files changed, 95 insertions(+), 18 deletions(-)
+```
+
+Prompt-integrity and cleanup checks:
+
+```sh
+rg -n "deadline reminder|Smith deadline|progress reminder|Smith progress|Complete this benchmark task|primary source-code targets|/task/verify.sh|run the verifier directly|SWE-bench|Applied patch to" .smith-bench/run-vtmiCD/home/.smith/runs/2026-05-23T23-02-16-898Z.trace || true
+docker ps --format '{{.Names}} {{.Status}}' | rg 'smith-bench-run-vtmiCD-smith|smith-bench-run-.*-smith' || true
+```
+
+Observed:
+
+- Trace contained generic progress reminders and both generic deadline reminders:
+  - `Smith deadline: elapsed 10m 26s of 12m max run time (75% threshold)`
+  - `Smith deadline: elapsed 12m 5s of 12m max run time (90% threshold)`
+- Source patches occurred after the deadline reminders:
+  - `src/user/email.js`
+  - `src/controllers/admin/users.js`
+  - `src/database/redis/main.js`
+  - `src/socket.io/admin/user.js`
+- No benchmark wrapper or SWE-specific solving-coaching text appeared.
+- No live Smith benchmark containers remained after cleanup.
+
+Decision:
+
+- Do not count `001` as recovered.
+- The soft deadline improved actionability but still did not get the run to finish/verifier.
 - Current strict valid evidence remains `4/10`.

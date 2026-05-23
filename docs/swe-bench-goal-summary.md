@@ -15,6 +15,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - Current strict targeted evidence: baseline full-run passes `002`, `004`, `007`, plus recovered `008` after generic raw-prompt changes, for `4/10` evidence.
 - Current unrecovered Codex-passed Smith failures: `001`, `005`, and `010`. Do not run the full SWE-bench Pro suite until generic changes recover enough Codex-passed failures to plausibly reach `>=7/10`.
 - User clarification on 2026-05-23: do not pursue prompt edits or instructions tailored to SWE-bench Pro. Generic Smith capabilities are acceptable only when they apply to ordinary user tasks as well.
+- User reinforcement on 2026-05-23: prompt or runtime instructions written specifically for SWE-bench Pro are cheating for this goal. Treat the older SWE-specific prompt sections below as rejected historical experiments only; do not count their scores, reintroduce their wording, or use them as design direction.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 
@@ -745,4 +746,18 @@ Decision:
 
 - Do not count `005` as recovered.
 - The soft deadline is still retained because it moved `005` from repeated timeout/no-diff failures to a source patch, finish, and official verifier evidence.
+- Current strict valid evidence remains `4/10`.
+
+## 2026-05-23 Follow-up: 001 Still Times Out
+
+Evidence:
+
+- Target SWE rerun `001-nodebb-nodebb-vnan` after the soft-deadline change failed by Docker timeout in `919847ms`, log `/tmp/smith/2026-05-23T23-17-22-127Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-vtmiCD/home/.smith/runs/2026-05-23T23-02-16-898Z.trace`.
+- Retained workspace had source diffs in `src/user/email.js`, `src/controllers/admin/users.js`, `src/database/redis/main.js`, and `src/socket.io/admin/user.js`.
+- Trace showed generic 75% and 90% deadline reminders and no SWE-bench Pro prompt wrapper or solving-coaching text.
+- Smith did not call `finish`; no verifier ran.
+
+Decision:
+
+- Do not count `001` as recovered.
 - Current strict valid evidence remains `4/10`.
