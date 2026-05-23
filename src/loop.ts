@@ -268,7 +268,9 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           providerMessages = action.providerMessages;
           nextResponsesInputItems = action.responsesInputItems;
           nextPendingOutput = [nextPendingOutput, action.toolOutput].filter(Boolean).join("\n");
-          toolCallsSincePatchOrFinish = toolName === "patch" || action.finished ? 0 : toolCallsSincePatchOrFinish + 1;
+          const madeTaskPatch =
+            toolName === "patch" && action.changedFiles !== undefined && !changedFilesAreOnlySmithMemory(action.changedFiles);
+          toolCallsSincePatchOrFinish = madeTaskPatch || action.finished ? 0 : toolCallsSincePatchOrFinish + 1;
           if (action.finished) {
             if (totalUsage) options.trace?.write("run usage", formatUsageCost(totalUsage));
             return { chatOut: action.finished, turns: turn, transcript, ...(totalUsage ? { usage: totalUsage } : {}) };
@@ -337,6 +339,7 @@ type ToolActionResult = {
   responsesInputItems?: Record<string, unknown>[];
   toolOutput: string;
   totalUsage?: TokenUsageCost;
+  changedFiles?: string[];
   finished?: string;
   timedOut?: boolean;
   timeoutOutput?: string;
@@ -433,8 +436,10 @@ async function runPatchTool(
 
   const patch = stripPatchFence(rawPatch).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   let output: string;
+  let changedFiles: string[] | undefined;
   try {
     const result = applySmithPatch(patch, parentContext.options.cwd);
+    changedFiles = result.changedFiles;
     output = `Applied patch to ${result.changedFiles.join(", ")}`;
   } catch (error) {
     output = `patch failed: ${errorMessage(error)}`;
@@ -444,7 +449,16 @@ async function runPatchTool(
   const responsesInputItems = appendResponsesTerminalOutput(parentContext.responsesInputItems, callId, output);
   parentContext.options.trace?.write("tool output", output);
   if (output) parentContext.options.onTerminalOutput?.(output);
-  return { transcript, providerMessages, responsesInputItems, toolOutput: output, totalUsage };
+  return { transcript, providerMessages, responsesInputItems, toolOutput: output, totalUsage, ...(changedFiles ? { changedFiles } : {}) };
+}
+
+function changedFilesAreOnlySmithMemory(changedFiles: string[]): boolean {
+  return changedFiles.length > 0 && changedFiles.every(isRootSmithMemoryFile);
+}
+
+function isRootSmithMemoryFile(path: string): boolean {
+  const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
+  return normalized === "SMITH.md" || normalized === "SMITH.TASK.md";
 }
 
 async function runShellCommandTool(
@@ -880,7 +894,7 @@ function progressReminderOutput(options: SmithRunOptions, toolCallsSincePatchOrF
   const availableTools = availableSmithTools(options).map((tool) => tool.name).join(", ");
   const patchAvailable = availableSmithTools(options).some((tool) => tool.name === "patch");
   const status = `Smith progress: ${toolCallsSincePatchOrFinish} tool calls have completed without ${
-    patchAvailable ? "a patch or finish" : "finish"
+    patchAvailable ? "a task patch or finish" : "finish"
   }; turn ${turn} of ${maxTurns}; available tools: ${availableTools}.`;
   if (!patchAvailable) {
     return `${status} If the requested read-only findings are sufficient, finish with the result; otherwise continue focused inspection.`;

@@ -2349,3 +2349,111 @@ Decision:
 - Current code audit: `SWE_BENCH_PRO_TASK_INSTRUCTIONS` is empty; `buildSweBenchProSmithScript()` feeds raw `/task/Task.md`; tests assert no SWE-bench Pro prompt wrapper or benchmark coaching text.
 - Current valid score evidence remains `3/10`.
 - Next work should prefer generic runtime/tooling changes with direct ordinary-user value. One possible evidence-backed direction is to treat memory-only patches such as `SMITH.TASK.md` differently in the stalled-progress counter, because the latest `010` run reset progress on a memory patch without changing task files. That would need to be justified and tested as a generic long-run behavior improvement, not as SWE-specific instruction.
+
+## 2026-05-23 Generic Runtime Improvement: Memory-only Patches Do Not Reset Progress
+
+Hypothesis:
+
+- The latest rejected-test-note `010` run made one patch that only touched `SMITH.TASK.md`, then timed out with no source diff.
+- The generic stalled-progress reminder counted any successful patch as progress, including Smith memory maintenance.
+- In ordinary long Smith tasks, updating `SMITH.md` or `SMITH.TASK.md` is useful bookkeeping but should not suppress the signal that no task file has changed.
+
+Code change:
+
+- Added `changedFiles?: string[]` to `ToolActionResult` for successful patch tool calls.
+- `runPatchTool()` now returns the changed file list from `applySmithPatch()`.
+- The stalled-progress counter now resets on finish or a successful patch that changes at least one non-memory file.
+- Root `SMITH.md` and `SMITH.TASK.md` are treated as memory files for this counter only.
+- The reminder phrase changed from `without a patch or finish` to `without a task patch or finish`.
+
+Focused validation:
+
+```sh
+npm test -- tests/integration.test.ts
+npm run build
+```
+
+Results:
+
+- Integration tests passed: `18` tests.
+- Build passed.
+- Added regression coverage that an `SMITH.TASK.md`-only patch after sustained inspection still replays the progress reminder to the next provider request.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result:
+
+- Passed in `123598ms`.
+- Log: `/tmp/smith/2026-05-23T21-51-32-915Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-5YdSCd/home/.smith/runs/2026-05-23T21-49-30-306Z.trace`.
+- Usage: `62043` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed the official verifier in `811172ms`.
+- Log: `/tmp/smith/2026-05-23T22-05-10-752Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-P7Cj9U/home/.smith/runs/2026-05-23T21-51-40-773Z.trace`.
+- Sandbox: `.smith-bench/run-P7Cj9U`.
+- Usage: `1463993` total tokens.
+- Smith finished after `38` turns and the external verifier ran.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-P7Cj9U/workspace status --short
+git -C .smith-bench/run-P7Cj9U/workspace diff --stat
+```
+
+Observed:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+?? SMITH.md
+```
+
+```text
+ scanner/alpine.go | 163 ++++++++++++++++++++++++++++++++++++++++++------------
+ 1 file changed, 128 insertions(+), 35 deletions(-)
+```
+
+Verifier failure:
+
+- Missing/failing restored-test helpers:
+  - `parseApkInstalledList`
+  - `parseApkIndex`
+  - `parseApkUpgradableList`
+- OVAL assertion:
+  - `TestIsOvalDefAffected`: expected `[85] affected` false, actual true; expected empty fixedIn, actual `3.3.2-r0`.
+
+Prompt-integrity and cleanup checks:
+
+```sh
+rg -n "progress reminder|Smith progress|Complete this benchmark task|primary source-code targets|/task/verify.sh|run the verifier directly|SWE-bench|Applied patch to SMITH\\.TASK|Applied patch to SMITH\\.md" .smith-bench/run-P7Cj9U/home/.smith/runs/2026-05-23T21-51-40-773Z.trace || true
+docker ps --format '{{.Names}} {{.Status}}' | rg 'smith-bench-run-P7Cj9U-smith|smith-bench-run-.*-smith' || true
+```
+
+Observed:
+
+- Trace contained generic progress reminder text, including the new `task patch` wording.
+- Trace contained an `Applied patch to SMITH.md` memory update late in the run; this did not hide the earlier lack-of-task-patch reminder.
+- No benchmark wrapper or SWE-specific solving-coaching text appeared.
+- No live Smith benchmark containers remained after cleanup.
+
+Decision:
+
+- Keep the change as generic runtime accounting for ordinary long-running Smith tasks.
+- Do not count `010` as recovered. It still fails official verification with the same broad failure shape as the prior task-image run.
+- Current valid score evidence remains `3/10`.
+- Full SWE-bench Pro run is not justified.

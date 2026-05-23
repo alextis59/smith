@@ -670,3 +670,30 @@ Evidence and decision:
 - The code and test for this note were reverted and are not retained.
 - Prompt integrity check: current `SWE_BENCH_PRO_TASK_INSTRUCTIONS` is empty, and benchmark tests assert SWE-bench Pro prompts are not wrapped with benchmark coaching.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Milestone: Memory-only Patches Do Not Reset Progress
+
+Change:
+
+- The generic stalled-progress counter now resets only after a successful task-file patch or finish.
+- Successful patches that only touch root `SMITH.md` or `SMITH.TASK.md` no longer suppress the progress reminder.
+- The reminder wording now says `task patch` to distinguish implementation/documentation changes from Smith memory maintenance.
+
+Validation:
+
+- `npm test -- tests/integration.test.ts`: passed `18` tests.
+- `npm run build`: passed.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `123598ms`, log `/tmp/smith/2026-05-23T21-51-32-915Z-smith-091-command-router-refactor.json`.
+
+Target SWE evidence:
+
+- Target SWE rerun `010-future-architect-vuls`: failed verifier in `811172ms`, log `/tmp/smith/2026-05-23T22-05-10-752Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-P7Cj9U/home/.smith/runs/2026-05-23T21-51-40-773Z.trace`.
+- Usage: `1463993` total tokens.
+- Retained workspace had a source diff in `scanner/alpine.go`, plus agent test edits and untracked `SMITH.md`.
+- Official verifier failed with missing restored-test helper methods `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`, plus `TestIsOvalDefAffected`.
+- Trace search found generic progress reminders and no SWE-bench Pro benchmark wrapper or solving-coaching text.
+
+Decision:
+
+- Keep as a generic runtime improvement for long Smith tasks. It does not recover `010`, and no full SWE-bench Pro run is justified.
+- Current valid score evidence remains `3/10`.
