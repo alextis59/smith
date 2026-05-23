@@ -133,7 +133,7 @@ const DEFAULT_CONFIG: SmithConfig = {
     shell: "bash",
     timeoutMs: 120_000,
     maxContextTokens: 128_000,
-    maxToolOutputChars: 24_000,
+    maxToolOutputChars: 12_000,
     maxTurns: 20,
     dangerReview: "llm",
     dangerReviewProfile: "reviewer",
@@ -362,7 +362,7 @@ temperature = 0
 shell = "bash"
 timeout_ms = 120000
 max_context_tokens = 128000
-max_tool_output_chars = 24000
+max_tool_output_chars = 12000
 max_turns = 20
 danger_review = "llm"
 danger_review_profile = "reviewer"

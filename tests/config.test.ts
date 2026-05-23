@@ -19,7 +19,7 @@ describe("config loading", () => {
     expect(resolveProfile(config).adapter).toBe("openai-chat");
     expect(config.runtime.dangerReview).toBe("llm");
     expect(config.runtime.dangerReviewProfile).toBe("reviewer");
-    expect(config.runtime.maxToolOutputChars).toBe(24000);
+    expect(config.runtime.maxToolOutputChars).toBe(12000);
     expect(config.runtime.subAgentInheritContext).toBe(true);
   });
 

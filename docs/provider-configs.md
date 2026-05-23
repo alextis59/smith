@@ -97,7 +97,7 @@ metadata = { app = "smith" }
 [runtime]
 timeout_ms = 120000
 max_turns = 20
-max_tool_output_chars = 24000
+max_tool_output_chars = 12000
 provider_retries = 2
 provider_retry_delay_ms = 250
 provider_debug = false

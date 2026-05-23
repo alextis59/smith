@@ -291,3 +291,32 @@ Validation:
 Next step:
 
 - Continue only with generic Smith/runtime improvements; do not add SWE-bench-specific prompt coaching.
+
+## 2026-05-23 Clean 001 Rerun and Generic Context Control
+
+Evidence:
+
+- Clean target SWE rerun after removing SWE-specific prompt coaching: `swe-bench-pro/001-nodebb-nodebb-vnan`, failed by Docker timeout after `912420ms`.
+- Log: `/tmp/smith/2026-05-23T15-50-52-739Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-EDqLzM/home/.smith/runs/2026-05-23T15-35-47-614Z.trace`.
+- Retained workspace had no source diff; only `?? appendonlydir/`.
+- Trace showed useful read-only reconnaissance, including delegated subsystem findings, but the parent continued broad inspection and did not patch before timeout.
+- The trace was about `5.0MB`, with repeated large inspection outputs including irrelevant localization/search noise. This points to a generic context/tool-output control issue, not a SWE-specific prompt gap.
+
+Generic change:
+
+- Lower the default `runtime.max_tool_output_chars` from `24000` to `12000`.
+- Apply the same output cap to `sub_agent` results before replaying them into the parent transcript/provider context.
+- This is task-agnostic: it limits any oversized terminal or delegated-agent output while retaining the existing config/CLI override for users who need larger outputs.
+
+Next step:
+
+- Focused tests/build passed.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `207516ms`, log `/tmp/smith/2026-05-23T15-58-04-331Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-qbUAUm/home/.smith/runs/2026-05-23T15-54-37-143Z.trace`.
+- Target SWE rerun `swe-bench-pro/001-nodebb-nodebb-vnan`: still failed by timeout in `912402ms`, log `/tmp/smith/2026-05-23T16-13-38-149Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-MB52aB/home/.smith/runs/2026-05-23T15-58-32-942Z.trace`.
+- Comparison: previous clean 001 used `751556` total tokens and made no source edits; this run used `705656` total tokens and patched `src/user/email.js`, but did not complete the required adapter/controller changes or reach verifier.
+- Keep the generic context-control change as a broad improvement, but do not count it as a SWE recovery.
+
+Next step:
+
+- Commit this validated generic milestone, then continue with another generic improvement or another Codex-passed target (`005` or `010`) rather than adding SWE-specific prompt instructions.

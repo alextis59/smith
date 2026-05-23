@@ -585,6 +585,47 @@ max_tool_output_chars = 180
     expect(replayedOutput).not.toContain("A".repeat(250));
   });
 
+  it("truncates oversized sub_agent output before replaying it to the parent provider", async () => {
+    const provider = await startFakeProvider([
+      { name: "sub_agent", arguments: { task: "inspect from child" } },
+      { name: "finish", arguments: { message: "B".repeat(500) } },
+      { name: "finish", arguments: { message: "parent done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-sub-agent-output-cap-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_tool_output_chars = 180
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "parent task"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    const replayedOutput = messages(provider.requests[2].body).at(-1)?.content ?? "";
+    expect(stdout).toContain("parent done");
+    expect(replayedOutput).toContain("smith truncated tool output");
+    expect(replayedOutput).toContain("omitted");
+    expect(replayedOutput.length).toBeLessThan(230);
+    expect(replayedOutput).not.toContain("B".repeat(250));
+  });
+
   it("remote prints only first finish message to stdout and supports resume", async () => {
     const provider = await startFakeProvider([
       { name: "finish", arguments: { message: "need info" } },

@@ -1000,3 +1000,116 @@ Decision:
 
 - Do not use SWE-specific prompt tuning as an improvement path.
 - Future changes should target generic Smith behavior, generic tool reliability, harness integrity, provider/tool adapters, or broadly applicable runtime mechanics.
+
+## 2026-05-23 Clean 001 Rerun After SWE-Specific Prompt Removal
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by timeout in `912420ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T15-50-52-739Z-smith-001-nodebb-nodebb-vnan.json`
+- `tracePath`: `.smith-bench/run-EDqLzM/home/.smith/runs/2026-05-23T15-35-47-614Z.trace`
+- Sandbox: `.smith-bench/run-EDqLzM`
+- Usage: `751556` total tokens.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-EDqLzM/workspace status --short
+git -C .smith-bench/run-EDqLzM/workspace diff --stat
+```
+
+- Status: `?? appendonlydir/`
+- Diff stat: empty.
+- No source edits were made before timeout.
+
+Trace evidence:
+
+- The clean prompt no longer contained SWE-specific coaching, instance ID, or base commit details.
+- A read-only `sub_agent` produced useful working-set evidence around `src/user/email.js`, ACP user handlers, socket admin user handlers, database adapters, deletion paths, and tests.
+- The parent continued broad inspections after the delegated reconnaissance instead of converting the working set into source edits.
+- The trace file size was about `5.0MB`.
+- Some terminal outputs replayed large, low-value search results, including locale files from broad grep output.
+
+Classification:
+
+- Generic context/tool-output control issue. This is not a reason to add SWE-specific task instructions.
+- The failure mode is broadly relevant to ordinary user tasks: an agent can lose momentum when oversized or noisy tool output consumes context after useful reconnaissance.
+
+Generic change selected:
+
+- Lower the default per-tool replay cap from `24000` to `12000` chars.
+- Apply `runtime.max_tool_output_chars` to `sub_agent` final output before replaying it into the parent transcript/provider context.
+- Keep CLI/config override support unchanged.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/config.test.ts tests/integration.test.ts tests/benchmark.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Results:
+
+- Initial focused test attempt failed because integration tests used stale built output; rebuilt with `npm run build`.
+- Focused tests then passed: `42` tests across config, integration, and benchmark suites.
+- Project benchmark `benchmarks/091-command-router-refactor` passed in `207516ms`.
+- Project benchmark log: `/tmp/smith/2026-05-23T15-58-04-331Z-smith-091-command-router-refactor.json`
+- Project benchmark trace: `.smith-bench/run-qbUAUm/home/.smith/runs/2026-05-23T15-54-37-143Z.trace`
+
+Target rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by timeout in `912402ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T16-13-38-149Z-smith-001-nodebb-nodebb-vnan.json`
+- `tracePath`: `.smith-bench/run-MB52aB/home/.smith/runs/2026-05-23T15-58-32-942Z.trace`
+- Sandbox: `.smith-bench/run-MB52aB`
+- Usage: `705656` total tokens.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-MB52aB/workspace status --short
+git -C .smith-bench/run-MB52aB/workspace diff --stat
+```
+
+- Status: `M src/user/email.js`, `?? appendonlydir/`
+- Diff stat: `src/user/email.js | 68 ++++++++++++++++++++++++++++++++++++++++++-------------`
+- The agent made a partial source edit but did not modify the required database adapters, ACP user handlers, or deletion path before timeout.
+
+Trace evidence:
+
+- `rg -n "smith truncated tool output" ... | wc -l` returned `107`, confirming the lower cap was active.
+- Trace size remained about `5.1MB`; the result JSON shrank from about `270KB` in the previous clean 001 run to about `181KB`.
+- The first source patch happened in `src/user/email.js`.
+- No external verifier ran.
+
+Comparison to previous clean 001:
+
+- Previous clean run: `751556` total tokens, no source diff.
+- This run: `705656` total tokens, partial `src/user/email.js` diff.
+- The generic cap appears to reduce replay volume and helped the agent reach implementation, but it did not recover the task.
+
+Decision:
+
+- Keep the change because it is generic, tested, documented, configurable, and does not encode SWE-bench-specific behavior.
+- Do not count 001 as recovered.
+- Continue looking for generic improvements; avoid SWE-specific prompt instructions.
+
+Rejected ideas:
+
+- Do not add instructions that mention SWE-bench, verifier timing, benchmark turn limits, source-file-only patches, or task-specific implementation strategy.
+- Do not add task-specific NodeBB guidance.

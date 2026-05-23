@@ -536,7 +536,10 @@ async function runSubAgentTool(
       onModelOutput: undefined,
       subAgentDepth: depth + 1
     });
-    const output = `Sub-agent finished in ${result.turns} turns:\n${result.chatOut}`;
+    const output = limitToolOutput(
+      `Sub-agent finished in ${result.turns} turns:\n${result.chatOut}`,
+      context.options.runtime.maxToolOutputChars
+    );
     const totalUsage = addUsageCost(context.totalUsage, result.usage);
     const label = subAgentTranscriptLabel(task);
     const transcript = appendTerminalTurn(context.transcript, label, output);
