@@ -780,3 +780,16 @@ Decision:
 
 - Keep as a generic transcript-quality improvement.
 - Do not count `001` as recovered; current strict valid evidence remains `4/10`.
+
+## 2026-05-24 Diagnostic: 010 Still Fails Verifier
+
+Evidence:
+
+- Target SWE rerun `010-future-architect-vuls` reached `finish` and the official verifier under the raw prompt path, but failed in `734986ms`, log `/tmp/smith/2026-05-23T23-54-52-987Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-H07Va2/home/.smith/runs/2026-05-23T23-42-41-519Z.trace`.
+- Retained source diff was `scanner/alpine.go` only after verifier setup restored edited test files.
+- Verifier failure remained missing restored test-facing methods `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`, plus `TestIsOvalDefAffected`.
+
+Decision:
+
+- Do not count `010` as recovered.
+- Do not add prompt or runtime guidance about this task shape; current strict valid evidence remains `4/10`.

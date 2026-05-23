@@ -2804,3 +2804,62 @@ Decision:
 - Keep the timeout-feedback cleanup because it is a generic Smith transcript-quality improvement and passed local validation.
 - Do not count `001` as recovered.
 - Current strict valid evidence remains `4/10`.
+
+## 2026-05-24 Diagnostic Rerun: 010 After Timeout Cleanup
+
+Reason for target:
+
+- `010-future-architect-vuls` is a Codex `gpt-5.4` high pass and a Smith failure.
+- Several strict-rule runs reached verifier, making it a useful diagnostic target that does not depend on Codex-failed/flawed tasks.
+- No new Smith code change was made after `85cceb5`; this rerun was for evidence only.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed in `734986ms`.
+- Log: `/tmp/smith/2026-05-23T23-54-52-987Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-H07Va2/home/.smith/runs/2026-05-23T23-42-41-519Z.trace`.
+- Sandbox: `.smith-bench/run-H07Va2`.
+- Usage: `1322932` total tokens.
+- Smith called `finish`; official verifier ran and failed.
+
+Retained workspace:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+```
+
+Tracked source diff after verifier setup restored selected tests:
+
+```text
+ scanner/alpine.go | 203 ++++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 181 insertions(+), 22 deletions(-)
+```
+
+Verifier failure:
+
+- Restored `scanner/alpine_test.go` expected methods missing from the source patch:
+  - `(newAlpine(config.ServerInfo{})).parseApkInstalledList undefined`
+  - `(newAlpine(config.ServerInfo{})).parseApkIndex undefined`
+  - `(newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined`
+- `TestIsOvalDefAffected` still failed:
+  - `[85] affected expected false, actual true`
+  - `[85] fixedIn expected empty, actual 3.3.2-r0`
+
+Prompt-integrity check:
+
+- Trace search found no SWE-bench prompt wrapper, `/task/verify.sh` coaching, exposed instance/base commit prompt text, or timeout-summary events.
+- The run used the raw task prompt path plus generic Smith system behavior.
+
+Decision:
+
+- Do not count `010` as recovered.
+- This is an implementation miss after edited local tests were restored by the official verifier. Under the user's rule, do not encode task-specific or SWE-specific guidance from this failure.
+- Current strict valid evidence remains `4/10`.
