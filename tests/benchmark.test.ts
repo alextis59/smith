@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -13,7 +13,9 @@ import {
   buildSweBenchProVerifierDockerArgs,
   buildSweBenchProSmithScript,
   buildSweBenchProVerifierScript,
+  hideSweBenchProGitDir,
   parseSmithTraceUsage,
+  restoreSweBenchProGitDir,
   resolveBenchmarkTarget,
   runBenchmarkTask,
   runTasksWithConcurrency,
@@ -240,6 +242,9 @@ total_tokens: 320
       "Do not spend the whole run on reconnaissance. After inspecting the implementation files named by the task and the nearest callers/tests, make the smallest focused source edit for the core requirement before secondary UI, docs, generated, or localization inspection."
     );
     expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
+      "Do not inspect git history, remote refs, tags, task instance IDs, directory-name hashes, or commit IDs to find or reconstruct a solution; solve from the current source tree and task text."
+    );
+    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
       "Do not edit repository test files for SWE-bench Pro unless the task explicitly asks for test changes; use tests as evidence and keep the solution in source files."
     );
     expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
@@ -248,6 +253,24 @@ total_tokens: 320
     expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
       "After source edits, do not treat grep-only symbol checks as sufficient verification. Run the narrowest available compiler, package test, syntax, or static check before finish when the toolchain is available."
     );
+  });
+
+  it("hides SWE-bench Pro git history from editing agents and restores it for verification", () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "smith-swe-git-sandbox-"));
+    const workspace = join(sandbox, "workspace");
+    mkdirSync(join(workspace, ".git"), { recursive: true });
+    writeFileSync(join(workspace, ".git", "HEAD"), "ref: refs/heads/main\n");
+
+    const hidden = hideSweBenchProGitDir(workspace, sandbox);
+
+    expect(hidden).toBe(join(sandbox, "workspace.git"));
+    expect(existsSync(join(workspace, ".git"))).toBe(false);
+    expect(existsSync(join(sandbox, "workspace.git", "HEAD"))).toBe(true);
+
+    restoreSweBenchProGitDir(workspace, hidden);
+
+    expect(existsSync(join(workspace, ".git", "HEAD"))).toBe(true);
+    expect(existsSync(join(sandbox, "workspace.git"))).toBe(false);
   });
 
   it("adds tool shims for benchmark editing containers with missing basics", () => {

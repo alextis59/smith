@@ -785,3 +785,96 @@ Decision:
 - Keep 005 open.
 - Do not run the full SWE-bench Pro suite yet. Current targeted evidence remains around `6/10`: baseline passes `002`, `004`, `007` plus recovered `003`, `006`, and `008`.
 - Next highest-value targets are `009` and `010`, since both now reach verifier and expose concrete failures. Any next Smith change should be general and should avoid increasing pre-edit reconnaissance.
+
+## 2026-05-23 Rejected Experiment and Anti-Cheating Fix: 010 History Leak
+
+Rejected prompt experiment:
+
+- Temporarily added this SWE instruction:
+
+```text
+When a task names multiple affected components, formats, or behaviors, cover each named source path or verify that it already satisfies the requirement; do not stop after fixing only the first matching path.
+```
+
+Validation before target rerun:
+
+- `npm test -- tests/benchmark.test.ts`: passed.
+- `npm run build`: passed.
+- Built CLI contained the temporary requirement-coverage instruction.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `167335ms`, log `/tmp/smith/2026-05-23T14-06-46-853Z-smith-091-command-router-refactor.json`.
+
+Target 010 rerun with the experiment:
+
+- Command: `node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json`
+- Result: failed by timeout in `906331ms`.
+- `logPath`: `/tmp/smith/2026-05-23T14-22-02-506Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`
+- `tracePath`: `.smith-bench/run-2d4eKD/home/.smith/runs/2026-05-23T14-06-57-353Z.trace`
+- Workspace diff at timeout: only `scanner/alpine.go`, `154` insertions and `30` deletions.
+
+Critical evidence:
+
+- The trace showed the agent using the commit-like task suffix to inspect the historical fix commit:
+  - `git show --stat --oneline --patch e6c0da6 -- scanner/alpine.go oval/alpine.go scanner/alpine_test.go`
+  - `git show e6c0da6:scanner/alpine.go`
+- The earlier 010 trace `.smith-bench/run-vSVTDK/home/.smith/runs/2026-05-23T13-26-44-309Z.trace` also contained the same kind of historical-fix access.
+- This is gold-patch leakage, so no 010 improvement evidence from those runs can be treated as valid, even though both runs still failed.
+
+Decision:
+
+- Rejected the requirement-coverage instruction because it increased timeout risk and exposed the deeper `.git`/instance-ID leakage.
+- Replaced it with anti-cheating controls:
+  - remove `SWE-bench Pro instance: ...` and base commit prompt lines from the agent task prompt;
+  - add instruction forbidding git history, remote refs, tags, task instance IDs, directory-name hashes, or commit IDs as solution sources;
+  - hide `workspace/.git` before the editing agent runs and restore it before verifier setup, because task setup commands legitimately use git to restore selected tests.
+
+Focused validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+rg -n "SWE-bench Pro instance|base commit|Do not inspect git history|workspace.git" dist/src/benchmark/runner.js src/benchmark/runner.ts
+```
+
+Result:
+
+- Benchmark tests passed with `16` tests, including the new `.git` hide/restore unit test.
+- Build passed.
+- Built CLI contains the anti-history instruction and `.git` hiding code.
+- Built CLI no longer contains the removed `SWE-bench Pro instance` or `base commit` prompt text.
+
+Representative project benchmark after anti-cheat fix:
+
+- Command: `node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json`
+- Result: passed in `187387ms`.
+- `logPath`: `/tmp/smith/2026-05-23T14-28-03-129Z-smith-091-command-router-refactor.json`
+- `tracePath`: `.smith-bench/run-FxHK42/home/.smith/runs/2026-05-23T14-24-55-966Z.trace`
+
+Clean target 010 rerun after anti-cheat fix:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by timeout in `906109ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T14-43-17-624Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`
+- `tracePath`: `.smith-bench/run-cU9DTs/home/.smith/runs/2026-05-23T14-28-12-210Z.trace`
+- Workspace diff at timeout: `scanner/alpine.go` plus untracked `SMITH.TASK.md`; no verifier ran.
+
+Clean-run trace check:
+
+```sh
+rg -n "SWE-bench Pro instance|base commit|git show|git log|upstream fix|e6c0da6|98cbe6e|workspace.git|Do not inspect git history" .smith-bench/run-cU9DTs/home/.smith/runs/2026-05-23T14-28-12-210Z.trace
+```
+
+- The prompt contains the new anti-history instruction and only `Repository: future-architect/vuls.`
+- No instance ID or base commit is exposed in the prompt.
+- No `git show`, `git log`, or historical-fix access was found in the clean trace.
+
+Decision:
+
+- Keep the anti-cheating harness fix even though it makes 010 harder; previous history-leaking evidence cannot be used toward the goal.
+- Current non-cheating targeted evidence remains around `6/10`: baseline `002`, `004`, `007` plus recovered `003`, `006`, `008`.
+- Target `009` next because its prior failure reached verifier without evidence of git-history leakage.

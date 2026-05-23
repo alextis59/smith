@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -96,6 +96,7 @@ export const SWE_BENCH_PRO_TASK_INSTRUCTIONS = [
   "If this editing container lacks project-specific dependencies, use shell inspection and focused edits instead of installing broad dependency sets.",
   "After a local check fails because a test runner, Python module, package, or project dependency is missing, do not retry equivalent local test/import commands; use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run.",
   "Do not spend the whole run on reconnaissance. After inspecting the implementation files named by the task and the nearest callers/tests, make the smallest focused source edit for the core requirement before secondary UI, docs, generated, or localization inspection.",
+  "Do not inspect git history, remote refs, tags, task instance IDs, directory-name hashes, or commit IDs to find or reconstruct a solution; solve from the current source tree and task text.",
   "Do not edit repository test files for SWE-bench Pro unless the task explicitly asks for test changes; use tests as evidence and keep the solution in source files.",
   "For Go tasks where `go` or `gofmt` is unavailable in the editing container, avoid broad hand rewrites; prefer localized edits to existing functions and keep edited control-flow blocks small enough to inspect for balanced braces before finish.",
   "After source edits, do not treat grep-only symbol checks as sufficient verification. Run the narrowest available compiler, package test, syntax, or static check before finish when the toolchain is available."
@@ -209,9 +210,11 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
   let agentStderr = "";
   let agentImage: string | undefined;
   let verifier: BenchmarkVerifierResult | undefined;
+  let hiddenGitDir: string | undefined;
 
   try {
     await prepareSweBenchProWorkspace(metadata, workspace, options.timeoutMs ?? 120_000);
+    hiddenGitDir = hideSweBenchProGitDir(workspace, sandbox);
     if (agent === "codex") {
       const codex = await runCodexForSweBenchProTask({ taskCopy, workspace, options, metadata });
       agentStdout = codex.stdout;
@@ -222,6 +225,7 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
       agentStderr = smith.stderr;
       agentImage = smith.image;
     }
+    restoreSweBenchProGitDir(workspace, hiddenGitDir);
     verifier = await runSweBenchProVerifier({ metadata, taskCopy, workspace, sandbox, timeoutMs: options.timeoutMs ?? 120_000 });
     const taskResult: BenchmarkTaskResult = {
       task,
@@ -245,6 +249,7 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
     if (!options.keepSandbox) cleanupSandbox(sandbox);
     return taskResult;
   } catch (error) {
+    restoreSweBenchProGitDir(workspace, hiddenGitDir);
     const failed = error as { stdout?: string; stderr?: string; code?: number; verifier?: BenchmarkVerifierResult };
     if (failed.verifier) verifier = failed.verifier;
     const stdout = `${agentStdout}${failed.stdout ?? ""}`;
@@ -403,6 +408,22 @@ async function canRunSmithInImage(image: string, repoRoot: string, timeoutMs: nu
 
 function dockerUserArgs(): string[] {
   return ["--user", `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`];
+}
+
+export function hideSweBenchProGitDir(workspace: string, sandbox: string): string | undefined {
+  const gitDir = join(workspace, ".git");
+  if (!existsSync(gitDir)) return undefined;
+  const hiddenGitDir = join(sandbox, "workspace.git");
+  rmSync(hiddenGitDir, { recursive: true, force: true });
+  renameSync(gitDir, hiddenGitDir);
+  return hiddenGitDir;
+}
+
+export function restoreSweBenchProGitDir(workspace: string, hiddenGitDir?: string): void {
+  if (!hiddenGitDir || !existsSync(hiddenGitDir)) return;
+  const gitDir = join(workspace, ".git");
+  rmSync(gitDir, { recursive: true, force: true });
+  renameSync(hiddenGitDir, gitDir);
 }
 
 async function runCodexForSweBenchProTask(context: {
@@ -967,8 +988,7 @@ function benchmarkInstructionsForTask(metadata: SweBenchProTaskMetadata): string
   return [
     ...BENCHMARK_TASK_INSTRUCTIONS.filter((instruction) => !instruction.includes("/task/verify.sh") && !instruction.includes("run the verifier directly")),
     ...SWE_BENCH_PRO_TASK_INSTRUCTIONS,
-    `SWE-bench Pro instance: ${metadata.instanceId}`,
-    `Repository: ${metadata.repo} at base commit ${metadata.baseCommit}.`
+    `Repository: ${metadata.repo}.`
   ];
 }
 

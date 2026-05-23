@@ -211,3 +211,30 @@ Classification:
 Next step:
 
 - Prefer another targeted recovery attempt on `009` or `010`, because both now reach verifier and expose concrete remaining failures. Do not run the full SWE-bench Pro benchmark yet.
+
+## 2026-05-23 Milestone: Hide SWE Git History From Agents
+
+Problem found:
+
+- The 010 traces showed the agent using the commit-like suffix from the SWE instance ID to inspect the historical fix commit with `git show e6c0da6`.
+- That is gold-patch leakage and cannot count as valid benchmark evidence, even though the task still failed.
+
+Change:
+
+- Stop including the SWE instance ID and base commit in the agent prompt.
+- Add an explicit SWE instruction forbidding git history, refs, tags, instance IDs, directory-name hashes, or commit IDs as solution sources.
+- Hide the workspace `.git` directory during Smith/Codex editing and restore it only before the SWE verifier, since verifier setup commands legitimately use git to restore selected tests.
+
+Validation:
+
+- `npm test -- tests/benchmark.test.ts`: passed.
+- `npm run build`: passed.
+- Built CLI contains the anti-history instruction and no longer contains the removed instance/base-commit prompt text.
+- Project benchmark: `benchmarks/091-command-router-refactor`, passed in `187387ms`, log `/tmp/smith/2026-05-23T14-28-03-129Z-smith-091-command-router-refactor.json`.
+- Clean target SWE rerun: `swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`, failed by Docker timeout after `906109ms`, log `/tmp/smith/2026-05-23T14-43-17-624Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-cU9DTs/home/.smith/runs/2026-05-23T14-28-12-210Z.trace`.
+- Clean 010 prompt evidence showed no instance ID or base commit in the task prompt; trace search found no `git show`/historical-fix access beyond the new anti-history instruction text.
+
+Next step:
+
+- Keep full-run evidence at around `6/10` from uncontaminated targeted passes `003`, `006`, and `008` plus baseline `002`, `004`, and `007`.
+- Continue with a non-history-based recovery attempt, likely `009` because it already reaches verifier without evidence of git-history leakage.
