@@ -140,3 +140,20 @@ Validation:
 Next step:
 
 - Continue with another previously failed task, likely `008` or `009`, before considering a full SWE-bench Pro run. With `003` and `006` plausibly recovered, expected score is around `5/10` if the original `002`, `004`, and `007` passes remain stable.
+
+## 2026-05-23 Milestone: Recovered Vuls Trivy Parser Task 008
+
+Evidence:
+
+- Baseline `008` had a very long trace and edited `contrib/trivy/parser/v2/parser_test.go`, which the task setup restores before verification.
+- With the current committed Smith instructions and verifier entrypoint fix, the targeted rerun kept the implementation in `contrib/trivy/pkg/converter.go` and reached the external verifier.
+
+Validation:
+
+- Target SWE rerun: `swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904`, passed in `894296ms`, log `/tmp/smith/2026-05-23T12-24-39-065Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-r2NfP6/home/.smith/runs/2026-05-23T12-09-45-713Z.trace`.
+- External verifier ran selected `TestParse` and reported `{"passed": 1}`.
+- No new Smith code change was made for this milestone; it validates the earlier general prompt and harness fixes on another failed SWE task.
+
+Next step:
+
+- Target `009-internetarchive-openlibrary` next. If `009` is recovered, targeted evidence would reach about `7/10` and justify a full SWE-bench Pro rerun.

@@ -545,3 +545,55 @@ Decision:
 
 - Keep the harness change. It is not a scoring/parser change; it allows the existing official task verifier to execute in Docker images whose default command cannot interpret `-lc`.
 - Do not run a full SWE-bench Pro benchmark yet; estimated score with recovered `003` and `006` is around `5/10`, still below the `>=7/10` target.
+
+## 2026-05-23 Evidence: Vuls Trivy 008 Now Passes With Current General Fixes
+
+Target:
+
+- `008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904`
+
+Baseline evidence from full run:
+
+- Result file: `.smith-bench/swe-pro-default128k-max240-20260522.json`
+- Baseline trace: `.smith-bench/run-Udu2RW/home/.smith/runs/2026-05-22T05-28-08-895Z.trace`
+- Baseline sandbox: `.smith-bench/run-Udu2RW`
+- Baseline task result had no verifier artifact beyond `smith.stdout`, `smith.stderr`, and `smith.status`.
+- Baseline workspace diff included:
+  - `contrib/trivy/pkg/converter.go`
+  - `contrib/trivy/parser/v2/parser_test.go`
+- `contrib/trivy/parser/v2/parser_test.go` is restored by task setup:
+
+```text
+git checkout 407407d306e9431d6aa0ab566baa6e44e5ba2904 -- contrib/trivy/parser/v2/parser_test.go
+```
+
+Classification:
+
+- The old baseline was not reliable enough to classify by selected-test output because verifier artifacts were missing.
+- It did show an avoidable pattern already addressed by the current prompt: editing a selected test file that setup restores.
+
+Target rerun command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result: passed in `894296ms`. Important fields:
+
+- `logPath`: `/tmp/smith/2026-05-23T12-24-39-065Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`
+- `tracePath`: `.smith-bench/run-r2NfP6/home/.smith/runs/2026-05-23T12-09-45-713Z.trace`
+- `sandboxDir`: `.smith-bench/run-r2NfP6`
+- Usage: `1089809` total tokens.
+- External verifier selected test: `TestParse`
+- Verifier output: `{"passed": 1}`
+
+Agent behavior:
+
+- Modified implementation in `contrib/trivy/pkg/converter.go`.
+- Did not report repository test-file edits in the final answer.
+- Local check was limited because the editing container lacked Go; it ran a static delimiter-balance sanity check, then relied on the official verifier.
+
+Decision:
+
+- No new Smith code change was needed. Record this as validation that the current general fixes recover a third previously failed task (`003`, `006`, `008`).
+- Do not run full SWE-bench Pro yet; targeted evidence is now around `6/10`, still short of target unless one more failed task is recovered.
