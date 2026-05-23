@@ -12,7 +12,8 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - Integrity correction: user clarified that prompt edits made specifically for the SWE benchmark are cheating for this goal. Earlier SWE-specific prompt milestones and any passes produced under them are retained below only as historical investigation notes, not valid target evidence.
 - Current valid evidence should count only the baseline full-run passes plus results produced after `befac0f` removed SWE-specific prompt coaching and kept only generic Smith/runtime or harness-integrity changes.
 - Stricter prompt rule: SWE-bench Pro tasks now receive the raw task prompt only, with no Smith benchmark wrapper or SWE-specific coaching. Local project benchmarks still keep their normal `/task/verify.sh` harness framing.
-- Current clean targeted status: `001`, `005`, `008`, and `010` have all failed targeted reruns after SWE-specific coaching was removed; `005` has also failed after the stricter raw-SWE-prompt cleanup. Do not run the full SWE-bench Pro suite until generic changes recover enough Codex-passed failures to plausibly reach `>=7/10`.
+- Current strict targeted evidence: baseline full-run passes `002`, `004`, `007`, plus recovered `008` after generic raw-prompt changes, for `4/10` evidence.
+- Current unrecovered Codex-passed Smith failures: `001`, `005`, and `010`. Do not run the full SWE-bench Pro suite until generic changes recover enough Codex-passed failures to plausibly reach `>=7/10`.
 - User clarification on 2026-05-23: do not pursue prompt edits or instructions tailored to SWE-bench Pro. Generic Smith capabilities are acceptable only when they apply to ordinary user tasks as well.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
@@ -239,10 +240,10 @@ Validation:
 - Clean target SWE rerun: `swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`, failed by Docker timeout after `906109ms`, log `/tmp/smith/2026-05-23T14-43-17-624Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-cU9DTs/home/.smith/runs/2026-05-23T14-28-12-210Z.trace`.
 - Clean 010 prompt evidence showed no instance ID or base commit in the task prompt; trace search found no `git show`/historical-fix access beyond the new anti-history instruction text.
 
-Next step:
+Historical next step, later superseded by the stricter prompt rule:
 
-- Keep full-run evidence at around `6/10` from uncontaminated targeted passes `003`, `006`, and `008` plus baseline `002`, `004`, and `007`.
-- Continue with a non-history-based recovery attempt, likely `009` because it already reaches verifier without evidence of git-history leakage.
+- At this point the logs treated targeted passes `003`, `006`, and `008` as plausible evidence, but the later user clarification invalidated SWE-specific prompt-aided results unless revalidated under the raw SWE prompt path.
+- Do not count this estimate as current valid evidence.
 
 ## 2026-05-23 Direction Update: Prioritize Codex-Passed Failures
 
@@ -697,3 +698,35 @@ Decision:
 
 - Keep as a generic runtime improvement for long Smith tasks. It does not recover `010`, and no full SWE-bench Pro run is justified.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Milestone: Generic Soft Run Deadline
+
+Problem found:
+
+- Clean `008-future-architect-vuls` under the current generic-only state timed out in `907187ms` with no workspace diff and no verifier.
+- The trace showed progress reminders at 12, 24, and 36 tool calls, but the model still saw `turn 36 of 240` and had no wall-clock budget signal before Docker killed the run.
+
+Change:
+
+- Added `runtime.max_run_ms` and `--max-run-ms` as an optional soft wall-clock budget for ordinary Smith runs.
+- Smith emits generic deadline reminders at 75% and 90% of `max_run_ms`; it does not add task-specific instructions or change command timeout semantics.
+- Benchmark Smith runs now derive `--max-run-ms` as 80% of `--timeout-ms` unless the caller already supplied `--max-run-ms`, leaving time for verification and cleanup.
+- Updated README, provider config docs, architecture docs, config tests, integration tests, and benchmark tests.
+
+Validation:
+
+- `npm test -- tests/config.test.ts tests/integration.test.ts tests/benchmark.test.ts`: passed `50` tests.
+- `npm run build`: passed.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `85116ms`, log `/tmp/smith/2026-05-23T22-30-12-052Z-smith-091-command-router-refactor.json`.
+
+Target SWE evidence:
+
+- Target SWE rerun `008-future-architect-vuls`: passed in `736190ms`, log `/tmp/smith/2026-05-23T22-42-35-317Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-nnfQET/home/.smith/runs/2026-05-23T22-30-20-373Z.trace`.
+- External verifier ran selected `TestParse` and reported `{"passed": 1}`.
+- Trace showed the generic deadline reminder at 75% (`elapsed 9m 17s of 12m max run time`) and no SWE-bench Pro prompt wrapper or solving-coaching text.
+
+Decision:
+
+- Count `008` as recovered under generic-only changes.
+- Current strict valid evidence is baseline full-run passes `002`, `004`, `007` plus generic raw-prompt recovery `008`, for `4/10` targeted evidence. The earlier `003` pass needs raw-prompt revalidation before counting and is not a priority because Codex `gpt-5.4` high failed it.
+- Still no full SWE-bench Pro run: current evidence is not yet plausibly `>=7/10`.

@@ -32,6 +32,7 @@ const MAX_SUB_AGENT_DEPTH = 2;
 const RIPGREP_CHECK_TIMEOUT_MS = 5_000;
 const RIPGREP_BOOTSTRAP_MAX_TURNS = 6;
 const PROGRESS_REMINDER_TOOL_INTERVAL = 12;
+const RUN_DEADLINE_REMINDER_THRESHOLDS = [0.75, 0.9] as const;
 const RIPGREP_UNAVAILABLE_PROMPT_NOTE =
   "Environment note: the `rg` command is not available in this environment. Smith already checked at startup and, when allowed, attempted a straightforward install without confirming `rg` on PATH. Use grep, find, or language-specific tools instead, and do not spend task time trying to install `rg` unless the user explicitly asks.";
 
@@ -152,6 +153,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let responsesInputItems: Record<string, unknown>[] | undefined;
   let codexTurnState: string | undefined;
   let toolCallsSincePatchOrFinish = 0;
+  let runDeadlineReminderIndex = 0;
+  const runStartedAt = Date.now();
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
   const providerDebugJson =
     options.runtime.providerDebug && options.trace ? createProviderDebugJsonLogger(options.trace.path) : undefined;
@@ -293,6 +296,15 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, reminder);
             nextPendingOutput = [nextPendingOutput, reminder].filter(Boolean).join("\n");
             options.trace?.write("progress reminder", reminder);
+          }
+          const deadlineReminder = runDeadlineReminderOutput(options, runStartedAt, runDeadlineReminderIndex);
+          if (deadlineReminder) {
+            runDeadlineReminderIndex += 1;
+            transcript = appendTerminalTurn(transcript, "# deadline", deadlineReminder);
+            providerMessages = appendProviderUserObservation(providerMessages, deadlineReminder);
+            nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, deadlineReminder);
+            nextPendingOutput = [nextPendingOutput, deadlineReminder].filter(Boolean).join("\n");
+            options.trace?.write("deadline reminder", deadlineReminder);
           }
         }
       }
@@ -900,6 +912,40 @@ function progressReminderOutput(options: SmithRunOptions, toolCallsSincePatchOrF
     return `${status} If the requested read-only findings are sufficient, finish with the result; otherwise continue focused inspection.`;
   }
   return `${status} If the task requires file changes and current evidence identifies a safe edit, use patch; if no actionable edit is possible, finish with the blocker.`;
+}
+
+function runDeadlineReminderOutput(
+  options: SmithRunOptions,
+  runStartedAt: number,
+  reminderIndex: number
+): string | undefined {
+  const maxRunMs = options.runtime.maxRunMs;
+  if (maxRunMs <= 0 || reminderIndex >= RUN_DEADLINE_REMINDER_THRESHOLDS.length) return undefined;
+  const threshold = RUN_DEADLINE_REMINDER_THRESHOLDS[reminderIndex];
+  const elapsedMs = Date.now() - runStartedAt;
+  if (elapsedMs < maxRunMs * threshold) return undefined;
+  const percentage = Math.round(threshold * 100);
+  const availableTools = availableSmithTools(options).map((tool) => tool.name).join(", ");
+  const patchAvailable = availableSmithTools(options).some((tool) => tool.name === "patch");
+  const status = `Smith deadline: elapsed ${formatDurationMs(elapsedMs)} of ${formatDurationMs(
+    maxRunMs
+  )} max run time (${percentage}% threshold); available tools: ${availableTools}.`;
+  if (!patchAvailable) {
+    return `${status} If findings are sufficient, use finish now; otherwise continue only the highest-value remaining inspection.`;
+  }
+  return `${status} If the task is complete, use finish now. If required changes are still pending and evidence supports a safe edit, use patch before more inspection; otherwise finish with the blocker.`;
+}
+
+function formatDurationMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
 }
 
 function formatTimeoutOutput(command: string, elapsedMs: number, lastOutput: string): string {

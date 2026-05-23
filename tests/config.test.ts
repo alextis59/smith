@@ -19,6 +19,7 @@ describe("config loading", () => {
     expect(resolveProfile(config).adapter).toBe("openai-chat");
     expect(config.runtime.dangerReview).toBe("llm");
     expect(config.runtime.dangerReviewProfile).toBe("reviewer");
+    expect(config.runtime.maxRunMs).toBe(0);
     expect(config.runtime.maxToolOutputChars).toBe(12000);
     expect(config.runtime.subAgentEnabled).toBe(true);
     expect(config.runtime.subAgentInheritContext).toBe(true);
@@ -61,6 +62,7 @@ provider = { sort = "throughput" }
 
 [runtime]
 timeout_ms = 20
+max_run_ms = 40
 sub_agent_enabled = false
 sub_agent_inherit_context = false
 `,
@@ -70,7 +72,7 @@ sub_agent_inherit_context = false
     const config = loadConfig({
       homeDir: home,
       cwd,
-      cli: { model: "cli-model", temperature: 0.1, timeoutMs: 30 }
+      cli: { model: "cli-model", temperature: 0.1, timeoutMs: 30, maxRunMs: 50 }
     });
     const profile = resolveProfile(config);
 
@@ -82,6 +84,7 @@ sub_agent_inherit_context = false
     expect(profile.headers["X-Test"]).toBe("project");
     expect(profile.body).toEqual({ provider: { sort: "throughput" } });
     expect(config.runtime.timeoutMs).toBe(30);
+    expect(config.runtime.maxRunMs).toBe(50);
     expect(config.runtime.subAgentEnabled).toBe(false);
     expect(config.runtime.subAgentInheritContext).toBe(false);
     expect(config.files).toHaveLength(2);
@@ -125,6 +128,8 @@ sub_agent_inherit_context = false
       "--output-cost-per-million-tokens=10",
       "--max-turns",
       "7",
+      "--max-run-ms",
+      "2222",
       "--max-context-tokens",
       "12000",
       "--max-tool-output-chars",
@@ -165,6 +170,7 @@ sub_agent_inherit_context = false
       cachedInputCostPerMillionTokens: 0.125,
       outputCostPerMillionTokens: 10,
       maxTurns: 7,
+      maxRunMs: 2222,
       maxContextTokens: 12000,
       maxToolOutputChars: 4096,
       readOnly: true,

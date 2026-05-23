@@ -2457,3 +2457,125 @@ Decision:
 - Do not count `010` as recovered. It still fails official verification with the same broad failure shape as the prior task-image run.
 - Current valid score evidence remains `3/10`.
 - Full SWE-bench Pro run is not justified.
+
+## 2026-05-23 Generic Runtime Improvement: Soft Run Deadline
+
+Task-selection context:
+
+- Per user guidance, avoid spending cycles on tasks Codex `gpt-5.4` high failed. Codex failed `003`, `006`, and `009`.
+- The next clean target was `008-future-architect-vuls`, because Codex `gpt-5.4` high passed it and Smith failed it under raw prompts.
+
+Clean pre-change `008` rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout in `907187ms`.
+- Log: `/tmp/smith/2026-05-23T22-22-55-394Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+- Trace: `.smith-bench/run-WPwGJd/home/.smith/runs/2026-05-23T22-07-49-447Z.trace`.
+- Usage: `1396176` total tokens.
+- Retained workspace had no tracked diff.
+- Trace had progress reminders at 12, 24, and 36 tool calls, but the run still timed out before a task patch.
+
+Hypothesis:
+
+- The model could see turn progress (`turn 36 of 240`) but not wall-clock pressure from the external task timeout.
+- A generic soft run deadline could help ordinary Smith runs and benchmark runs by making wall-clock budget visible without adding task-specific instructions.
+
+Code change:
+
+- Added `runtime.max_run_ms`, default `0`, plus CLI override `--max-run-ms`.
+- Added generic deadline reminders at 75% and 90% of `max_run_ms`.
+- Benchmark Smith runs now derive `--max-run-ms` as 80% of `--timeout-ms` unless the user already supplied `--max-run-ms`.
+- The reminder is generic:
+  - reports elapsed time and configured max run time,
+  - says to `finish` if complete,
+  - says to make a safe `patch` before more inspection if required changes are still pending,
+  - otherwise says to finish with the blocker.
+- No SWE-bench Pro prompt wrapper or task-specific instruction was added.
+
+Focused validation:
+
+```sh
+npm test -- tests/config.test.ts tests/integration.test.ts tests/benchmark.test.ts
+npm run build
+```
+
+Results:
+
+- Tests passed: `50` tests.
+- Build passed.
+- Added coverage for config parsing, deadline reminder replay, and benchmark-derived `--max-run-ms`.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result:
+
+- Passed in `85116ms`.
+- Log: `/tmp/smith/2026-05-23T22-30-12-052Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-Xe5Uyw/home/.smith/runs/2026-05-23T22-28-47-166Z.trace`.
+- Usage: `45921` total tokens.
+
+Target SWE rerun after change:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Passed in `736190ms`.
+- Log: `/tmp/smith/2026-05-23T22-42-35-317Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+- Trace: `.smith-bench/run-nnfQET/home/.smith/runs/2026-05-23T22-30-20-373Z.trace`.
+- Sandbox: `.smith-bench/run-nnfQET`.
+- Usage: `2214867` total tokens.
+- External verifier ran selected `TestParse` and reported `{"passed": 1}`.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-nnfQET/workspace status --short
+git -C .smith-bench/run-nnfQET/workspace diff --stat
+```
+
+Observed:
+
+```text
+M  contrib/trivy/parser/v2/parser_test.go
+ M contrib/trivy/pkg/converter.go
+?? contrib/trivy/pkg/converter_test.go
+```
+
+```text
+ contrib/trivy/pkg/converter.go | 116 +++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 113 insertions(+), 3 deletions(-)
+```
+
+Prompt-integrity and cleanup checks:
+
+```sh
+rg -n "deadline reminder|Smith deadline|progress reminder|Smith progress|Complete this benchmark task|primary source-code targets|/task/verify.sh|run the verifier directly|SWE-bench|Applied patch to|go test" .smith-bench/run-nnfQET/home/.smith/runs/2026-05-23T22-30-20-373Z.trace || true
+docker ps --format '{{.Names}} {{.Status}}' | rg 'smith-bench-run-nnfQET-smith|smith-bench-run-.*-smith' || true
+```
+
+Observed:
+
+- Trace contained generic progress reminders and a generic 75% deadline reminder:
+  - `Smith deadline: elapsed 9m 17s of 12m max run time (75% threshold); available tools: run, patch, sub_agent, finish.`
+- No benchmark wrapper or SWE-specific solving-coaching text appeared.
+- No live Smith benchmark containers remained after cleanup.
+
+Decision:
+
+- Keep the soft-deadline change as a generic runtime and benchmark-harness improvement.
+- Count `008` as recovered under the strict prompt rule.
+- Current strict valid evidence: baseline full-run passes `002`, `004`, `007`, plus generic raw-prompt recovery `008`, for `4/10` targeted evidence.
+- The earlier `003` pass was produced by a generic verifier-entrypoint fix, but the run predates the raw-prompt cleanup. It should be revalidated before counting and is not a priority because Codex `gpt-5.4` high failed it.
+- Do not run the full SWE-bench Pro suite yet. `001`, `005`, and `010` remain the highest-value Codex-passed unrecovered tasks, and current evidence is still short of a plausible `>=7/10`.

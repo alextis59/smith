@@ -31,6 +31,7 @@ export type ProfileConfig = {
 export type RuntimeConfig = {
   shell: string;
   timeoutMs: number;
+  maxRunMs: number;
   maxContextTokens: number;
   maxToolOutputChars: number;
   maxTurns: number;
@@ -86,6 +87,7 @@ export type CliConfigOverrides = {
   outputCostPerMillionTokens?: number;
   shell?: string;
   timeoutMs?: number;
+  maxRunMs?: number;
   maxContextTokens?: number;
   maxToolOutputChars?: number;
   maxTurns?: number;
@@ -138,6 +140,7 @@ const DEFAULT_CONFIG: SmithConfig = {
   runtime: {
     shell: "bash",
     timeoutMs: 120_000,
+    maxRunMs: 0,
     maxContextTokens: 128_000,
     maxToolOutputChars: 12_000,
     maxTurns: 20,
@@ -288,6 +291,9 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--timeout-ms":
         overrides.timeoutMs = Number.parseInt(readValue(), 10);
         break;
+      case "--max-run-ms":
+        overrides.maxRunMs = Number.parseInt(readValue(), 10);
+        break;
       case "--max-context-tokens":
         overrides.maxContextTokens = Number.parseInt(readValue(), 10);
         break;
@@ -382,6 +388,7 @@ temperature = 0
 [runtime]
 shell = "bash"
 timeout_ms = 120000
+max_run_ms = 0
 max_context_tokens = 128000
 max_tool_output_chars = 12000
 max_turns = 20
@@ -475,6 +482,7 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...next.runtime,
     ...(cli.shell ? { shell: cli.shell } : {}),
     ...(cli.timeoutMs !== undefined ? { timeoutMs: cli.timeoutMs } : {}),
+    ...(cli.maxRunMs !== undefined ? { maxRunMs: cli.maxRunMs } : {}),
     ...(cli.maxContextTokens !== undefined ? { maxContextTokens: cli.maxContextTokens } : {}),
     ...(cli.maxToolOutputChars !== undefined ? { maxToolOutputChars: cli.maxToolOutputChars } : {}),
     ...(cli.maxTurns !== undefined ? { maxTurns: cli.maxTurns } : {}),
@@ -537,6 +545,7 @@ function mergeRuntime(previous: RuntimeConfig, raw: RawConfig): RuntimeConfig {
     ...previous,
     ...(typeof raw.shell === "string" ? { shell: raw.shell } : {}),
     ...(typeof raw.timeout_ms === "number" ? { timeoutMs: raw.timeout_ms } : {}),
+    ...(typeof raw.max_run_ms === "number" ? { maxRunMs: raw.max_run_ms } : {}),
     ...(typeof raw.max_context_tokens === "number"
       ? { maxContextTokens: raw.max_context_tokens }
       : typeof raw.max_context_chars === "number"
@@ -649,6 +658,7 @@ export function validateConfig(config: SmithConfig): void {
     if (profile.stop?.some((value) => !value)) throw new Error(`${prefix}.stop must not contain empty values`);
   }
   validateInteger("runtime.timeout_ms", config.runtime.timeoutMs, 1, Number.MAX_SAFE_INTEGER);
+  validateInteger("runtime.max_run_ms", config.runtime.maxRunMs, 0, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.max_context_tokens", config.runtime.maxContextTokens, 1, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.max_tool_output_chars", config.runtime.maxToolOutputChars, 0, Number.MAX_SAFE_INTEGER);
   validateInteger("runtime.max_turns", config.runtime.maxTurns, 1, Number.MAX_SAFE_INTEGER);

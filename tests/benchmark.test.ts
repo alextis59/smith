@@ -20,6 +20,7 @@ import {
   resolveBenchmarkTarget,
   runBenchmarkTask,
   runTasksWithConcurrency,
+  smithArgsWithBenchmarkMaxRun,
   spawnFileWithInput,
   validateBenchmarkPath
 } from "../src/benchmark/runner.js";
@@ -218,6 +219,17 @@ total_tokens: 320
     await expect(runTasksWithConcurrency(["task"], 0, async (item) => item)).rejects.toThrow(
       "benchmark concurrency must be a positive integer"
     );
+  });
+
+  it("adds a generic Smith max run deadline for benchmark timeouts", () => {
+    expect(smithArgsWithBenchmarkMaxRun(["--model", "fake"], 100_000)).toEqual([
+      "--model",
+      "fake",
+      "--max-run-ms",
+      "80000"
+    ]);
+    expect(smithArgsWithBenchmarkMaxRun(["--max-run-ms", "123"], 100_000)).toEqual(["--max-run-ms", "123"]);
+    expect(smithArgsWithBenchmarkMaxRun(["--max-run-ms=123"], 100_000)).toEqual(["--max-run-ms=123"]);
   });
 
   it("nudges agents away from optional status self-checks", () => {

@@ -112,6 +112,7 @@ Options:
   --concurrency <count>
   --cached-input-cost-per-million-tokens <usd>
   --provider-timeout-ms <milliseconds>
+  --max-run-ms <milliseconds>
   --sub-agent-max-turns <count>
 
 Examples:

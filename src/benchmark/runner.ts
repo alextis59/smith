@@ -322,7 +322,10 @@ async function runSmithForSweBenchProTask(context: {
   const { taskCopy, workspace, home, options, repoRoot, metadata } = context;
   const image = await selectSweBenchProSmithImage({ metadata, options, repoRoot, timeoutMs: options.timeoutMs ?? 120_000 });
   const profileArgs = options.profile ? ["--profile", options.profile] : [];
-  const smithArgs = prepareSmithArgsForDocker(home, [...profileArgs, ...(options.smithArgs ?? [])]);
+  const smithArgs = prepareSmithArgsForDocker(
+    home,
+    smithArgsWithBenchmarkMaxRun([...profileArgs, ...(options.smithArgs ?? [])], options.timeoutMs)
+  );
   const jsonArgs = ["--quiet", "--json"];
   const command = `node /smith/bin/smith.js --cwd /workspace ${[...smithArgs, ...jsonArgs].map(shellQuote).join(" ")} "$TASK"`;
   const containerName = dockerContainerName(dirname(home), "smith");
@@ -634,7 +637,10 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
   const started = Date.now();
   const image = options.image ?? "node:22-bookworm";
   const profileArgs = options.profile ? ["--profile", options.profile] : [];
-  const smithArgs = prepareSmithArgsForDocker(home, [...profileArgs, ...(options.smithArgs ?? [])]);
+  const smithArgs = prepareSmithArgsForDocker(
+    home,
+    smithArgsWithBenchmarkMaxRun([...profileArgs, ...(options.smithArgs ?? [])], options.timeoutMs)
+  );
   const jsonArgs = ["--quiet", "--json"];
   const command = `node /smith/bin/smith.js --cwd /workspace ${[...smithArgs, ...jsonArgs].map(shellQuote).join(" ")} "$TASK"`;
   const containerName = dockerContainerName(sandbox, "smith");
@@ -756,6 +762,11 @@ function prepareSmithArgsForDocker(home: string, args: string[]): string[] {
     cpSync(hostInstallationPath, join(home, "installation_id"));
   }
   return [...args, "--codex-auth-path", "/home/smith/codex-auth.json"];
+}
+
+export function smithArgsWithBenchmarkMaxRun(args: string[], timeoutMs: number | undefined): string[] {
+  if (timeoutMs === undefined || hasFlag(args, "--max-run-ms")) return args;
+  return [...args, "--max-run-ms", String(Math.max(1, Math.floor(timeoutMs * 0.8)))];
 }
 
 function usesChatGptCodexAdapter(args: string[]): boolean {

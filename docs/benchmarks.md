@@ -69,7 +69,7 @@ smith benchmark run ./benchmarks/011-parse-port-default --log-dir /tmp/smith --j
 smith benchmark validate ./benchmarks
 ```
 
-The default benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. With `--agent codex`, the runner executes `codex exec` against the copied workspace on the host, then runs the same verifier. Tasks run in stable sorted order. Successful sandboxes are removed automatically; failed sandboxes are retained for inspection.
+The default benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. For Smith runs with `--timeout-ms`, the runner also supplies a generic `--max-run-ms` soft deadline at 80% of the task timeout unless the caller already set one, leaving time for verifier execution and cleanup. With `--agent codex`, the runner executes `codex exec` against the copied workspace on the host, then runs the same verifier. Tasks run in stable sorted order. Successful sandboxes are removed automatically; failed sandboxes are retained for inspection.
 
 Use `--concurrency <count>` to run multiple task sandboxes at once. Result JSON and summaries preserve the stable task order, while execution is limited to the requested number of concurrent tasks.
 

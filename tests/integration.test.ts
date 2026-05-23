@@ -757,6 +757,48 @@ timeout_ms = 5000
     expect(replayedOutput).toContain("Smith progress: 12 tool calls have completed without a task patch or finish");
   });
 
+  it("adds a generic deadline reminder near a configured max run time", async () => {
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "sleep 0.02; printf output" } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-deadline-reminder-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "inspect once"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(2);
+    const replayedOutput = userMessages(provider.requests[1].body);
+    expect(replayedOutput).toContain("Smith deadline: elapsed");
+    expect(replayedOutput).toContain("max run time (75% threshold)");
+    const traceDir = join(home, ".smith", "runs");
+    const trace = readFileSync(join(traceDir, readdirSync(traceDir)[0]), "utf8");
+    expect(trace).toContain("## deadline reminder");
+  });
+
   it("remote prints only first finish message to stdout and supports resume", async () => {
     const provider = await startFakeProvider([
       { name: "finish", arguments: { message: "need info" } },
