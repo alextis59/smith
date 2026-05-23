@@ -262,9 +262,42 @@ total_tokens: 320
     expect(script).toContain("command -v python3");
     expect(script).toContain("ln -sf \"$(command -v python3)\" \"$SHIM_DIR/python\"");
     expect(script).toContain("if ! command -v rg >/dev/null 2>&1; then");
-    expect(script).toContain("find \"${@:-.}\" -type f");
-    expect(script).toContain("exec grep \"${grep_args[@]}\" -- \"$pattern\" \"$@\"");
+    expect(script).toContain("grep_args=(-E -H)");
+    expect(script).toContain("-g|--glob)");
+    expect(script).toContain("find \"${paths[@]}\" -type f -print0");
     expect(script).toContain("export PATH=\"$SHIM_DIR:$PATH\"");
+  });
+
+  it("creates an rg fallback that supports common search globs and regex groups", () => {
+    const dir = mkdtempSync(join(tmpdir(), "smith-rg-shim-"));
+    const resultDir = join(dir, "result");
+    const workspace = join(dir, "workspace");
+    mkdirSync(join(workspace, "pkg"), { recursive: true });
+    writeFileSync(join(workspace, "pkg", "main.go"), "func NewForwarder() {}\nfunc ServeHTTP() {}\n", "utf8");
+    writeFileSync(join(workspace, "pkg", "main.txt"), "NewForwarder text\n", "utf8");
+
+    const script = [
+      "set -euo pipefail",
+      `RESULT_DIR=${JSON.stringify(resultDir)}`,
+      ...BENCHMARK_PYTHON_SHIM_SCRIPT
+    ].join("\n");
+    const setup = spawnSync("bash", ["-lc", script], { cwd: workspace, encoding: "utf8" });
+
+    expect(setup.status, setup.stderr).toBe(0);
+
+    const search = spawnSync(
+      "bash",
+      [
+        "-lc",
+        `PATH=${JSON.stringify(join(resultDir, "bin"))}:$PATH rg -n -g '*.go' 'NewForwarder\\(|ServeHTTP' .`
+      ],
+      { cwd: workspace, encoding: "utf8" }
+    );
+
+    expect(search.status, search.stderr).toBe(0);
+    expect(search.stdout).toContain("./pkg/main.go:1:func NewForwarder() {}");
+    expect(search.stdout).toContain("./pkg/main.go:2:func ServeHTTP() {}");
+    expect(search.stdout).not.toContain("main.txt");
   });
 
   it("prepares SWE-bench Pro Smith containers to use task-image tool paths", () => {

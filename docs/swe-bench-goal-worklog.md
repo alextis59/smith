@@ -1113,3 +1113,118 @@ Rejected ideas:
 
 - Do not add instructions that mention SWE-bench, verifier timing, benchmark turn limits, source-file-only patches, or task-specific implementation strategy.
 - Do not add task-specific NodeBB guidance.
+
+## 2026-05-23 Clean 005 Rerun and `rg` Shim Failure
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by timeout in `914140ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T16-31-34-943Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`
+- `tracePath`: `.smith-bench/run-04O9Su/home/.smith/runs/2026-05-23T16-16-29-705Z.trace`
+- Sandbox: `.smith-bench/run-04O9Su`
+- Usage: `1919285` total tokens.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-04O9Su/workspace status --short
+git -C .smith-bench/run-04O9Su/workspace diff --stat
+```
+
+- No tracked source changes.
+
+Trace evidence:
+
+- Trace size was about `11.3MB`.
+- The agent repeatedly attempted common ripgrep commands against Go source.
+- The benchmark `rg` shim failed on normal ripgrep options and regex syntax:
+  - `grep: Unmatched ( or \(`
+  - `grep: -g: No such file or directory`
+  - `grep: *.go: No such file or directory`
+- Example failed command shape: `rg -n "NewSessionUploader|...|NewForwarder\\(|ServeHTTP|..." lib/kube lib/service lib/srv -g '*.go'`.
+
+Classification:
+
+- Generic harness/tool reliability issue. Minimal benchmark containers without real `rg` should still support common `rg` search forms well enough for ordinary code navigation.
+- This is not task-specific guidance and does not affect scoring, selected tests, verifier logic, or result parsing.
+
+Code change:
+
+- Reworked `BENCHMARK_PYTHON_SHIM_SCRIPT`'s fallback `rg` shim:
+  - Uses `grep -E -H` for extended regex matching and path-prefixed output.
+  - Parses `-g/--glob` and `--glob=...`.
+  - Supports `--files`.
+  - Ignores common ripgrep flags that do not need behavior in the fallback (`--hidden`, `--smart-case`, `--no-heading`, color flags, and simple unrestricted flags).
+  - Applies include/exclude globs while walking files with `find ... -print0`.
+
+Validation so far:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+```
+
+Results:
+
+- Benchmark tests passed: `17` tests.
+- Build passed.
+
+Next validation:
+
+- Run representative project benchmark `benchmarks/091-command-router-refactor`.
+- Rerun `005` and compare search failures, source diff, and timeout/verifier behavior.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result:
+
+- Passed in `103128ms`.
+- Log: `/tmp/smith/2026-05-23T16-35-57-920Z-smith-091-command-router-refactor.json`
+- Trace: `.smith-bench/run-mWVcYk/home/.smith/runs/2026-05-23T16-34-15-016Z.trace`
+
+Target rerun after shim fix:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by timeout in `915469ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T16-51-23-963Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`
+- `tracePath`: `.smith-bench/run-FCnqs4/home/.smith/runs/2026-05-23T16-36-18-801Z.trace`
+- Sandbox: `.smith-bench/run-FCnqs4`
+- Usage: `642602` total tokens.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-FCnqs4/workspace status --short
+git -C .smith-bench/run-FCnqs4/workspace diff --stat
+```
+
+- No tracked source changes.
+
+Comparison to prior 005 run:
+
+- Prior clean 005: `1919285` total tokens, trace about `11.3MB`, result JSON about `412KB`, no source diff.
+- After shim fix: `642602` total tokens, trace about `4.8MB`, result JSON about `276KB`, no source diff.
+- Prior trace had `grep: Unmatched ( or \\(` and `grep: -g`/`*.go` file errors from the shim; the post-fix trace search for those errors returned no matches.
+
+Decision:
+
+- Keep the shim improvement. It is generic, tested, and materially reduces failed search noise in minimal environments.
+- Do not count 005 as recovered.
+- Avoid further Teleport-specific tuning unless another generic tool/runtime issue appears.

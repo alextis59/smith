@@ -320,3 +320,30 @@ Next step:
 Next step:
 
 - Commit this validated generic milestone, then continue with another generic improvement or another Codex-passed target (`005` or `010`) rather than adding SWE-specific prompt instructions.
+
+## 2026-05-23 Milestone: Improve Benchmark `rg` Fallback
+
+Evidence:
+
+- Clean `005` rerun under the generic runtime state failed by timeout in `914140ms`.
+- Log: `/tmp/smith/2026-05-23T16-31-34-943Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-04O9Su/home/.smith/runs/2026-05-23T16-16-29-705Z.trace`.
+- Usage was very high: `1919285` total tokens.
+- Retained workspace had no source diff.
+- Trace showed the fallback `rg` shim failing on common ripgrep syntax, including `-g '*.go'` and regex alternation/group patterns, because it degraded to basic `grep` and misparsed glob arguments.
+
+Generic change:
+
+- Strengthen the benchmark `rg` shim to support `-g/--glob`, `--files`, common ignored flags, and extended regex matching.
+- Add a regression test for the observed generic command shape: `rg -n -g '*.go' 'NewForwarder\\(|ServeHTTP' .`.
+
+Next step:
+
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `103128ms`, log `/tmp/smith/2026-05-23T16-35-57-920Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-mWVcYk/home/.smith/runs/2026-05-23T16-34-15-016Z.trace`.
+- Target `005` rerun: still failed by timeout in `915469ms`, log `/tmp/smith/2026-05-23T16-51-23-963Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-FCnqs4/home/.smith/runs/2026-05-23T16-36-18-801Z.trace`.
+- Comparison: no source diff in either 005 run, but total token use dropped from `1919285` to `642602`, trace size dropped from `11.3MB` to `4.8MB`, and the prior `grep`/`-g` shim errors were absent.
+- Keep the shim improvement as a validated generic harness fix; do not count `005` as recovered.
+
+Next step:
+
+- Commit and push this milestone, then move to another generic bottleneck or another Codex-passed target (`010`) rather than further tuning `005`.
