@@ -267,3 +267,27 @@ Decision:
 
 - Reverted the post-check stopping instruction and its test assertion.
 - Continue prioritizing Codex-passed Smith failures: `001`, `005`, and `010`.
+
+## 2026-05-23 Policy Correction: Remove SWE-Specific Prompt Coaching
+
+User guidance:
+
+- Prompt edits made specifically for the SWE benchmark are considered cheating.
+- Improvements must be generic and applicable to ordinary user tasks; SWE-specific runtime instructions should be discarded.
+
+Change:
+
+- Stopped an in-progress clean `001` rerun before result because it was using the SWE-specific prompt stack.
+- Removed all `SWE_BENCH_PRO_TASK_INSTRUCTIONS`; SWE tasks now receive only the generic benchmark task framing.
+- Kept `.git` hiding/restoration as harness integrity, not agent coaching: the agent cannot inspect historical solution commits, while verifier setup can still restore selected tests.
+
+Validation:
+
+- `npm test -- tests/benchmark.test.ts`: passed.
+- `npm run build`: passed.
+- Verified removed SWE-specific prompt text is absent from `src/benchmark/runner.ts`, `dist/src/benchmark/runner.js`, and `tests/benchmark.test.ts`.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `136481ms`, log `/tmp/smith/2026-05-23T15-34-43-729Z-smith-091-command-router-refactor.json`.
+
+Next step:
+
+- Continue only with generic Smith/runtime improvements; do not add SWE-bench-specific prompt coaching.

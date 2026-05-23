@@ -947,3 +947,56 @@ Decision:
 - Reverted the post-check stopping instruction and its test assertion.
 - Keep the 009 evidence as diagnostic only; do not let a Codex-failed task drive prompt changes unless the same failure mode is validated on a Codex-passed target.
 - Next target should be one of `001`, `005`, or `010`; avoid more 009 iteration unless needed for a clearly general non-task-specific bug.
+
+## 2026-05-23 Policy Correction: Remove SWE-Specific Prompt Coaching
+
+User guidance:
+
+- Prompt edits made specifically for the SWE benchmark are considered cheating.
+- Similar changes specific to SWE-bench Pro runtime should be discarded.
+- Future improvements must be generic and applicable to ordinary user tasks.
+
+Immediate action:
+
+- Stopped the in-progress `001-nodebb-nodebb-vnan` rerun because it was using the SWE-specific instruction stack.
+- Process evidence before stop:
+  - node process `392069`: `node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan ...`
+  - Docker container `smith-bench-run-pHQ6hM-smith`
+- Stop commands:
+
+```sh
+docker kill smith-bench-run-pHQ6hM-smith >/dev/null 2>&1 || true
+kill -TERM -392069 2>/dev/null || kill -TERM 392069 2>/dev/null || true
+```
+
+- The benchmark command exited with code `-1` and produced no result JSON. Do not count this run.
+
+Code change:
+
+- Removed every entry from `SWE_BENCH_PRO_TASK_INSTRUCTIONS`.
+- Removed the extra `Repository: ...` prompt line added by the SWE benchmark wrapper; the task prompt already carries repository context.
+- Left only the generic benchmark task instructions used by the harness.
+- Kept `.git` hide/restore as an integrity control rather than agent coaching: it prevents historical solution leakage while restoring `.git` before verifier setup commands that legitimately need it.
+
+Validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+rg -n "This task comes from SWE-bench Pro|Do not spend the whole run|go or gofmt|Do not edit repository test files|SWE-bench Pro instance|base commit|After the best available focused check|Repository: \\$\\{metadata.repo\\}" src/benchmark/runner.ts dist/src/benchmark/runner.js tests/benchmark.test.ts || true
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Results:
+
+- Benchmark tests passed with `16` tests.
+- Build passed.
+- The `rg` check found none of the removed SWE-specific prompt text in source, tests, or built CLI.
+- Project benchmark `benchmarks/091-command-router-refactor` passed in `136481ms`.
+- Project benchmark log: `/tmp/smith/2026-05-23T15-34-43-729Z-smith-091-command-router-refactor.json`
+- Project benchmark trace: `.smith-bench/run-K94rfy/home/.smith/runs/2026-05-23T15-32-27-489Z.trace`
+
+Decision:
+
+- Do not use SWE-specific prompt tuning as an improvement path.
+- Future changes should target generic Smith behavior, generic tool reliability, harness integrity, provider/tool adapters, or broadly applicable runtime mechanics.

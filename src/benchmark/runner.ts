@@ -90,17 +90,7 @@ export const BENCHMARK_TASK_INSTRUCTIONS = [
   "If files need to change, a response that only calls finish is a failed benchmark attempt."
 ];
 
-export const SWE_BENCH_PRO_TASK_INSTRUCTIONS = [
-  "This task comes from SWE-bench Pro. The repository checkout is already available in the current workspace.",
-  "Project-specific verification runs after your final answer in the original SWE-bench Pro Docker image.",
-  "If this editing container lacks project-specific dependencies, use shell inspection and focused edits instead of installing broad dependency sets.",
-  "After a local check fails because a test runner, Python module, package, or project dependency is missing, do not retry equivalent local test/import commands; use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run.",
-  "Do not spend the whole run on reconnaissance. After inspecting the implementation files named by the task and the nearest callers/tests, make the smallest focused source edit for the core requirement before secondary UI, docs, generated, or localization inspection.",
-  "Do not inspect git history, remote refs, tags, task instance IDs, directory-name hashes, or commit IDs to find or reconstruct a solution; solve from the current source tree and task text.",
-  "Do not edit repository test files for SWE-bench Pro unless the task explicitly asks for test changes; use tests as evidence and keep the solution in source files.",
-  "For Go tasks where `go` or `gofmt` is unavailable in the editing container, avoid broad hand rewrites; prefer localized edits to existing functions and keep edited control-flow blocks small enough to inspect for balanced braces before finish.",
-  "After source edits, do not treat grep-only symbol checks as sufficient verification. Run the narrowest available compiler, package test, syntax, or static check before finish when the toolchain is available."
-];
+export const SWE_BENCH_PRO_TASK_INSTRUCTIONS: string[] = [];
 
 export const BENCHMARK_PYTHON_SHIM_SCRIPT = [
   "SHIM_DIR=\"$RESULT_DIR/bin\"",
@@ -987,8 +977,7 @@ function readSweBenchProTaskMetadata(task: string): SweBenchProTaskMetadata {
 function benchmarkInstructionsForTask(metadata: SweBenchProTaskMetadata): string[] {
   return [
     ...BENCHMARK_TASK_INSTRUCTIONS.filter((instruction) => !instruction.includes("/task/verify.sh") && !instruction.includes("run the verifier directly")),
-    ...SWE_BENCH_PRO_TASK_INSTRUCTIONS,
-    `Repository: ${metadata.repo}.`
+    ...SWE_BENCH_PRO_TASK_INSTRUCTIONS
   ];
 }
 

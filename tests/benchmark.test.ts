@@ -234,25 +234,8 @@ total_tokens: 320
     );
   });
 
-  it("tells SWE-bench Pro agents not to churn on missing local dependencies", () => {
-    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
-      "After a local check fails because a test runner, Python module, package, or project dependency is missing, do not retry equivalent local test/import commands; use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run."
-    );
-    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
-      "Do not spend the whole run on reconnaissance. After inspecting the implementation files named by the task and the nearest callers/tests, make the smallest focused source edit for the core requirement before secondary UI, docs, generated, or localization inspection."
-    );
-    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
-      "Do not inspect git history, remote refs, tags, task instance IDs, directory-name hashes, or commit IDs to find or reconstruct a solution; solve from the current source tree and task text."
-    );
-    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
-      "Do not edit repository test files for SWE-bench Pro unless the task explicitly asks for test changes; use tests as evidence and keep the solution in source files."
-    );
-    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
-      "For Go tasks where `go` or `gofmt` is unavailable in the editing container, avoid broad hand rewrites; prefer localized edits to existing functions and keep edited control-flow blocks small enough to inspect for balanced braces before finish."
-    );
-    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
-      "After source edits, do not treat grep-only symbol checks as sufficient verification. Run the narrowest available compiler, package test, syntax, or static check before finish when the toolchain is available."
-    );
+  it("does not add SWE-bench Pro-specific coaching instructions", () => {
+    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toEqual([]);
   });
 
   it("hides SWE-bench Pro git history from editing agents and restores it for verification", () => {
