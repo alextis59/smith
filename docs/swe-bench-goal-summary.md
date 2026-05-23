@@ -67,3 +67,27 @@ Rejected follow-up wording:
 Next step:
 
 - Inspect why the six-file candidate patch still did not trigger a narrow check or finish. A likely next general improvement is a loop or prompt mechanism that detects successful patches during SWE runs and biases the next turn toward targeted validation or finish instead of renewed broad discovery.
+
+## 2026-05-23 Milestone: Avoid Impossible Ripgrep Bootstrap In Benchmarks
+
+Problem found:
+
+- Benchmark editing containers often lack `rg`, and Smith spends startup model turns trying to install it.
+- The containers run as the host UID, so package-manager installs such as `apt-get install ripgrep` predictably fail with permission errors.
+
+Change:
+
+- Add a benchmark-container `rg` fallback shim next to the existing Python shim when real `rg` is missing.
+- Change Smith's startup `rg` availability probe from a login shell to a non-login shell so it respects the PATH inherited by the Smith process.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts tests/benchmark.test.ts`: passed.
+- Project benchmark retry: `benchmarks/091-command-router-refactor`, passed in `163807ms`, log `/tmp/smith/2026-05-23T10-56-54-632Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun: `swe-bench-pro/001-nodebb-nodebb-vnan`, still failed cleanly in `910861ms` with `stderr: docker timed out after 900000ms`, log `/tmp/smith/2026-05-23T11-12-16-084Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-ze9fjb/home/.smith/runs/2026-05-23T10-57-10-875Z.trace`.
+- Target trace showed `ripgrep startup check available: true`, but the run still over-searched and made no tracked source edits.
+
+Next step:
+
+- Continue focusing on convergence after initial inspection. The `rg` shim removes wasted startup turns, but does not solve the main `001` failure mode.

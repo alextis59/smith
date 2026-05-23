@@ -240,11 +240,14 @@ total_tokens: 320
     );
   });
 
-  it("adds a python shim for benchmark editing containers with only python3", () => {
+  it("adds tool shims for benchmark editing containers with missing basics", () => {
     const script = BENCHMARK_PYTHON_SHIM_SCRIPT.join("\n");
 
     expect(script).toContain("command -v python3");
     expect(script).toContain("ln -sf \"$(command -v python3)\" \"$SHIM_DIR/python\"");
+    expect(script).toContain("if ! command -v rg >/dev/null 2>&1; then");
+    expect(script).toContain("find \"${@:-.}\" -type f");
+    expect(script).toContain("exec grep \"${grep_args[@]}\" -- \"$pattern\" \"$@\"");
     expect(script).toContain("export PATH=\"$SHIM_DIR:$PATH\"");
   });
 

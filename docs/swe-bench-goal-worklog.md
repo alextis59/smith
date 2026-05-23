@@ -318,3 +318,67 @@ Decision:
 - Reverted the `src/loop.ts` and `tests/integration.test.ts` change.
 - Keep the evidence here to avoid repeating a global post-patch hint in this form.
 - Next variant should be benchmark-aware or task-completion-aware, not a blanket global patch observation.
+
+## 2026-05-23 Change: Benchmark Ripgrep Shim and PATH Check
+
+Evidence:
+
+- The rejected loop patch-feedback local benchmark run `.smith-bench/run-g99vvJ` spent early turns on the startup `rg` bootstrap, attempting `apt-get` as the unprivileged benchmark container user and failing with permission errors.
+- This repeated a known waste pattern: the default benchmark Docker args run as the host UID to avoid root-owned workspace files, so package-manager installs inside the benchmark editing container are generally not available.
+
+Implementation:
+
+- Extend `BENCHMARK_PYTHON_SHIM_SCRIPT` in `src/benchmark/runner.ts` to also write an executable `rg` shim into `$RESULT_DIR/bin` when real `rg` is missing.
+- The shim supports:
+  - `rg --files` via `find`.
+  - Basic recursive text search via `grep -R`, including `-n`, `--line-number`, `-i`, `--ignore-case`, `-l`, and `--files-with-matches`.
+- Change `isRipgrepAvailable()` in `src/loop.ts` from `shell -lc` to `shell -c`. Evidence showed `bash -lc` reset PATH and failed to see `/home/smith/benchmark-results/bin/rg`, while run-tool shells could see it.
+- Add focused benchmark test assertions that the shim is included in benchmark container setup.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts tests/benchmark.test.ts
+```
+
+Result: passed, 28 tests.
+
+Representative project benchmark:
+
+First run:
+
+- Command: `node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json`
+- Result: failed by timeout in `305284ms`, log `/tmp/smith/2026-05-23T10-53-45-289Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-mk9Xev/home/.smith/runs/2026-05-23T10-48-40-227Z.trace`.
+- Important evidence: trace showed `ripgrep startup check available: true`, no bootstrap install turn, and then a provider/no-next-response style timeout immediately after a successful patch. This was treated as inconclusive and retried.
+
+Retry:
+
+- Same command.
+- Result: passed in `163807ms`, verifier exit `0`, log `/tmp/smith/2026-05-23T10-56-54-632Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-Q2zkVy/home/.smith/runs/2026-05-23T10-54-11-054Z.trace`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result: failed cleanly in `910861ms`. Important fields:
+
+- `stderr`: `docker timed out after 900000ms`
+- `tracePath`: `.smith-bench/run-ze9fjb/home/.smith/runs/2026-05-23T10-57-10-875Z.trace`
+- `sandboxDir`: `.smith-bench/run-ze9fjb`
+- `logPath`: `/tmp/smith/2026-05-23T11-12-16-084Z-smith-001-nodebb-nodebb-vnan.json`
+- Usage: `818732` total tokens.
+
+Post-run evidence:
+
+- `docker ps --format '{{.Names}}' | rg 'smith-bench-run-.*-smith' || true` produced no output.
+- Trace showed `ripgrep startup check available: true`.
+- Workspace had no tracked source edits, only `?? appendonlydir/`.
+
+Decision:
+
+- Keep this as a general benchmark environment improvement because it removes an impossible startup install path and was validated on the representative local benchmark retry.
+- It does not solve `001`; the main failure remains over-inspection and failure to patch/finish reliably.
+- Do not run a full SWE-bench Pro benchmark.

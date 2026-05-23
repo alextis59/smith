@@ -805,7 +805,7 @@ function inferSubAgentReadOnly(task: string): boolean {
 
 async function isRipgrepAvailable(options: SmithRunOptions): Promise<boolean> {
   try {
-    await execFileAsync(options.runtime.shell, ["-lc", "command -v rg >/dev/null 2>&1"], {
+    await execFileAsync(options.runtime.shell, ["-c", "command -v rg >/dev/null 2>&1"], {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
       timeout: RIPGREP_CHECK_TIMEOUT_MS,
