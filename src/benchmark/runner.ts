@@ -97,6 +97,7 @@ export const SWE_BENCH_PRO_TASK_INSTRUCTIONS = [
   "After a local check fails because a test runner, Python module, package, or project dependency is missing, do not retry equivalent local test/import commands; use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run.",
   "Do not spend the whole run on reconnaissance. After inspecting the implementation files named by the task and the nearest callers/tests, make the smallest focused source edit for the core requirement before secondary UI, docs, generated, or localization inspection.",
   "Do not edit repository test files for SWE-bench Pro unless the task explicitly asks for test changes; use tests as evidence and keep the solution in source files.",
+  "For Go tasks where `go` or `gofmt` is unavailable in the editing container, avoid broad hand rewrites; prefer localized edits to existing functions and keep edited control-flow blocks small enough to inspect for balanced braces before finish.",
   "After source edits, do not treat grep-only symbol checks as sufficient verification. Run the narrowest available compiler, package test, syntax, or static check before finish when the toolchain is available."
 ];
 

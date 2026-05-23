@@ -170,3 +170,26 @@ Decision:
 
 - Reverted the fixture-inspection prompt experiment.
 - `009` remains failed; targeted evidence remains around `6/10`.
+
+## 2026-05-23 Milestone: Constrain Go Edits Without Toolchain
+
+Problem found:
+
+- A `010-future-architect-vuls` rerun timed out after making a large Go hand rewrite and spending the end of the run chasing brace balance because the editing container had neither `go` nor `gofmt`.
+- This was a general Go-task failure mode for SWE task images that do not support local Go checks in the editing container.
+
+Change:
+
+- Add a SWE-bench Pro instruction for Go tasks: when `go` or `gofmt` is unavailable, avoid broad hand rewrites, prefer localized edits to existing functions, and keep edited control-flow blocks small enough to inspect for balanced braces before finish.
+
+Validation:
+
+- `npm test -- tests/benchmark.test.ts`: passed.
+- `npm run build`: passed.
+- Project benchmark retry: `benchmarks/091-command-router-refactor`, passed in `209687ms`, log `/tmp/smith/2026-05-23T13-26-32-498Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun: `swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`, still failed, but reached external verifier instead of timing out: log `/tmp/smith/2026-05-23T13-42-36-054Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-vSVTDK/home/.smith/runs/2026-05-23T13-26-44-309Z.trace`.
+- Verifier failures narrowed to `TestIsOvalDefAffected`, `Test_alpine_parseApkInstalledList`, and `Test_alpine_parseApkIndex`.
+
+Next step:
+
+- Try the remaining Go failure `005` with the Go no-toolchain instruction. Targeted evidence is still around `6/10` until another failed task passes.

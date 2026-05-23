@@ -243,6 +243,9 @@ total_tokens: 320
       "Do not edit repository test files for SWE-bench Pro unless the task explicitly asks for test changes; use tests as evidence and keep the solution in source files."
     );
     expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
+      "For Go tasks where `go` or `gofmt` is unavailable in the editing container, avoid broad hand rewrites; prefer localized edits to existing functions and keep edited control-flow blocks small enough to inspect for balanced braces before finish."
+    );
+    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
       "After source edits, do not treat grep-only symbol checks as sufficient verification. Run the narrowest available compiler, package test, syntax, or static check before finish when the toolchain is available."
     );
   });

@@ -662,3 +662,87 @@ Decision:
 
 - Reverted the fixture-inspection instruction and its unit-test assertion because it converted a real verifier failure into a pre-finish timeout and displaced source implementation.
 - Keep 009 open. A better general improvement would need to help agents use failing verifier-style evidence without spending the run on broad fixture archaeology or unrelated environment/test-support edits.
+
+## 2026-05-23 Change: Constrain Go Edits When Go Toolchain Is Missing
+
+Target evidence:
+
+- `010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`
+
+Initial 010 rerun after the 009 prompt experiment was reverted in source:
+
+- Command: `node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json`
+- Result: failed by timeout in `906299ms`.
+- `logPath`: `/tmp/smith/2026-05-23T13-15-57-651Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`
+- `tracePath`: `.smith-bench/run-tQC4eq/home/.smith/runs/2026-05-23T13-00-52-229Z.trace`
+
+Important correction:
+
+- This run was invalid for evaluating the source-level prompt state because `bin/smith.js` imports `dist/src/cli.js`, and `dist/src/benchmark/runner.js` still contained the rejected fixture-inspection instruction from the prior build.
+- Rebuilt with `npm run build`; `rg -n "parser, importer|synthetic smoke" dist/src/benchmark/runner.js src/benchmark/runner.ts` then found no stale fixture instruction.
+
+Observed 010 failure mode:
+
+- The editing container lacked `go` and `gofmt`.
+- The agent made a large hand rewrite in `scanner/alpine.go` and `oval/util.go`.
+- It found a brace imbalance with a lightweight static check and spent the end of the run inspecting `oval/util.go` instead of finishing.
+- Workspace at timeout had source edits in `oval/util.go` and `scanner/alpine.go`, but no verifier run.
+
+General change:
+
+- Add SWE-bench Pro instruction:
+
+```text
+For Go tasks where `go` or `gofmt` is unavailable in the editing container, avoid broad hand rewrites; prefer localized edits to existing functions and keep edited control-flow blocks small enough to inspect for balanced braces before finish.
+```
+
+Focused validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+rg -n "broad hand rewrites|synthetic smoke" dist/src/benchmark/runner.js src/benchmark/runner.ts
+```
+
+Result:
+
+- Benchmark tests passed.
+- Build passed.
+- Built CLI contained the Go instruction and did not contain the rejected fixture instruction.
+
+Representative project benchmark:
+
+First run:
+
+- Command: `node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json`
+- Result: failed by timeout in `305277ms`, log `/tmp/smith/2026-05-23T13-22-45-184Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-MPzKvE/home/.smith/runs/2026-05-23T13-17-40-137Z.trace`.
+- Trace showed a successful `src/router.js` patch and then a stall before README completion/finish, matching prior 091 provider/model flakes rather than a Go-prompt regression.
+
+Retry:
+
+- Same command.
+- Result: passed in `209687ms`, verifier exit `0`, log `/tmp/smith/2026-05-23T13-26-32-498Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-uTdnrS/home/.smith/runs/2026-05-23T13-23-03-035Z.trace`.
+
+Target 010 rerun after Go instruction and rebuild:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result: failed in `952444ms`, but reached finish and external verifier. Important fields:
+
+- `logPath`: `/tmp/smith/2026-05-23T13-42-36-054Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`
+- `tracePath`: `.smith-bench/run-vSVTDK/home/.smith/runs/2026-05-23T13-26-44-309Z.trace`
+- Usage: `1888014` total tokens.
+- Workspace source diff: only `scanner/alpine.go` after task setup restored selected tests.
+- External verifier ran selected tests and failed:
+  - `TestIsOvalDefAffected`
+  - `Test_alpine_parseApkInstalledList`
+  - `Test_alpine_parseApkInstalledList/happy`
+  - `Test_alpine_parseApkIndex`
+  - `Test_alpine_parseApkIndex/happy`
+
+Decision:
+
+- Keep the Go no-toolchain instruction because it converted 010 from timeout/no verifier into a completed agent run with real verifier evidence.
+- It does not recover 010. Try `005` next because it is another Go task and may benefit from the same general instruction.
