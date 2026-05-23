@@ -274,3 +274,47 @@ Next concrete investigation:
 
 - Investigate a general turn-level nudge after successful patches during SWE-bench Pro runs. The failure pattern is now: patching can happen, but the agent continues broad discovery instead of quickly checking or finishing.
 - Candidate areas to inspect: `src/loop.ts` transcript/tool-output handling after `patch`, `src/providers/tools.ts` patch tool descriptions, and benchmark-specific prompt injection that can be appended after patch observations without task-specific content.
+
+## 2026-05-23 Rejected Loop Patch-Feedback Hint
+
+Hypothesis:
+
+- Add a global post-patch observation hint after `Applied patch to ...` telling the agent to verify with a focused read, path-specific diff, or narrow test and avoid renewed broad discovery without concrete failure evidence.
+- Expected benefit: after the six-file `001` candidate patch pattern, the next model turn might check or finish instead of returning to broad search.
+
+Temporary files changed:
+
+- `src/loop.ts`
+- `tests/integration.test.ts`
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts tests/benchmark.test.ts
+```
+
+Notes:
+
+- Running tests in parallel with build first caused an expected stale-build failure in the CLI integration test because the CLI tests execute the built output.
+- After build completed, `npm test -- tests/integration.test.ts tests/benchmark.test.ts` passed: 28 tests.
+
+Representative project benchmark:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result: failed by timeout in `305311ms`, log `/tmp/smith/2026-05-23T10-39-25-367Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-g99vvJ/home/.smith/runs/2026-05-23T10-34-20-278Z.trace`.
+
+Observed:
+
+- The agent patched `src/router.js`, read the changed file, inspected `README.md`, and ran `npm test` successfully.
+- It had not patched the required README verification note and did not call finish before the benchmark timeout.
+- The hint biased toward immediate checking, but not toward completing all task surfaces. This is risky for benchmarks whose verifier includes docs/notes as part of the requested task.
+
+Decision:
+
+- Reverted the `src/loop.ts` and `tests/integration.test.ts` change.
+- Keep the evidence here to avoid repeating a global post-patch hint in this form.
+- Next variant should be benchmark-aware or task-completion-aware, not a blanket global patch observation.
