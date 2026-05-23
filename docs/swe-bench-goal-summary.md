@@ -9,6 +9,9 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - Latest recorded Smith mini high full run: `3/10`, raw result `.smith-bench/swe-pro-default128k-max240-20260522.json`.
 - Latest Smith mini high passes: `002`, `004`, `007`.
 - Latest Smith mini high failures: `001`, `003`, `005`, `006`, `008`, `009`, `010`.
+- Integrity correction: user clarified that prompt edits made specifically for the SWE benchmark are cheating for this goal. Earlier SWE-specific prompt milestones and any passes produced under them are retained below only as historical investigation notes, not valid target evidence.
+- Current valid evidence should count only the baseline full-run passes plus results produced after `befac0f` removed SWE-specific prompt coaching and kept only generic Smith/runtime or harness-integrity changes.
+- Current clean targeted status under the stricter rule: `001`, `005`, `008`, and `010` have all failed targeted reruns after the prompt cleanup. Do not run the full SWE-bench Pro suite until generic changes recover enough Codex-passed failures to plausibly reach `>=7/10`.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 
@@ -92,7 +95,7 @@ Next step:
 
 - Continue focusing on convergence after initial inspection. The `rg` shim removes wasted startup turns, but does not solve the main `001` failure mode.
 
-## 2026-05-23 Milestone: Keep SWE Fixes Out Of Tests And Require Real Checks
+## 2026-05-23 Historical Dead End: SWE-Specific Test/Check Prompt
 
 Problem found:
 
@@ -100,7 +103,7 @@ Problem found:
 - Trace `.smith-bench/run-BxaF63/home/.smith/runs/2026-05-22T05-12-57-297Z.trace` showed the agent edited package test files and finished after grep-only symbol checks instead of running package tests.
 - The task metadata setup restores selected test files before verification, so test edits are wasted and can mask compile/test failures.
 
-Change:
+Change later discarded:
 
 - Add SWE-bench Pro instructions not to edit repository tests unless explicitly requested.
 - Add SWE-bench Pro instructions that grep-only symbol checks are not enough after source edits; run the narrowest available compiler, package test, syntax, or static check before finish.
@@ -114,7 +117,7 @@ Validation:
 
 Next step:
 
-- Re-evaluate remaining failed tasks. With `006` plausibly recovered, expected full-run score is at least `4/10` if previous passes remain stable; still short of the `>=7/10` target.
+- Do not count this `006` pass as valid target evidence because it depended on SWE-specific prompt coaching. Re-evaluate using generic Smith changes only if `006` becomes a priority.
 
 ## 2026-05-23 Milestone: Run SWE Verifiers Through Bash Entrypoint
 
@@ -141,7 +144,7 @@ Next step:
 
 - Continue with another previously failed task, likely `008` or `009`, before considering a full SWE-bench Pro run. With `003` and `006` plausibly recovered, expected score is around `5/10` if the original `002`, `004`, and `007` passes remain stable.
 
-## 2026-05-23 Milestone: Recovered Vuls Trivy Parser Task 008
+## 2026-05-23 Historical Dead End: Prompt-Aided Vuls 008 Pass
 
 Evidence:
 
@@ -156,7 +159,7 @@ Validation:
 
 Next step:
 
-- Target `009-internetarchive-openlibrary` next. If `009` is recovered, targeted evidence would reach about `7/10` and justify a full SWE-bench Pro rerun.
+- Do not count this `008` pass as valid target evidence because it was produced before the prompt cleanup. Clean revalidation later failed under generic-only prompting.
 
 ## 2026-05-23 Investigation: 009 Still Open
 
@@ -171,14 +174,14 @@ Decision:
 - Reverted the fixture-inspection prompt experiment.
 - `009` remains failed; targeted evidence remains around `6/10`.
 
-## 2026-05-23 Milestone: Constrain Go Edits Without Toolchain
+## 2026-05-23 Historical Dead End: SWE-Specific Go No-Toolchain Prompt
 
 Problem found:
 
 - A `010-future-architect-vuls` rerun timed out after making a large Go hand rewrite and spending the end of the run chasing brace balance because the editing container had neither `go` nor `gofmt`.
 - This was a general Go-task failure mode for SWE task images that do not support local Go checks in the editing container.
 
-Change:
+Change later discarded:
 
 - Add a SWE-bench Pro instruction for Go tasks: when `go` or `gofmt` is unavailable, avoid broad hand rewrites, prefer localized edits to existing functions, and keep edited control-flow blocks small enough to inspect for balanced braces before finish.
 
@@ -192,7 +195,7 @@ Validation:
 
 Next step:
 
-- Try the remaining Go failure `005` with the Go no-toolchain instruction. Targeted evidence is still around `6/10` until another failed task passes.
+- Do not count any improvement from this instruction as valid target evidence. Keep looking for generic runtime/tool changes instead.
 
 ## 2026-05-23 Investigation: 005 Still Open
 
@@ -361,7 +364,7 @@ Evidence:
 
 Current status:
 
-- Clean, non-cheating targeted evidence still supports only baseline `002`, `004`, `007` plus earlier `008` as likely pass evidence.
+- Clean, non-cheating targeted evidence currently supports only the baseline full-run passes `002`, `004`, and `007`.
 - Codex-passed Smith failures `001`, `005`, and `010` remain unrecovered under generic changes.
 
 Next step:
@@ -382,3 +385,19 @@ Decision:
 
 - Do not change the default `sub_agent_inherit_context` based on this evidence.
 - Continue with generic runtime/tool improvements only.
+
+## 2026-05-23 Clean 008 Revalidation Failed
+
+Evidence:
+
+- Target `008` rerun after removing SWE-specific prompt coaching failed by Docker timeout in `906182ms`.
+- Log: `/tmp/smith/2026-05-23T17-41-28-713Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+- Trace: `.smith-bench/run-lohmzj/home/.smith/runs/2026-05-23T17-26-23-635Z.trace`.
+- Usage: `1631919` total tokens.
+- Retained workspace changed `contrib/trivy/pkg/converter.go`, added untracked `contrib/trivy/parser/v2/merge_test.go`, and left `SMITH.TASK.md`; no verifier ran.
+
+Decision:
+
+- The earlier `008` pass is invalid target evidence under the user's benchmark-integrity rule because it occurred before SWE-specific prompt coaching was removed.
+- Current clean evidence remains `3/10` from the previous full-run baseline until generic changes recover additional tasks.
+- Next work should investigate generic task-memory or act-after-inspection behavior without benchmark-specific instructions.

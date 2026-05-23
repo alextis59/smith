@@ -24,6 +24,14 @@ Baseline from `LeaderBoard.md`:
 - Passed: `002-qutebrowser`, `004-openlibrary`, `007-element-web`.
 - Failed: `001-nodebb`, `003-ansible`, `005-teleport`, `006-navidrome`, `008-vuls`, `009-openlibrary`, `010-vuls`.
 
+Integrity correction recorded after user clarification:
+
+- Prompt edits made specifically for SWE-bench Pro are considered cheating for this goal.
+- Historical sections that added SWE-specific task guidance are preserved as investigation notes only.
+- Passes produced while those instructions were active are not valid target evidence.
+- Valid ongoing work is limited to generic Smith behavior, generic tool/runtime/harness reliability, provider/tool adapters, logging, and benchmark-integrity controls that do not coach the agent on SWE-bench-specific behavior.
+- Current clean targeted evidence after removing SWE-specific prompt coaching: `001`, `005`, `008`, and `010` failed targeted reruns; the only valid passing evidence remains the earlier full-run baseline `002`, `004`, and `007` until generic changes prove otherwise.
+
 Existing code context:
 
 - SWE Smith runs use task Docker images when possible, otherwise `node:22-bookworm`.
@@ -1308,3 +1316,54 @@ Decision:
 
 - Do not change the default `sub_agent_inherit_context` from this evidence.
 - The token reduction is modest and does not improve task progress.
+
+## 2026-05-23 Clean 008 Revalidation After Prompt Cleanup
+
+Context:
+
+- Earlier `008` pass happened before commit `befac0f`, while SWE-specific prompt coaching was still present.
+- Under the user's clarified rule, that pass cannot be counted toward the goal.
+- Revalidated `008` using the current generic-only prompt state plus generic runtime/harness fixes.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by timeout in `906182ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T17-41-28-713Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`
+- `tracePath`: `.smith-bench/run-lohmzj/home/.smith/runs/2026-05-23T17-26-23-635Z.trace`
+- Sandbox: `.smith-bench/run-lohmzj`
+- Usage: `1631919` total tokens.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-lohmzj/workspace status --short
+git -C .smith-bench/run-lohmzj/workspace diff --stat
+```
+
+Observed:
+
+```text
+ M contrib/trivy/pkg/converter.go
+?? SMITH.TASK.md
+?? contrib/trivy/parser/v2/merge_test.go
+ contrib/trivy/pkg/converter.go | 111 +++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 106 insertions(+), 5 deletions(-)
+```
+
+Classification:
+
+- Not recovered. The run made a large source edit and added an untracked test file, then timed out before verifier execution.
+- The `SMITH.TASK.md` churn is a generic task-memory/runtime concern worth investigating, but any fix must apply to ordinary Smith tasks too.
+- The earlier `008` pass is invalid target evidence. Current clean evidence remains `3/10` from the baseline full run until generic changes recover additional tasks.
+
+Rejected ideas:
+
+- Do not reintroduce instructions about source-only edits, selected-test behavior, verifier timing, Go toolchain absence, or any other SWE-bench-specific workflow.
+- Do not tune prompts or code for the Vuls task path specifically.
