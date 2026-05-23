@@ -486,3 +486,25 @@ Decision:
 - This is an integrity cleanup, not a score improvement.
 - Current valid score evidence remains `3/10`.
 - Resume only with generic runtime/tool/harness changes and prioritize Codex-passed Smith failures such as `001`, `005`, and `010`.
+
+## 2026-05-23 Rejected: Lower Tool Output Cap To 8000
+
+Experiment:
+
+- Lowered the generic default `runtime.max_tool_output_chars` from `12000` to `8000` after raw-prompt `005` showed repeated large source reads and no patch.
+
+Validation:
+
+- `npm test -- tests/config.test.ts tests/integration.test.ts`: passed `26` tests after fixing the CLI fixture.
+- `npm run build`: passed.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `126625ms`, log `/tmp/smith/2026-05-23T18-57-24-449Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun `005-gravitational-teleport`: failed by Docker timeout in `911447ms`, log `/tmp/smith/2026-05-23T19-12-42-298Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-t7TeZd/home/.smith/runs/2026-05-23T18-57-37-047Z.trace`.
+- Retained `005` workspace had no tracked or untracked source diff.
+- Usage worsened from the raw-prompt baseline `2984214` total tokens to `3157661` total tokens.
+- Trace search found no benchmark wrapper text and Docker cleanup left no live Smith benchmark container.
+
+Decision:
+
+- Reverted the cap change; `12000` remains the default.
+- Do not count this as a recovery.
+- Current valid score evidence remains `3/10`.

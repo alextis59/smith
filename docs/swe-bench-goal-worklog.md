@@ -1635,3 +1635,89 @@ Decision:
 - Previous post-`befac0f` targeted failures remain useful for diagnosing generic runtime failure modes, but future score claims should use the raw SWE prompt path.
 - Current valid score evidence remains `3/10`.
 - Next useful work should target generic causes of no-edit/overrun behavior on Codex-passed Smith failures, starting with `001`, `005`, or `010`.
+
+## 2026-05-23 Rejected Generic Experiment: Lower Tool Output Cap To 8000
+
+Hypothesis:
+
+- Raw-prompt `005` made `80` model-selected tool calls, no patch, and no verifier.
+- It repeatedly read large overlapping source ranges in `lib/kube/proxy`, `lib/service`, and `lib/events/filesessions`.
+- Reducing the generic tool-output replay cap might reduce context churn and help ordinary large-codebase tasks converge sooner.
+
+Temporary code change:
+
+- Changed default `runtime.max_tool_output_chars` from `12000` to `8000`.
+- Updated the default TOML examples and config default test.
+
+Focused validation:
+
+```sh
+npm test -- tests/config.test.ts tests/integration.test.ts
+npm run build
+```
+
+Results:
+
+- Initial test run failed because a broad replacement changed a CLI `--max-context-tokens 12000` fixture to `8000`.
+- Fixed the fixture.
+- Final focused tests passed: `26` tests.
+- Build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result:
+
+- Passed in `126625ms`.
+- Log: `/tmp/smith/2026-05-23T18-57-24-449Z-smith-091-command-router-refactor.json`
+- Trace: `.smith-bench/run-WeeyMV/home/.smith/runs/2026-05-23T18-55-18-058Z.trace`
+- Usage: `79499` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by Docker timeout in `911447ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T19-12-42-298Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`
+- `tracePath`: `.smith-bench/run-t7TeZd/home/.smith/runs/2026-05-23T18-57-37-047Z.trace`
+- Sandbox: `.smith-bench/run-t7TeZd`
+- Usage: `3157661` total tokens.
+- Model-selected tool calls in session log: `89`.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-t7TeZd/workspace status --short
+git -C .smith-bench/run-t7TeZd/workspace diff --stat
+```
+
+Observed:
+
+- No tracked source diff.
+- No untracked files reported.
+
+Prompt-integrity and cleanup checks:
+
+```sh
+rg -n "Complete this benchmark task|primary source-code targets|/task/verify.sh|run the verifier directly" .smith-bench/run-t7TeZd/home/.smith/runs/2026-05-23T18-57-37-047Z.trace || true
+docker ps --format '{{.Names}}' | rg 'smith-bench-run-t7TeZd-smith|smith-bench-run-.*-smith' || true
+```
+
+Observed:
+
+- No benchmark wrapper text.
+- No live Smith benchmark containers.
+
+Decision:
+
+- Reverted the cap change because it did not produce a patch or verifier run and worsened token usage compared with the prior raw-prompt `005` baseline (`2984214` total tokens).
+- `runtime.max_tool_output_chars = 12000` remains the default.
+- Do not count this as a recovery or milestone.
