@@ -16,15 +16,17 @@ import {
   resolveBenchmarkTarget,
   runBenchmarkTask,
   runTasksWithConcurrency,
+  spawnFileWithInput,
   validateBenchmarkPath
 } from "../src/benchmark/runner.js";
 
 const hasDocker = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
 
 describe("Docker benchmark runner", () => {
-  const servers: Array<{ close: () => void }> = [];
+  const servers: Array<{ close: (callback: () => void) => void; closeAllConnections?: () => void }> = [];
 
   afterEach(async () => {
+    servers.forEach((server) => server.closeAllConnections?.());
     await Promise.all(servers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
     servers.length = 0;
   });
@@ -89,6 +91,27 @@ timeout_ms = 5000
       costUsd: Number((0.00128 * providerTurns).toFixed(8))
     });
   }, 180_000);
+
+  it("runs timeout cleanup hooks before force-killing a spawned benchmark process", async () => {
+    let cleanupCalled = false;
+
+    await expect(
+      spawnFileWithInput(
+        process.execPath,
+        ["-e", "setTimeout(() => {}, 30000)"],
+        "",
+        {
+          timeout: 50,
+          maxBuffer: 1024 * 1024,
+          onTimeout: () => {
+            cleanupCalled = true;
+          },
+          killGraceMs: 10
+        }
+      )
+    ).rejects.toThrow("timed out after 50ms");
+    expect(cleanupCalled).toBe(true);
+  });
 
   it("validates benchmark task structure", () => {
     const task = mkdtempSync(join(tmpdir(), "smith-benchmark-invalid-"));

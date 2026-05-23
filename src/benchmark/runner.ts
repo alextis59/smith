@@ -216,7 +216,7 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
     const failed = error as { stdout?: string; stderr?: string; code?: number; verifier?: BenchmarkVerifierResult };
     if (failed.verifier) verifier = failed.verifier;
     const stdout = `${agentStdout}${failed.stdout ?? ""}`;
-    const stderr = `${agentStderr}${failed.stderr ?? String(error)}`;
+    const stderr = `${agentStderr}${errorStderr(failed, error)}`;
     const taskResult: BenchmarkTaskResult = {
       task,
       agent,
@@ -260,8 +260,8 @@ async function runSmithForSweBenchProTask(context: {
   const containerName = dockerContainerName(dirname(home), "smith");
   const script = buildSweBenchProSmithScript(metadata, command);
   try {
-    const result = await execFileAsync(
-      "docker",
+    const result = await runDockerBenchmarkContainer(
+      containerName,
       buildSmithBenchmarkDockerArgs({ containerName, image, repoRoot, workspace, home, taskCopy, script }),
       { timeout: options.timeoutMs ?? 120_000, maxBuffer: 1024 * 1024 * 50 }
     );
@@ -455,8 +455,8 @@ async function runSweBenchProVerifier(context: {
   const command = `docker run --rm -v ${workspace}:/app -v ${taskCopy}:/task:ro ${metadata.dockerImage} -lc <verifier>`;
   const containerName = dockerContainerName(sandbox, "verify");
   try {
-    const result = await execFileAsync(
-      "docker",
+    const result = await runDockerBenchmarkContainer(
+      containerName,
       [
         "run",
         "--rm",
@@ -481,7 +481,7 @@ async function runSweBenchProVerifier(context: {
       command,
       ...(typeof failed.code === "number" ? { exitCode: failed.code } : {}),
       stdout: failed.stdout ?? "",
-      stderr: failed.stderr ?? String(error)
+      stderr: errorStderr(failed, error)
     };
     throw Object.assign(new Error("SWE-bench Pro verifier failed"), {
       stdout: verifier.stdout,
@@ -617,7 +617,7 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
   } catch (error) {
     const failed = error as { stdout?: string; stderr?: string };
     const stdout = failed.stdout ?? "";
-    const stderr = failed.stderr ?? String(error);
+    const stderr = errorStderr(failed, error);
     const smithStdout = readBenchmarkArtifact(home, "smith.stdout") || stdout;
     const tracePath = smithTracePathFromStdout(home, smithStdout);
     const taskResult: BenchmarkTaskResult = {
@@ -763,7 +763,7 @@ async function runCodexBenchmarkTask(context: BenchmarkTaskContext): Promise<Ben
     const failed = error as { stdout?: string; stderr?: string; code?: number };
     if (codexCompleted) {
       verifyStdout = failed.stdout ?? "";
-      verifyStderr = failed.stderr ?? String(error);
+      verifyStderr = errorStderr(failed, error);
       verifier = {
         command: `bash ${join(taskCopy, "verify.sh")}`,
         exitCode: typeof failed.code === "number" ? failed.code : undefined,
@@ -772,7 +772,7 @@ async function runCodexBenchmarkTask(context: BenchmarkTaskContext): Promise<Ben
       };
     }
     const stdout = `${codexStdout}${codexCompleted ? verifyStdout : failed.stdout ?? ""}`;
-    const stderr = `${codexStderr}${codexCompleted ? verifyStderr : failed.stderr ?? String(error)}`;
+    const stderr = `${codexStderr}${codexCompleted ? verifyStderr : errorStderr(failed, error)}`;
     const taskResult: BenchmarkTaskResult = {
       task,
       agent: "codex",
@@ -954,7 +954,11 @@ async function runDockerBenchmarkContainer(
   options: { timeout: number; maxBuffer: number }
 ): Promise<{ stdout: string; stderr: string }> {
   try {
-    return await execFileAsync("docker", args, options);
+    return await spawnFileWithInput("docker", args, "", {
+      ...options,
+      onTimeout: () => cleanupDockerContainer(containerName),
+      killGraceMs: 1_000
+    });
   } finally {
     await cleanupDockerContainer(containerName);
   }
@@ -965,13 +969,53 @@ function dockerContainerName(path: string, suffix: string): string {
 }
 
 async function cleanupDockerContainer(containerName: string): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      await execFileAsync("docker", ["kill", containerName], {
+        timeout: 5_000,
+        maxBuffer: 1024 * 1024
+      });
+    } catch {
+      // The container may already be stopped or removed.
+    }
+    await killDockerContainerPid(containerName);
+    try {
+      await execFileAsync("docker", ["rm", "-f", containerName], {
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024
+      });
+    } catch {
+      // The container is usually already gone because docker run used --rm.
+    }
+    if (!(await dockerContainerExists(containerName))) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
+
+async function killDockerContainerPid(containerName: string): Promise<void> {
   try {
-    await execFileAsync("docker", ["rm", "-f", containerName], {
-      timeout: 30_000,
+    const result = await execFileAsync("docker", ["inspect", "--format", "{{.State.Pid}}", containerName], {
+      timeout: 5_000,
       maxBuffer: 1024 * 1024
     });
+    const pid = Number.parseInt(result.stdout.trim(), 10);
+    if (Number.isInteger(pid) && pid > 0) {
+      process.kill(pid, "SIGKILL");
+    }
   } catch {
-    // The container is usually already gone because docker run used --rm.
+    // Docker may already have removed the container, or the host PID may be owned by another user.
+  }
+}
+
+async function dockerContainerExists(containerName: string): Promise<boolean> {
+  try {
+    await execFileAsync("docker", ["container", "inspect", containerName], {
+      timeout: 5_000,
+      maxBuffer: 1024 * 1024
+    });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -1203,6 +1247,14 @@ function numericString(value: string): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function errorStderr(failed: { stderr?: string }, error: unknown): string {
+  return failed.stderr && failed.stderr.length > 0
+    ? failed.stderr
+    : error instanceof Error
+      ? error.message
+      : String(error);
+}
+
 function findRepoRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [resolve(here, "../../.."), process.cwd()];
@@ -1218,7 +1270,7 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function spawnFileWithInput(
+export function spawnFileWithInput(
   command: string,
   args: string[],
   input: string,
@@ -1226,6 +1278,8 @@ function spawnFileWithInput(
     timeout: number;
     maxBuffer: number;
     env?: NodeJS.ProcessEnv;
+    onTimeout?: () => void | Promise<void>;
+    killGraceMs?: number;
   }
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -1235,24 +1289,29 @@ function spawnFileWithInput(
     let stdoutLength = 0;
     let stderrLength = 0;
     let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      child.kill("SIGTERM");
-      reject(Object.assign(new Error(`${command} timed out after ${options.timeout}ms`), collectOutput()));
-    }, options.timeout);
-
+    let timedOut = false;
+    let bufferError: Error | undefined;
+    let killTimer: NodeJS.Timeout | undefined;
     const collectOutput = () => ({
       stdout: Buffer.concat(stdout).toString("utf8"),
       stderr: Buffer.concat(stderr).toString("utf8")
     });
+    const timer = setTimeout(() => {
+      if (settled) return;
+      timedOut = true;
+      void Promise.resolve(options.onTimeout?.()).catch(() => undefined);
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (!settled) child.kill("SIGKILL");
+      }, options.killGraceMs ?? 5_000);
+      killTimer.unref?.();
+    }, options.timeout);
+
     const collect = (chunks: Buffer[], length: number, chunk: Buffer): number => {
       const nextLength = length + chunk.length;
       if (nextLength > options.maxBuffer && !settled) {
-        settled = true;
-        clearTimeout(timer);
+        bufferError = new Error(`${command} exceeded maxBuffer`);
         child.kill("SIGTERM");
-        reject(Object.assign(new Error(`${command} exceeded maxBuffer`), collectOutput()));
       } else {
         chunks.push(chunk);
       }
@@ -1269,14 +1328,18 @@ function spawnFileWithInput(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       reject(Object.assign(error, collectOutput()));
     });
     child.on("close", (code) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       const output = collectOutput();
-      if (code === 0) resolve(output);
+      if (timedOut) reject(Object.assign(new Error(`${command} timed out after ${options.timeout}ms`), output));
+      else if (bufferError) reject(Object.assign(bufferError, output));
+      else if (code === 0) resolve(output);
       else reject(Object.assign(new Error(`${command} exited with code ${code}`), output));
     });
     child.stdin.end(input);
