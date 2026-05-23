@@ -2735,3 +2735,72 @@ Decision:
 - Do not count `001` as recovered.
 - The soft deadline improved actionability but still did not get the run to finish/verifier.
 - Current strict valid evidence remains `4/10`.
+
+## 2026-05-24 Generic Timeout Feedback Cleanup
+
+Hypothesis:
+
+- Smith duplicated timed-out command evidence: the run tool replayed partial terminal output, then the main loop appended a separate timeout observation containing the last terminal output again.
+- This can waste context and make ordinary tasks noisier after a timed-out command. It is generic Smith loop behavior, not SWE-bench-specific guidance.
+
+Change:
+
+- `src/loop.ts`: format a timed-out shell command as a single compact tool result using `Command timed out after ...`, `Command running: ...`, and `Last terminal output: ...`.
+- Removed the extra `# timeout` transcript/user observation path.
+- `tests/danger-review.test.ts`: changed the timeout test command to emit partial output before hanging and asserted that the first user-visible output is the compact timeout summary.
+
+Validation:
+
+```sh
+npm test -- tests/danger-review.test.ts tests/integration.test.ts
+npm run build
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Focused tests passed: `28` tests.
+- TypeScript build passed.
+- Project benchmark `091-command-router-refactor` passed in `137393ms`.
+  - Log: `/tmp/smith/2026-05-23T23-24-55-729Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-nKfeHF/home/.smith/runs/2026-05-23T23-22-38-802Z.trace`.
+- Target `001-nodebb-nodebb-vnan` failed by Docker timeout in `912045ms`.
+  - Log: `/tmp/smith/2026-05-23T23-40-14-094Z-smith-001-nodebb-nodebb-vnan.json`.
+  - Trace: `.smith-bench/run-OaTvIC/home/.smith/runs/2026-05-23T23-25-08-809Z.trace`.
+  - Sandbox: `.smith-bench/run-OaTvIC`.
+  - Usage: `2997213` total tokens.
+  - No verifier ran.
+
+Retained workspace:
+
+```text
+ M src/controllers/admin/users.js
+ M src/database/mongo/main.js
+ M src/database/postgres/main.js
+ M src/socket.io/admin/user.js
+ M src/user/email.js
+?? appendonlydir/
+```
+
+```text
+ src/controllers/admin/users.js | 27 ++++++++++++-
+ src/database/mongo/main.js     | 16 ++++++++
+ src/database/postgres/main.js  | 22 +++++++++++
+ src/socket.io/admin/user.js    |  7 +++-
+ src/user/email.js              | 89 ++++++++++++++++++++++++++++++++++++------
+ 5 files changed, 145 insertions(+), 16 deletions(-)
+```
+
+Prompt and timeout evidence:
+
+- Trace search found no `Command timed out after`, `smith$ # timeout`, or `Last terminal output` entries, so this cleanup did not materially affect the `001` failure path.
+- Trace search found no SWE-bench prompt wrapper or verifier coaching strings.
+- The run did reach source patches after generic progress/deadline reminders but still did not call `finish`.
+- Docker cleanup left no live `smith-bench-run-OaTvIC-smith` container.
+
+Decision:
+
+- Keep the timeout-feedback cleanup because it is a generic Smith transcript-quality improvement and passed local validation.
+- Do not count `001` as recovered.
+- Current strict valid evidence remains `4/10`.

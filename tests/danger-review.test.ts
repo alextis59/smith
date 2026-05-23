@@ -265,7 +265,7 @@ describe("danger review", () => {
   it("reports command timeouts and enforces max turns", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "smith-timeout-"));
     const toolCalls = [
-      { name: "run", arguments: { command: "sleep 2" } },
+      { name: "run", arguments: { command: "node -e \"process.stdout.write('partial-output'); setTimeout(() => {}, 2000)\"" } },
       { name: "run", arguments: { command: "printf recovered" } },
       { name: "run", arguments: { command: "printf still-running" } }
     ];
@@ -287,8 +287,12 @@ describe("danger review", () => {
         onTerminalOutput: (chunk) => output.push(chunk)
       })
     ).rejects.toThrow("model did not call finish within 2 turns");
-    expect(output.join("\n")).toContain("Command timed out after");
-    expect(output.join("\n")).toContain("Command running: sleep 2");
+    const combinedOutput = output.join("\n");
+    expect(combinedOutput).toContain("Command timed out after");
+    expect(combinedOutput).toContain("Command running: node -e");
+    expect(output[0]).toContain("Command timed out after");
+    expect(output[0]).toContain("Last terminal output:");
+    expect(output[0]).toContain("partial-output");
   });
 });
 

@@ -278,17 +278,6 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             if (totalUsage) options.trace?.write("run usage", formatUsageCost(totalUsage));
             return { chatOut: action.finished, turns: turn, transcript, ...(totalUsage ? { usage: totalUsage } : {}) };
           }
-          if (action.timedOut) {
-            const timeoutOutput = action.timeoutOutput;
-            if (timeoutOutput) {
-              transcript = appendTerminalTurn(transcript, "# timeout", timeoutOutput);
-              providerMessages = appendProviderUserObservation(providerMessages, timeoutOutput);
-              nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, timeoutOutput);
-              nextPendingOutput = [nextPendingOutput, timeoutOutput].filter(Boolean).join("\n");
-              options.trace?.write("timeout", timeoutOutput);
-              options.onTerminalOutput?.(timeoutOutput);
-            }
-          }
           if (toolCallsSincePatchOrFinish > 0 && toolCallsSincePatchOrFinish % PROGRESS_REMINDER_TOOL_INTERVAL === 0) {
             const reminder = progressReminderOutput(options, toolCallsSincePatchOrFinish, turn, maxTurns);
             transcript = appendTerminalTurn(transcript, "# progress", reminder);
@@ -353,8 +342,6 @@ type ToolActionResult = {
   totalUsage?: TokenUsageCost;
   changedFiles?: string[];
   finished?: string;
-  timedOut?: boolean;
-  timeoutOutput?: string;
 };
 
 type ToolCallContext = {
@@ -503,7 +490,7 @@ async function runShellCommandTool(
   const timeoutMs = timeoutFromToolCall(parentContext.toolCall.arguments, parentContext.options.runtime.timeoutMs);
   const result = await parentContext.shell.run(command, timeoutMs);
   const terminalOutput = limitToolOutput(
-    formatTerminalOutput(result.output, result.exitCode),
+    result.timedOut ? formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput) : formatTerminalOutput(result.output, result.exitCode),
     parentContext.options.runtime.maxToolOutputChars
   );
   const recordedCommand = transcriptCommand ?? result.command;
@@ -522,11 +509,7 @@ async function runShellCommandTool(
     providerMessages,
     responsesInputItems,
     toolOutput: terminalOutput,
-    totalUsage,
-    timedOut: result.timedOut,
-    timeoutOutput: result.timedOut
-      ? limitToolOutput(formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput), parentContext.options.runtime.maxToolOutputChars)
-      : undefined
+    totalUsage
   };
 }
 

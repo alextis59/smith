@@ -761,3 +761,22 @@ Decision:
 
 - Do not count `001` as recovered.
 - Current strict valid evidence remains `4/10`.
+
+## 2026-05-24 Milestone: Single Timeout Tool Feedback
+
+Change:
+
+- Generic Smith loop cleanup: timed-out shell commands now replay one compact timeout result to the model instead of first replaying partial terminal output and then adding a second timeout observation.
+- This is not SWE-bench-specific and does not add task-solving instructions.
+
+Validation:
+
+- `npm test -- tests/danger-review.test.ts tests/integration.test.ts`: passed `28` tests.
+- `npm run build`: passed.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `137393ms`, log `/tmp/smith/2026-05-23T23-24-55-729Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun `001-nodebb-nodebb-vnan`: failed by Docker timeout in `912045ms`, log `/tmp/smith/2026-05-23T23-40-14-094Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-OaTvIC/home/.smith/runs/2026-05-23T23-25-08-809Z.trace`.
+
+Decision:
+
+- Keep as a generic transcript-quality improvement.
+- Do not count `001` as recovered; current strict valid evidence remains `4/10`.
