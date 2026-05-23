@@ -193,3 +193,21 @@ Validation:
 Next step:
 
 - Try the remaining Go failure `005` with the Go no-toolchain instruction. Targeted evidence is still around `6/10` until another failed task passes.
+
+## 2026-05-23 Investigation: 005 Still Open
+
+Evidence:
+
+- Target SWE rerun: `swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037`, failed by Docker timeout after `916774ms`.
+- Log: `/tmp/smith/2026-05-23T13-59-39-797Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-kEaSJ4/home/.smith/runs/2026-05-23T13-44-34-502Z.trace`.
+- The retained workspace had no source patch; only `SMITH.TASK.md` was untracked. No verifier ran.
+
+Classification:
+
+- The Go no-toolchain instruction did not recover this task. The failure mode is earlier: broad reconnaissance in a large Go repository timed out before an implementation edit.
+- Targeted evidence remains around `6/10`: original passes `002`, `004`, `007` plus recovered `003`, `006`, `008`.
+
+Next step:
+
+- Prefer another targeted recovery attempt on `009` or `010`, because both now reach verifier and expose concrete remaining failures. Do not run the full SWE-bench Pro benchmark yet.

@@ -746,3 +746,42 @@ Decision:
 
 - Keep the Go no-toolchain instruction because it converted 010 from timeout/no verifier into a completed agent run with real verifier evidence.
 - It does not recover 010. Try `005` next because it is another Go task and may benefit from the same general instruction.
+
+## 2026-05-23 Target Rerun: 005 Teleport Still Times Out Before Patch
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by timeout in `916774ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T13-59-39-797Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`
+- `tracePath`: `.smith-bench/run-kEaSJ4/home/.smith/runs/2026-05-23T13-44-34-502Z.trace`
+- Sandbox: `.smith-bench/run-kEaSJ4`
+- Usage: `1319263` total tokens.
+
+Workspace evidence:
+
+- No source patch was produced before timeout.
+- The only task-workspace change found was untracked `SMITH.TASK.md`.
+- `benchmark-results/smith.stdout` and `benchmark-results/smith.stderr` were empty; no external verifier ran.
+
+Trace evidence:
+
+- The trace shows broad inspection through Teleport Kubernetes proxy/auth/session/audit paths, including files such as `lib/kube/proxy/auth.go`, `lib/kube/proxy/forwarder.go`, and events recorder code.
+- The agent updated a task note but did not converge on an implementation edit before the 15-minute Docker limit.
+
+Classification:
+
+- This is not the same Go no-toolchain hand-rewrite failure as 010. It is a pre-patch reconnaissance failure in a large Go codebase.
+- A global instruction to inspect more fixtures or files would likely worsen this class of failure; the rejected 009 fixture-inspection experiment already showed that broad pre-edit guidance can turn verifier failures into timeouts.
+
+Decision:
+
+- Keep 005 open.
+- Do not run the full SWE-bench Pro suite yet. Current targeted evidence remains around `6/10`: baseline passes `002`, `004`, `007` plus recovered `003`, `006`, and `008`.
+- Next highest-value targets are `009` and `010`, since both now reach verifier and expose concrete failures. Any next Smith change should be general and should avoid increasing pre-edit reconnaissance.
