@@ -2579,3 +2579,85 @@ Decision:
 - Current strict valid evidence: baseline full-run passes `002`, `004`, `007`, plus generic raw-prompt recovery `008`, for `4/10` targeted evidence.
 - The earlier `003` pass was produced by a generic verifier-entrypoint fix, but the run predates the raw-prompt cleanup. It should be revalidated before counting and is not a priority because Codex `gpt-5.4` high failed it.
 - Do not run the full SWE-bench Pro suite yet. `001`, `005`, and `010` remain the highest-value Codex-passed unrecovered tasks, and current evidence is still short of a plausible `>=7/10`.
+
+## 2026-05-23 Follow-up: 005 After Soft Deadline
+
+Reason for target:
+
+- `005-gravitational-teleport` is a Codex `gpt-5.4` high pass and a Smith failure.
+- Several prior generic-only `005` runs timed out with no source diff, so the soft deadline was relevant to revalidate.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed the official verifier in `926948ms`.
+- Log: `/tmp/smith/2026-05-23T23-00-30-497Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-pYnTrD/home/.smith/runs/2026-05-23T22-45-14-384Z.trace`.
+- Sandbox: `.smith-bench/run-pYnTrD`.
+- Usage: `4255540` total tokens.
+- Smith finished after `63` turns and the external verifier ran.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-pYnTrD/workspace status --short
+git -C .smith-bench/run-pYnTrD/workspace diff --stat
+```
+
+Observed:
+
+```text
+ M lib/kube/proxy/forwarder.go
+M  lib/kube/proxy/forwarder_test.go
+ M lib/kube/proxy/server.go
+ M lib/service/kubernetes.go
+```
+
+```text
+ lib/kube/proxy/forwarder.go | 139 +++++++++++++++++++++++---------------------
+ lib/kube/proxy/server.go    |   2 +-
+ lib/service/kubernetes.go   |   4 ++
+ 3 files changed, 78 insertions(+), 67 deletions(-)
+```
+
+Verifier failure:
+
+- Package `github.com/gravitational/teleport/lib/kube/proxy` failed to build.
+- Restored tests still expect fields/methods removed by the candidate:
+  - `unknown field 'cfg' in struct literal of type Forwarder`
+  - `f.cfg undefined`
+  - `unknown field 'clientCredentials' in struct literal of type Forwarder`
+  - `f.clientCredentials undefined`
+- The verifier reported the selected `TestParseResourcePath`, `TestAuthenticate`, and `TestGetKubeCreds` cases as missing/failed because the package build failed.
+
+Prompt-integrity and cleanup checks:
+
+```sh
+rg -n "deadline reminder|Smith deadline|progress reminder|Smith progress|Complete this benchmark task|primary source-code targets|/task/verify.sh|run the verifier directly|SWE-bench|Applied patch to|go test|go version" .smith-bench/run-pYnTrD/home/.smith/runs/2026-05-23T22-45-14-384Z.trace || true
+docker ps --format '{{.Names}} {{.Status}}' | rg 'smith-bench-run-pYnTrD-smith|smith-bench-run-.*-smith' || true
+```
+
+Observed:
+
+- Trace contained generic progress reminders and both generic deadline reminders:
+  - `Smith deadline: elapsed 9m 39s of 12m max run time (75% threshold)`
+  - `Smith deadline: elapsed 10m 57s of 12m max run time (90% threshold)`
+- Trace contained an `Applied patch to SMITH.TASK.md` memory update before the deadline reminders; the memory-only patch did not reset the stalled-progress counter.
+- Trace contained source patches after the 90% deadline reminder:
+  - `lib/service/kubernetes.go`
+  - `lib/kube/proxy/forwarder.go`
+  - `lib/kube/proxy/server.go`
+- No benchmark wrapper or SWE-specific solving-coaching text appeared.
+- No live Smith benchmark containers remained after cleanup.
+
+Decision:
+
+- Do not count `005` as recovered.
+- Retain the soft-deadline change: it improved `005` from timeout/no-diff failures to source edits, `finish`, and verifier evidence.
+- New generic failure class: fallback edit images can still lack the project toolchain (`go` here), so local compile feedback may be unavailable even though the official verifier can build. Any follow-up must remain generic and cannot become SWE-specific test-edit coaching.
+- Current strict valid evidence remains `4/10`.

@@ -730,3 +730,19 @@ Decision:
 - Count `008` as recovered under generic-only changes.
 - Current strict valid evidence is baseline full-run passes `002`, `004`, `007` plus generic raw-prompt recovery `008`, for `4/10` targeted evidence. The earlier `003` pass needs raw-prompt revalidation before counting and is not a priority because Codex `gpt-5.4` high failed it.
 - Still no full SWE-bench Pro run: current evidence is not yet plausibly `>=7/10`.
+
+## 2026-05-23 Follow-up: 005 Reaches Verifier But Still Fails
+
+Evidence:
+
+- Target SWE rerun `005-gravitational-teleport` after the soft-deadline change failed verifier in `926948ms`, log `/tmp/smith/2026-05-23T23-00-30-497Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-pYnTrD/home/.smith/runs/2026-05-23T22-45-14-384Z.trace`.
+- Unlike earlier `005` no-diff timeouts, Smith reached `finish` and the official verifier.
+- Retained workspace source diff: `lib/kube/proxy/forwarder.go`, `lib/kube/proxy/server.go`, and `lib/service/kubernetes.go`.
+- Verifier failed because `lib/kube/proxy/forwarder_test.go` still expects `Forwarder.cfg` and `Forwarder.clientCredentials`; the candidate removed/renamed those fields.
+- Trace showed generic 75% and 90% deadline reminders and no SWE-bench Pro prompt wrapper or solving-coaching text.
+
+Decision:
+
+- Do not count `005` as recovered.
+- The soft deadline is still retained because it moved `005` from repeated timeout/no-diff failures to a source patch, finish, and official verifier evidence.
+- Current strict valid evidence remains `4/10`.
