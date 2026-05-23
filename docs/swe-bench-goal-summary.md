@@ -653,3 +653,20 @@ Decision:
 - Keep the task-image smoke-probe change: it gives ordinary SWE/project task runs access to project toolchains whenever the image can actually launch Smith.
 - Do not count `010` as recovered.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Rejected Experiment: Test-file Patch Note
+
+User clarification:
+
+- Prompt edits or runtime instructions motivated by SWE-bench Pro behavior are not acceptable for this goal unless they are genuinely generic Smith improvements applicable to ordinary user tasks.
+- The active rule is stricter than earlier work: SWE-bench Pro tasks must receive raw task text only, with no task-solving coaching layered around the benchmark prompt.
+
+Evidence and decision:
+
+- A trial generic patch-output note warned after patches to likely test files. It was motivated by `010` verifier behavior where edited tests masked restored-test failures, so it was too close to SWE-specific coaching.
+- Focused validation before rejection: `npm test -- tests/integration.test.ts` passed, `npm run build` passed, and `benchmarks/091-command-router-refactor` passed in `96376ms`, log `/tmp/smith/2026-05-23T21-28-28-448Z-smith-091-command-router-refactor.json`.
+- Target rerun `010-future-architect-vuls` failed by Docker timeout in `907289ms`, log `/tmp/smith/2026-05-23T21-43-51-756Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-9BOGIw/home/.smith/runs/2026-05-23T21-28-45-583Z.trace`.
+- The retained workspace had no source diff and only `?? SMITH.TASK.md`; the note did not trigger.
+- The code and test for this note were reverted and are not retained.
+- Prompt integrity check: current `SWE_BENCH_PRO_TASK_INSTRUCTIONS` is empty, and benchmark tests assert SWE-bench Pro prompts are not wrapped with benchmark coaching.
+- Current valid score evidence remains `3/10`.

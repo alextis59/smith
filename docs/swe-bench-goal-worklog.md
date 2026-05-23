@@ -2287,3 +2287,65 @@ Decision:
 - Do not count `010` as recovered.
 - Current valid score evidence remains `3/10`.
 - Next generic issue exposed: local checks can pass if the agent edits tests that the official verifier later restores. Under the user's rule, avoid SWE-specific prompt instructions about selected tests; only pursue a generic solution if it applies to ordinary tasks and does not expose or rely on hidden/gold solutions.
+
+## 2026-05-23 Rejected Experiment: Test-file Patch Note
+
+User correction:
+
+- The user clarified that prompt edits or instruction-like runtime notes aimed at SWE-bench Pro behavior count as cheating for this goal.
+- Future retained changes must be generic Smith capabilities that apply to ordinary user tasks, not benchmark-task coaching.
+- This clarification overrides earlier prompt experiments. Historical prompt-aided passes remain diagnostic only and do not count as valid score evidence.
+
+Hypothesis:
+
+- The previous `010` run in the task image edited tests and then passed local Go checks, but the official verifier restored selected tests and failed.
+- A generic patch-output note after likely test-file edits might remind Smith that passing tests after changing tests does not necessarily validate non-test implementation behavior.
+
+Implemented then rejected:
+
+- Added `isLikelyTestFile()` in `src/loop.ts`.
+- Added a patch tool output note when changed files looked like tests.
+- Added an integration test that patched `tests/app.test.js` and asserted the note was sent back to the provider.
+
+Validation before rejection:
+
+```sh
+npm test -- tests/integration.test.ts
+npm run build
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Initial integration test attempt failed because `tests/app.test.js` did not match the first classifier.
+- After fixing the classifier to include `test/` and `tests/`, `npm test -- tests/integration.test.ts` passed `18` tests.
+- `npm run build` passed.
+- Project validation `091-command-router-refactor` passed in `96376ms`.
+- Project log: `/tmp/smith/2026-05-23T21-28-28-448Z-smith-091-command-router-refactor.json`.
+- Project trace: `.smith-bench/run-TRFcym/home/.smith/runs/2026-05-23T21-26-52-681Z.trace`.
+- Usage: `59250` total tokens.
+
+Target rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout in `907289ms`.
+- Log: `/tmp/smith/2026-05-23T21-43-51-756Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-9BOGIw/home/.smith/runs/2026-05-23T21-28-45-583Z.trace`.
+- Sandbox: `.smith-bench/run-9BOGIw`.
+- Usage: `771932` total tokens.
+- Tool-call counts from log: `sub_agent: 1`, `run: 32`, `patch: 1`.
+- Workspace status had only `?? SMITH.TASK.md`; `git diff --stat` was empty.
+- The trial note did not trigger because no likely test file was patched.
+
+Decision:
+
+- Reverted the trial code and test with a manual patch.
+- Do not retain this as a Smith change. Even though it could be framed generically, the actual motivation and evidence were too tied to SWE-bench Pro verifier behavior.
+- Current code audit: `SWE_BENCH_PRO_TASK_INSTRUCTIONS` is empty; `buildSweBenchProSmithScript()` feeds raw `/task/Task.md`; tests assert no SWE-bench Pro prompt wrapper or benchmark coaching text.
+- Current valid score evidence remains `3/10`.
+- Next work should prefer generic runtime/tooling changes with direct ordinary-user value. One possible evidence-backed direction is to treat memory-only patches such as `SMITH.TASK.md` differently in the stalled-progress counter, because the latest `010` run reset progress on a memory patch without changing task files. That would need to be justified and tested as a generic long-run behavior improvement, not as SWE-specific instruction.
