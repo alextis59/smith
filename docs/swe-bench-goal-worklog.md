@@ -2152,3 +2152,138 @@ Decision:
 - Do not count `010` as recovered.
 - Current valid score evidence remains `3/10`.
 - Next high-value generic failure class: the edit environment for fallback Smith containers can lack project toolchains (`go` here), even though the verifier image has them. A future non-prompt harness improvement could explore making more task-image tooling available during editing without giving task-specific instructions.
+
+## 2026-05-23 Generic Harness Improvement: Task-image Smith Smoke Probe
+
+Hypothesis:
+
+- The progress-reminder `010` run reached source edits and official verifier execution, but Smith's finish message said `go` was unavailable in the edit environment.
+- The Vuls task image actually has project tooling under `/usr/local/go/bin`, and it can run `node /smith/bin/smith.js --version` with Node `18.19.0`.
+- Smith fell back to `node:22-bookworm` because `canRunSmithInImage()` required Node major `>=20` in addition to the actual Smith smoke command.
+- A generic smoke-command gate should be more accurate than a separate Node-major heuristic: if the image can run Smith's CLI entrypoint, using the task image gives the agent project-local tools without task-specific instructions.
+
+Code change:
+
+- Added `buildSweBenchProSmithImageProbeScript()`.
+- `canRunSmithInImage()` now requires:
+  - task-image PATH includes `/usr/local/go/bin:/go/bin`,
+  - `command -v node`,
+  - `node /smith/bin/smith.js --version`.
+- Removed the separate `process.versions.node >= 20` check.
+- Added a benchmark test asserting the probe uses the Smith smoke command and does not include the Node-major check.
+
+Focused validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+```
+
+Results:
+
+- Benchmark tests passed: `19` tests.
+- Build passed.
+
+Direct task-image smoke:
+
+```sh
+docker run --rm --entrypoint bash --user $(id -u):$(id -g) -e HOME=/tmp \
+  -v /home/alextis/Work/Git/alextis59/smith:/smith:ro \
+  jefzda/sweap-images:future-architect.vuls-future-architect__vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a \
+  -lc 'export PATH=/usr/local/go/bin:/go/bin:$PATH && command -v node >/dev/null 2>&1 && node /smith/bin/smith.js --version >/dev/null 2>&1 && command -v go && go version'
+```
+
+Observed:
+
+```text
+/usr/local/go/bin/go
+go version go1.24.3 linux/amd64
+```
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result:
+
+- Passed in `91475ms`.
+- Log: `/tmp/smith/2026-05-23T21-07-26-130Z-smith-091-command-router-refactor.json`
+- Trace: `.smith-bench/run-465jli/home/.smith/runs/2026-05-23T21-05-55-722Z.trace`
+- Usage: `53757` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed the official verifier.
+- Duration: `968317ms`.
+- Log: `/tmp/smith/2026-05-23T21-23-45-663Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`
+- Trace: `.smith-bench/run-A6GWng/home/.smith/runs/2026-05-23T21-07-38-310Z.trace`
+- Sandbox: `.smith-bench/run-A6GWng`
+- Usage: `1917216` total tokens.
+- Model-selected tool calls: `39` `run`, `5` `patch`, `2` `finish`, `1` `sub_agent`.
+
+Image/toolchain evidence:
+
+- Live host process showed the edit container image was `jefzda/sweap-images:future-architect.vuls-future-architect__vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`, not `node:22-bookworm`.
+- Trace showed Smith running local Go checks:
+  - `go test ./scanner -run 'TestParseApk' -count=1`
+  - `go test ./scanner -count=1`
+- Smith's finish message reported `go test ./scanner -count=1` passed.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-A6GWng/workspace status --short
+git -C .smith-bench/run-A6GWng/workspace diff --stat
+```
+
+Observed:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+?? SMITH.md
+```
+
+Diff stat:
+
+```text
+ scanner/alpine.go | 168 +++++++++++++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 140 insertions(+), 28 deletions(-)
+```
+
+Verifier failure:
+
+- The official verifier ran and failed after its setup command restored selected tests.
+- Scanner build errors:
+  - `(newAlpine(config.ServerInfo{})).parseApkInstalledList undefined`
+  - `(newAlpine(config.ServerInfo{})).parseApkIndex undefined`
+  - `(newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined`
+- OVAL assertion:
+  - `TestIsOvalDefAffected`: expected `[85] affected` false, actual true; expected empty fixedIn, actual `3.3.2-r0`.
+
+Prompt-integrity check:
+
+```sh
+rg -n "go test|go version|node --version|progress reminder|Complete this benchmark task|primary source-code targets|/task/verify.sh|run the verifier directly|SWE-bench" .smith-bench/run-A6GWng/home/.smith/runs/2026-05-23T21-07-38-310Z.trace || true
+```
+
+Observed:
+
+- The trace contains generic progress reminder and local Go-check evidence.
+- No benchmark wrapper or SWE-specific coaching text was present.
+
+Decision:
+
+- Keep the task-image smoke-probe change as generic harness reliability. It correctly switched `010` from the fallback Node image to the task image and enabled local project-toolchain checks.
+- Do not count `010` as recovered.
+- Current valid score evidence remains `3/10`.
+- Next generic issue exposed: local checks can pass if the agent edits tests that the official verifier later restores. Under the user's rule, avoid SWE-specific prompt instructions about selected tests; only pursue a generic solution if it applies to ordinary tasks and does not expose or rely on hidden/gold solutions.

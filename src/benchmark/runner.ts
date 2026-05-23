@@ -422,12 +422,7 @@ async function canRunSmithInImage(image: string, repoRoot: string, timeoutMs: nu
         `${repoRoot}:/smith:ro`,
         image,
         "-lc",
-        [
-          "export PATH=/usr/local/go/bin:/go/bin:$PATH",
-          "command -v node >/dev/null 2>&1",
-          "node -e 'const major = Number(process.versions.node.split(\".\")[0]); process.exit(major >= 20 ? 0 : 1)'",
-          "node /smith/bin/smith.js --version >/dev/null 2>&1"
-        ].join(" && ")
+        buildSweBenchProSmithImageProbeScript()
       ],
       { timeout: Math.min(timeoutMs, 30_000), maxBuffer: 1024 * 1024 }
     );
@@ -435,6 +430,14 @@ async function canRunSmithInImage(image: string, repoRoot: string, timeoutMs: nu
   } catch {
     return false;
   }
+}
+
+export function buildSweBenchProSmithImageProbeScript(): string {
+  return [
+    "export PATH=/usr/local/go/bin:/go/bin:$PATH",
+    "command -v node >/dev/null 2>&1",
+    "node /smith/bin/smith.js --version >/dev/null 2>&1"
+  ].join(" && ");
 }
 
 function dockerUserArgs(): string[] {

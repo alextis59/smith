@@ -10,6 +10,7 @@ import {
   DEFAULT_SMITH_BENCHMARK_IMAGE,
   SWE_BENCH_PRO_TASK_INSTRUCTIONS,
   buildSmithBenchmarkDockerArgs,
+  buildSweBenchProSmithImageProbeScript,
   buildSweBenchProVerifierDockerArgs,
   buildSweBenchProSmithScript,
   buildSweBenchProVerifierScript,
@@ -339,6 +340,14 @@ total_tokens: 320
 
     expect(script).toContain("export PATH=/usr/local/go/bin:/go/bin:$PATH");
     expect(script).toContain("node /smith/bin/smith.js --cwd /workspace --quiet --json \"$TASK\"");
+  });
+
+  it("uses the Smith smoke command as the SWE-bench Pro task-image compatibility check", () => {
+    const script = buildSweBenchProSmithImageProbeScript();
+
+    expect(script).toContain("command -v node");
+    expect(script).toContain("node /smith/bin/smith.js --version");
+    expect(script).not.toContain("process.versions.node");
   });
 
   it("runs SWE-bench Pro Smith containers through a bash entrypoint", () => {

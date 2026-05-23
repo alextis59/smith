@@ -625,3 +625,31 @@ Decision:
 - Keep the runtime reminder as a generic improvement: it moved `010` from no tracked source diff and Docker timeout to source patches, `finish`, and official verifier evidence.
 - Do not count `010` as recovered.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Milestone: Task-image Smith Smoke Probe
+
+Change:
+
+- Relaxed SWE-bench Pro task-image selection to use the actual Smith smoke command as the compatibility check.
+- The runner still requires `node` and `node /smith/bin/smith.js --version` to succeed inside the task image, but it no longer rejects task images solely because Node is below version 20.
+- This is a generic benchmark harness reliability change: when an image can run Smith, Smith gets access to that image's project toolchains during the edit loop.
+
+Validation:
+
+- `npm test -- tests/benchmark.test.ts`: passed `19` tests.
+- `npm run build`: passed.
+- Direct smoke against the Vuls task image confirmed `node /smith/bin/smith.js --version` succeeds and `/usr/local/go/bin/go` is available.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `91475ms`, log `/tmp/smith/2026-05-23T21-07-26-130Z-smith-091-command-router-refactor.json`.
+
+Target SWE evidence:
+
+- Target SWE rerun `010-future-architect-vuls`: failed verifier in `968317ms`, log `/tmp/smith/2026-05-23T21-23-45-663Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-A6GWng/home/.smith/runs/2026-05-23T21-07-38-310Z.trace`.
+- Host process evidence showed the edit loop ran in `jefzda/sweap-images:future-architect.vuls-future-architect__vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`, not `node:22-bookworm`.
+- Smith ran local Go checks in the edit loop, including `go test ./scanner -run 'TestParseApk' -count=1` and `go test ./scanner -count=1`.
+- The official verifier still failed after restoring selected tests, with undefined `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList` methods in restored `scanner/alpine_test.go`, plus a `TestIsOvalDefAffected` assertion.
+
+Decision:
+
+- Keep the task-image smoke-probe change: it gives ordinary SWE/project task runs access to project toolchains whenever the image can actually launch Smith.
+- Do not count `010` as recovered.
+- Current valid score evidence remains `3/10`.
