@@ -347,3 +347,23 @@ Next step:
 Next step:
 
 - Commit and push this milestone, then move to another generic bottleneck or another Codex-passed target (`010`) rather than further tuning `005`.
+
+## 2026-05-23 Clean 010 Evidence Under Generic Fixes
+
+Evidence:
+
+- Target `010` rerun with current cleaned prompt and generic fixes still failed by timeout in `905913ms`.
+- Log: `/tmp/smith/2026-05-23T17-07-52-559Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-cliA0l/home/.smith/runs/2026-05-23T16-52-47-371Z.trace`.
+- Usage: `538210` total tokens.
+- Retained workspace had no tracked source changes.
+- Trace search showed no `git show`/history-solution access; `.git` hiding remains effective.
+
+Current status:
+
+- Clean, non-cheating targeted evidence still supports only baseline `002`, `004`, `007` plus earlier `008` as likely pass evidence.
+- Codex-passed Smith failures `001`, `005`, and `010` remain unrecovered under generic changes.
+
+Next step:
+
+- Record this evidence, then look for another broad runtime/tool issue. Do not add benchmark-specific prompt instructions.

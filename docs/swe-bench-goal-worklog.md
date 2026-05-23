@@ -1228,3 +1228,42 @@ Decision:
 - Keep the shim improvement. It is generic, tested, and materially reduces failed search noise in minimal environments.
 - Do not count 005 as recovered.
 - Avoid further Teleport-specific tuning unless another generic tool/runtime issue appears.
+
+## 2026-05-23 Clean 010 Rerun Under Current Generic Fixes
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by timeout in `905913ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T17-07-52-559Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`
+- `tracePath`: `.smith-bench/run-cliA0l/home/.smith/runs/2026-05-23T16-52-47-371Z.trace`
+- Sandbox: `.smith-bench/run-cliA0l`
+- Usage: `538210` total tokens.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-cliA0l/workspace status --short
+git -C .smith-bench/run-cliA0l/workspace diff --stat
+```
+
+- No tracked source changes.
+
+Trace evidence:
+
+- Trace size was about `4.0MB`; result JSON was about `227KB`.
+- The agent inspected `scanner/alpine.go` and related Alpine scanning paths, but did not patch before timeout.
+- Trace search found no `git show` or git-history based solution access. The `.git` hiding/integrity fix remains effective.
+- No verifier ran.
+
+Decision:
+
+- Do not count 010 as recovered.
+- Avoid task-specific Vuls/Alpine prompt guidance.
+- The remaining issue appears to be a broad act-after-inspection/runtime behavior problem, not benchmark-specific missing knowledge.
