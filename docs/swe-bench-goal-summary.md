@@ -157,3 +157,16 @@ Validation:
 Next step:
 
 - Target `009-internetarchive-openlibrary` next. If `009` is recovered, targeted evidence would reach about `7/10` and justify a full SWE-bench Pro rerun.
+
+## 2026-05-23 Investigation: 009 Still Open
+
+Evidence:
+
+- Current committed Smith rerun of `009-internetarchive-openlibrary` failed with real verifier output: `56 passed`, `3 failed`, log `/tmp/smith/2026-05-23T12-39-30-991Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`.
+- Failures were missing alternate `other_titles` for XML/binary MARC linkage cases and one hard exception for unresolved author linkage.
+- A temporary fixture-inspection prompt experiment passed local validation but made 009 worse: it timed out before a MARC source patch, log `/tmp/smith/2026-05-23T12-58-33-464Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`.
+
+Decision:
+
+- Reverted the fixture-inspection prompt experiment.
+- `009` remains failed; targeted evidence remains around `6/10`.

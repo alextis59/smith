@@ -597,3 +597,68 @@ Decision:
 
 - No new Smith code change was needed. Record this as validation that the current general fixes recover a third previously failed task (`003`, `006`, `008`).
 - Do not run full SWE-bench Pro yet; targeted evidence is now around `6/10`, still short of target unless one more failed task is recovered.
+
+## 2026-05-23 Evidence: OpenLibrary MARC 009 Still Fails; Rejected Fixture-Inspection Prompt
+
+Target:
+
+- `009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59`
+
+Baseline evidence from full run:
+
+- Baseline trace: `.smith-bench/run-hqLr3N/home/.smith/runs/2026-05-22T07-22-21-300Z.trace`
+- Baseline sandbox: `.smith-bench/run-hqLr3N`
+- Baseline verifier artifacts were missing beyond Smith stdout/status/stderr.
+- Baseline workspace diff touched parser source plus `tests/integration/__init__.py`; the latter is unrelated to the MARC parser task.
+
+Target rerun with current committed Smith:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result: failed in `798252ms`. Important fields:
+
+- `logPath`: `/tmp/smith/2026-05-23T12-39-30-991Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`
+- `tracePath`: `.smith-bench/run-eF2OB3/home/.smith/runs/2026-05-23T12-26-14-876Z.trace`
+- `sandboxDir`: `.smith-bench/run-eF2OB3`
+- Usage: `803765` total tokens.
+- Verifier: `56 passed`, `3 failed`.
+
+Verifier failures:
+
+- `TestParseMARCXML::test_xml[nybc200247]`: expected `other_titles` length `3`, got `1`.
+- `TestParseMARCBinary::test_binary[880_table_of_contents.mrc]`: raised `MarcException: Missing linked 880 field for 100 $6 linkage`.
+- `TestParseMARCBinary::test_binary[880_arabic_french_many_linkages.mrc]`: expected `other_titles` length `2`, got `1`.
+
+Classification:
+
+- The current instructions get a source patch and real verifier output, but the model under-implements multi-linkage title extraction and over-applies hard errors for unresolved author linkage.
+- The failure is not a harness failure after the verifier entrypoint fix.
+
+Rejected prompt experiment:
+
+- Temporarily added this SWE instruction:
+
+```text
+For parser, importer, converter, or serializer tasks that mention expected output, fixtures, snapshots, or reference files, inspect a representative input fixture and expected output fixture before finish; synthetic smoke checks alone are not enough.
+```
+
+Validation before target rerun:
+
+- `npm test -- tests/benchmark.test.ts`: passed.
+- `npm run build`: passed.
+- Local benchmark `benchmarks/091-command-router-refactor`: passed in `129218ms`, log `/tmp/smith/2026-05-23T12-43-17-526Z-smith-091-command-router-refactor.json`.
+
+Target rerun with the experiment:
+
+- Same 009 command.
+- Result: failed by timeout in `906275ms`.
+- `logPath`: `/tmp/smith/2026-05-23T12-58-33-464Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`
+- `tracePath`: `.smith-bench/run-466RKK/home/.smith/runs/2026-05-23T12-43-28-232Z.trace`
+- Workspace diff at timeout: only `tests/integration/__init__.py` and vendor noise; no MARC source patch.
+
+Decision:
+
+- Reverted the fixture-inspection instruction and its unit-test assertion because it converted a real verifier failure into a pre-finish timeout and displaced source implementation.
+- Keep 009 open. A better general improvement would need to help agents use failing verifier-style evidence without spending the run on broad fixture archaeology or unrelated environment/test-support edits.
