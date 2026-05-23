@@ -1267,3 +1267,44 @@ Decision:
 - Do not count 010 as recovered.
 - Avoid task-specific Vuls/Alpine prompt guidance.
 - The remaining issue appears to be a broad act-after-inspection/runtime behavior problem, not benchmark-specific missing knowledge.
+
+## 2026-05-23 Rejected/Inconclusive: `--no-sub-agent-inherit-context` on 010
+
+Hypothesis:
+
+- Read-only sub-agents may not need the full parent transcript when their delegated task is already specific.
+- Fresh child context could reduce token use and avoid overloading the child with the whole parent task.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --no-sub-agent-inherit-context --json
+```
+
+Result:
+
+- Failed by timeout in `905995ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T17-25-16-099Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`
+- `tracePath`: `.smith-bench/run-nlQdn5/home/.smith/runs/2026-05-23T17-10-10-875Z.trace`
+- Sandbox: `.smith-bench/run-nlQdn5`
+- Usage: `501664` total tokens.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-nlQdn5/workspace status --short
+git -C .smith-bench/run-nlQdn5/workspace diff --stat
+```
+
+- No tracked source changes.
+
+Comparison:
+
+- Default inherited-context 010: `538210` total tokens, trace about `4.0MB`, no tracked source changes.
+- Fresh-context 010: `501664` total tokens, trace about `3.6MB`, no tracked source changes.
+
+Decision:
+
+- Do not change the default `sub_agent_inherit_context` from this evidence.
+- The token reduction is modest and does not improve task progress.

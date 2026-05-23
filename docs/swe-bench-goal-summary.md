@@ -367,3 +367,18 @@ Current status:
 Next step:
 
 - Record this evidence, then look for another broad runtime/tool issue. Do not add benchmark-specific prompt instructions.
+
+## 2026-05-23 Rejected/Inconclusive: Fresh Sub-Agent Context
+
+Experiment:
+
+- Reran `010` with `--no-sub-agent-inherit-context` to test whether fresh delegated agents reduce context cost and improve action.
+- Result: still failed by timeout in `905995ms`.
+- Log: `/tmp/smith/2026-05-23T17-25-16-099Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-nlQdn5/home/.smith/runs/2026-05-23T17-10-10-875Z.trace`.
+- Usage dropped only modestly from `538210` to `501664` total tokens and retained workspace still had no tracked source changes.
+
+Decision:
+
+- Do not change the default `sub_agent_inherit_context` based on this evidence.
+- Continue with generic runtime/tool improvements only.
