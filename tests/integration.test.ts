@@ -355,6 +355,41 @@ sub_agent_inherit_context = false
     expect(childUserMessages).not.toContain("parent-output");
   });
 
+  it("can disable the sub_agent tool for a run", async () => {
+    const provider = await startFakeProvider([{ name: "finish", arguments: { message: "direct done" } }]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-sub-agent-disabled-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+sub_agent_enabled = false
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "parent task"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("direct done");
+    expect(provider.requests).toHaveLength(1);
+    expect(toolNames(provider.requests[0].body)).toEqual(["run", "patch", "finish"]);
+    expect(systemMessage(provider.requests[0].body)).toContain("Sub-agent delegation is disabled for this run");
+  });
+
   it("sub_agent runs use the configured cap instead of model-provided caps", async () => {
     const provider = await startFakeProvider([
       { name: "sub_agent", arguments: { task: "inspect from child", max_turns: 1 } },

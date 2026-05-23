@@ -1925,3 +1925,116 @@ Decision:
 - Reverted the prompt change because it did not produce a source patch or verifier and worsened token usage compared with the prior raw-prompt `001` baseline (`755880` total tokens).
 - This reinforces the user's concern that prompt nudges are a weak path for this goal unless they are independently justified and validated.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 User Boundary: No SWE-specific Prompt Tuning
+
+User clarification:
+
+- Prompt edits made specifically for the SWE benchmark are considered cheating for this goal.
+- Anything similar done specifically for SWE-bench Pro should be discarded.
+- Future improvements must be generic and applicable to ordinary user tasks, not just benchmark runtime behavior.
+
+Immediate audit:
+
+- Active code prompt path already uses raw SWE task text only after `c847289`.
+- `rg -n "Complete this benchmark task|primary source-code targets|/task/verify.sh|run the verifier directly" .smith-bench/run-u9SkCw/home/.smith/runs/2026-05-23T20-17-00-660Z.trace || true` returned no matches for the latest raw SWE run.
+- The active `src/benchmark/runner.ts` benchmark wrapper instruction remains only for local project benchmark tasks; `tests/benchmark.test.ts` asserts SWE scripts do not contain that wrapper wording.
+
+Decision:
+
+- Do not make more SWE-specific prompt/instruction changes.
+- Treat all prior SWE-specific prompt passes as historical and invalid for the target score.
+- Continue only with generic Smith runtime, tool, harness reliability, provider, logging, or configuration improvements.
+
+## 2026-05-23 Generic Experiment: Sub-agent Opt-out
+
+Hypothesis:
+
+- Raw-prompt `001`, `005`, and `010` failures shared a no-source-edit reconnaissance pattern.
+- In `001` and `010`, read-only sub-agents returned useful working-set notes, but the parent then continued inspecting instead of editing.
+- A generic runtime option to hide delegation could help ordinary tasks where sub-agent handoff increases planning churn. This is not SWE-specific and defaults to current behavior.
+
+Code change:
+
+- Added `RuntimeConfig.subAgentEnabled`, default `true`.
+- Added TOML setting `runtime.sub_agent_enabled`.
+- Added CLI flags `--no-sub-agent` and `--sub-agent`.
+- `availableSmithTools()` now removes `sub_agent` when `runtime.subAgentEnabled` is false.
+- `systemPromptForAvailableTools()` now distinguishes max-depth unavailability from disabled delegation.
+- Updated README and `docs/provider-configs.md`.
+- Added tests for default config, TOML/CLI overrides, help text, and provider tool exclusion.
+
+Focused validation:
+
+```sh
+npm test -- tests/config.test.ts tests/integration.test.ts tests/cli.test.ts tests/prompt-trace.test.ts tests/danger-review.test.ts
+npm run build
+```
+
+Results:
+
+- Focused tests passed: `48` tests across `5` files.
+- Build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --no-sub-agent --json
+```
+
+Result:
+
+- Passed in `76903ms`.
+- Log: `/tmp/smith/2026-05-23T20-16-40-980Z-smith-091-command-router-refactor.json`
+- Trace: `.smith-bench/run-DQmtJW/home/.smith/runs/2026-05-23T20-15-24-498Z.trace`
+- Usage: `44862` total tokens.
+- The task completed with direct `run`, `patch`, and `finish` tools.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --no-sub-agent --json
+```
+
+Result:
+
+- Failed by Docker timeout in `919493ms`.
+- `stderr`: `docker timed out after 900000ms`
+- Log: `/tmp/smith/2026-05-23T20-32-06-767Z-smith-001-nodebb-nodebb-vnan.json`
+- Trace: `.smith-bench/run-u9SkCw/home/.smith/runs/2026-05-23T20-17-00-660Z.trace`
+- Sandbox: `.smith-bench/run-u9SkCw`
+- Usage: `1151741` total tokens.
+- Model-selected tool calls from session log: `37` `run` calls, `0` `patch`, `0` `finish`, `0` `sub_agent`.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-u9SkCw/workspace status --short
+git -C .smith-bench/run-u9SkCw/workspace diff --stat
+```
+
+Observed:
+
+```text
+?? appendonlydir/
+```
+
+- No tracked source diff.
+
+Prompt-integrity and cleanup checks:
+
+```sh
+rg -n "Complete this benchmark task|primary source-code targets|/task/verify.sh|run the verifier directly|SWE-bench" .smith-bench/run-u9SkCw/home/.smith/runs/2026-05-23T20-17-00-660Z.trace || true
+docker ps --format '{{.Names}} {{.Status}}' | rg 'smith-bench-run-u9SkCw-smith|smith-bench-run-.*-smith' || true
+```
+
+Observed:
+
+- No benchmark wrapper or SWE-bench coaching text in the trace.
+- No live Smith benchmark containers after cleanup.
+
+Decision:
+
+- Keep the runtime flag because it is generic, defaults to existing behavior, and passed normal project validation.
+- Do not treat it as a SWE recovery path for `001`; it did not produce source edits and worsened usage compared with raw-prompt `001` (`755880` total tokens).
+- Current valid score evidence remains `3/10`.

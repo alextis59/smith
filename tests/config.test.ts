@@ -20,6 +20,7 @@ describe("config loading", () => {
     expect(config.runtime.dangerReview).toBe("llm");
     expect(config.runtime.dangerReviewProfile).toBe("reviewer");
     expect(config.runtime.maxToolOutputChars).toBe(12000);
+    expect(config.runtime.subAgentEnabled).toBe(true);
     expect(config.runtime.subAgentInheritContext).toBe(true);
   });
 
@@ -60,6 +61,7 @@ provider = { sort = "throughput" }
 
 [runtime]
 timeout_ms = 20
+sub_agent_enabled = false
 sub_agent_inherit_context = false
 `,
       "utf8"
@@ -80,6 +82,7 @@ sub_agent_inherit_context = false
     expect(profile.headers["X-Test"]).toBe("project");
     expect(profile.body).toEqual({ provider: { sort: "throughput" } });
     expect(config.runtime.timeoutMs).toBe(30);
+    expect(config.runtime.subAgentEnabled).toBe(false);
     expect(config.runtime.subAgentInheritContext).toBe(false);
     expect(config.files).toHaveLength(2);
   });
@@ -132,6 +135,7 @@ sub_agent_inherit_context = false
       "--provider-timeout-ms",
       "12345",
       "--provider-debug",
+      "--no-sub-agent",
       "--no-sub-agent-inherit-context",
       "--sub-agent-max-turns",
       "9",
@@ -167,6 +171,7 @@ sub_agent_inherit_context = false
       providerRetries: 3,
       providerTimeoutMs: 12345,
       providerDebug: true,
+      subAgentEnabled: false,
       subAgentInheritContext: false,
       subAgentMaxTurns: 9,
       logDir: "/tmp/smith",

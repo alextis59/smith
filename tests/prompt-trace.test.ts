@@ -145,6 +145,7 @@ function runtime(): RuntimeConfig {
     providerRetries: 2,
     providerRetryDelayMs: 1,
     providerDebug: false,
+    subAgentEnabled: true,
     subAgentInheritContext: true,
     remoteSessionTtlDays: 30
   };

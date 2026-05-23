@@ -675,7 +675,7 @@ function availableSmithTools(options: SmithRunOptions) {
   if (options.runtime.readOnly) {
     tools = tools.filter((tool) => tool.name !== "patch");
   }
-  if (depth >= MAX_SUB_AGENT_DEPTH) {
+  if (!options.runtime.subAgentEnabled || depth >= MAX_SUB_AGENT_DEPTH) {
     tools = tools.filter((tool) => tool.name !== "sub_agent");
   }
   return tools;
@@ -690,9 +690,10 @@ function systemPromptForAvailableTools(systemPrompt: string, tools: typeof SMITH
   }
   if (!tools.some((tool) => tool.name === "sub_agent")) {
     const available = tools.map((tool) => tool.name).join(", ");
-    notes.push(
-      `Sub-agent depth limit has been reached for this run. The sub_agent tool is unavailable; complete the delegated work directly with available tools: ${available}.`
-    );
+    const reason = options.runtime.subAgentEnabled
+      ? "Sub-agent depth limit has been reached for this run."
+      : "Sub-agent delegation is disabled for this run.";
+    notes.push(`${reason} The sub_agent tool is unavailable; complete the work directly with available tools: ${available}.`);
   }
   if (options.runtime.readOnly) {
     notes.push(

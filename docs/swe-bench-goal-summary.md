@@ -13,6 +13,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - Current valid evidence should count only the baseline full-run passes plus results produced after `befac0f` removed SWE-specific prompt coaching and kept only generic Smith/runtime or harness-integrity changes.
 - Stricter prompt rule: SWE-bench Pro tasks now receive the raw task prompt only, with no Smith benchmark wrapper or SWE-specific coaching. Local project benchmarks still keep their normal `/task/verify.sh` harness framing.
 - Current clean targeted status: `001`, `005`, `008`, and `010` have all failed targeted reruns after SWE-specific coaching was removed; `005` has also failed after the stricter raw-SWE-prompt cleanup. Do not run the full SWE-bench Pro suite until generic changes recover enough Codex-passed failures to plausibly reach `>=7/10`.
+- User clarification on 2026-05-23: do not pursue prompt edits or instructions tailored to SWE-bench Pro. Generic Smith capabilities are acceptable only when they apply to ordinary user tasks as well.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 
@@ -565,4 +566,32 @@ Decision:
 
 - Reverted the prompt change.
 - Do not count this as a recovery.
+- Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Milestone: Generic Sub-agent Opt-out
+
+Change:
+
+- Added `runtime.sub_agent_enabled` with default `true`.
+- Added `--no-sub-agent` / `--sub-agent` CLI overrides.
+- When disabled, Smith removes the `sub_agent` provider tool and adds a generic runtime note that the work should be completed directly with the available tools.
+- Updated README/provider config docs and config/integration/CLI tests.
+
+Validation:
+
+- `npm test -- tests/config.test.ts tests/integration.test.ts tests/cli.test.ts tests/prompt-trace.test.ts tests/danger-review.test.ts`: passed `48` tests.
+- `npm run build`: passed.
+- Project benchmark with `--no-sub-agent`: `benchmarks/091-command-router-refactor`, passed in `76903ms`, log `/tmp/smith/2026-05-23T20-16-40-980Z-smith-091-command-router-refactor.json`.
+
+Target SWE evidence:
+
+- Target SWE rerun with `--no-sub-agent`: `001-nodebb-nodebb-vnan`, failed by Docker timeout in `919493ms`, log `/tmp/smith/2026-05-23T20-32-06-767Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-u9SkCw/home/.smith/runs/2026-05-23T20-17-00-660Z.trace`.
+- Usage: `1151741` total tokens.
+- Workspace had no tracked source diff; only `?? appendonlydir/`.
+- The trace had no benchmark wrapper text and no live Smith benchmark container remained after cleanup.
+
+Decision:
+
+- Keep the flag as a generic user-facing runtime control with default behavior unchanged.
+- Do not use the `001` result as a recovery; disabling sub-agents did not improve this failure mode and worsened usage compared with the raw-prompt baseline.
 - Current valid score evidence remains `3/10`.

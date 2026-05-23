@@ -101,6 +101,7 @@ max_tool_output_chars = 12000
 provider_retries = 2
 provider_retry_delay_ms = 250
 provider_debug = false
+sub_agent_enabled = true
 sub_agent_inherit_context = true
 danger_review = "deterministic"
 read_only = false
@@ -110,4 +111,4 @@ log_dir = "/tmp/smith"
 default_profile = "local"
 ```
 
-Use `smith config doctor --profile <name>` to confirm which files loaded, which profile is active, and whether the configured API key environment variable is present. `max_tool_output_chars` caps oversized terminal output before Smith replays it to the model. `sub_agent_inherit_context` controls whether delegated `sub_agent` child runs inherit the parent transcript context before receiving their narrowed task. Sub-agents inherit the parent run's max-turn budget, can run in read-only mode via `read_only = true` or explicit do-not-edit task wording, and lose the `sub_agent` tool once the maximum sub-agent depth is reached. `log_dir` can also be set per run with `--log-dir` or `SMITH_LOG_DIR`.
+Use `smith config doctor --profile <name>` to confirm which files loaded, which profile is active, and whether the configured API key environment variable is present. `max_tool_output_chars` caps oversized terminal output before Smith replays it to the model. `sub_agent_enabled = false` or `--no-sub-agent` hides delegation for a run, while `sub_agent_inherit_context` controls whether delegated `sub_agent` child runs inherit the parent transcript context before receiving their narrowed task. Sub-agents inherit the parent run's max-turn budget, can run in read-only mode via `read_only = true` or explicit do-not-edit task wording, and lose the `sub_agent` tool once the maximum sub-agent depth is reached. `log_dir` can also be set per run with `--log-dir` or `SMITH_LOG_DIR`.

@@ -317,6 +317,7 @@ function runtime(dangerReview: RuntimeConfig["dangerReview"]): RuntimeConfig {
     providerRetries: 2,
     providerRetryDelayMs: 1,
     providerDebug: false,
+    subAgentEnabled: true,
     subAgentInheritContext: true,
     maxTurns: 20,
     remoteSessionTtlDays: 30

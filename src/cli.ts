@@ -107,6 +107,7 @@ Options:
   --read-only
   --provider-debug
   --log-dir <dir>
+  --no-sub-agent
   --agent <smith|codex>
   --concurrency <count>
   --cached-input-cost-per-million-tokens <usd>

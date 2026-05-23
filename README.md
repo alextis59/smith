@@ -87,6 +87,7 @@ max_turns = 20
 provider_retries = 2
 provider_retry_delay_ms = 250
 provider_timeout_ms = 300000
+sub_agent_enabled = true
 sub_agent_inherit_context = true
 sub_agent_max_turns = 12
 read_only = false
@@ -94,7 +95,7 @@ read_only = false
 # log_dir = "/tmp/smith"
 ```
 
-Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--codex-auth-path`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--max-context-tokens`, `--max-tool-output-chars`, `--danger-review`, `--read-only`, `--no-sub-agent-inherit-context`, and `--log-dir`.
+Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--codex-auth-path`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--max-context-tokens`, `--max-tool-output-chars`, `--danger-review`, `--read-only`, `--no-sub-agent`, `--no-sub-agent-inherit-context`, and `--log-dir`.
 
 When a provider response includes token usage, Smith records per-turn and total usage in the run trace. If `input_cost_per_million_tokens` and/or `output_cost_per_million_tokens` are set on the active profile, traces also include estimated USD cost.
 
@@ -141,7 +142,7 @@ Smith exposes four model-visible tools:
 - `sub_agent`: launch an independent Smith child run for bounded repo-local work.
 - `finish`: end the run with the final answer, blocker report, or user question.
 
-Each tool call includes a required short `reason`, which Smith records in the transcript before the tool output. By default, `sub_agent` child runs inherit the parent transcript context, receive a narrowed delegated task as the final user input, and use up to `runtime.sub_agent_max_turns` turns from the parent run's budget; set `runtime.sub_agent_inherit_context = false` or pass `--no-sub-agent-inherit-context` to start them fresh. Set `runtime.sub_agent_max_turns = 0` to let children inherit the full parent budget. Sub-agent tasks can pass `read_only = true`; Smith also infers read-only mode from explicit do-not-edit wording, removes `patch`, and blocks common write commands for that child run. Smith removes the `sub_agent` tool from child runs once the maximum sub-agent depth is reached. `runtime.max_tool_output_chars` caps large terminal outputs before replaying them to the model. `runtime.provider_timeout_ms` bounds each provider attempt and retries transient stalls according to `runtime.provider_retries`. The first `finish` ends single-shot and remote runs. A legacy `chat_out` shell helper remains available for older traces and compatibility, but the packaged prompt directs models to use `finish`.
+Each tool call includes a required short `reason`, which Smith records in the transcript before the tool output. By default, `sub_agent` child runs inherit the parent transcript context, receive a narrowed delegated task as the final user input, and use up to `runtime.sub_agent_max_turns` turns from the parent run's budget; set `runtime.sub_agent_enabled = false` or pass `--no-sub-agent` to hide delegation for a run, and set `runtime.sub_agent_inherit_context = false` or pass `--no-sub-agent-inherit-context` to start child runs fresh. Set `runtime.sub_agent_max_turns = 0` to let children inherit the full parent budget. Sub-agent tasks can pass `read_only = true`; Smith also infers read-only mode from explicit do-not-edit wording, removes `patch`, and blocks common write commands for that child run. Smith removes the `sub_agent` tool from child runs once the maximum sub-agent depth is reached. `runtime.max_tool_output_chars` caps large terminal outputs before replaying them to the model. `runtime.provider_timeout_ms` bounds each provider attempt and retries transient stalls according to `runtime.provider_retries`. The first `finish` ends single-shot and remote runs. A legacy `chat_out` shell helper remains available for older traces and compatibility, but the packaged prompt directs models to use `finish`.
 
 At startup, Smith checks whether `rg` is available on PATH. If it is missing, Smith runs a short bootstrap Smith agent that may attempt a straightforward ripgrep install, with explicit instructions to stop rather than use brittle or risky installation tricks. If `rg` is still unavailable afterward, Smith appends a system-prompt environment note telling the main agent to use alternatives such as `grep` or `find`.
 

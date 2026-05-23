@@ -42,6 +42,7 @@ export type RuntimeConfig = {
   providerRetryDelayMs: number;
   providerTimeoutMs: number;
   providerDebug: boolean;
+  subAgentEnabled: boolean;
   subAgentInheritContext: boolean;
   subAgentMaxTurns: number;
   remoteSessionTtlDays: number;
@@ -96,6 +97,7 @@ export type CliConfigOverrides = {
   providerRetryDelayMs?: number;
   providerTimeoutMs?: number;
   providerDebug?: boolean;
+  subAgentEnabled?: boolean;
   subAgentInheritContext?: boolean;
   subAgentMaxTurns?: number;
   remoteSessionTtlDays?: number;
@@ -147,6 +149,7 @@ const DEFAULT_CONFIG: SmithConfig = {
     providerRetryDelayMs: 250,
     providerTimeoutMs: 300_000,
     providerDebug: false,
+    subAgentEnabled: true,
     subAgentInheritContext: true,
     subAgentMaxTurns: 12,
     remoteSessionTtlDays: 30
@@ -321,6 +324,12 @@ export function parseCliConfigOverrides(args: string[]): { overrides: CliConfigO
       case "--provider-debug":
         overrides.providerDebug = true;
         break;
+      case "--sub-agent":
+        overrides.subAgentEnabled = true;
+        break;
+      case "--no-sub-agent":
+        overrides.subAgentEnabled = false;
+        break;
       case "--sub-agent-inherit-context":
         overrides.subAgentInheritContext = true;
         break;
@@ -381,6 +390,7 @@ danger_review_profile = "reviewer"
 provider_retries = 2
 provider_retry_delay_ms = 250
 provider_timeout_ms = 300000
+sub_agent_enabled = true
 sub_agent_inherit_context = true
 sub_agent_max_turns = 12
 remote_session_ttl_days = 30
@@ -476,6 +486,7 @@ function applyCliOverrides(config: SmithConfig, cli: CliConfigOverrides): SmithC
     ...(cli.providerRetryDelayMs !== undefined ? { providerRetryDelayMs: cli.providerRetryDelayMs } : {}),
     ...(cli.providerTimeoutMs !== undefined ? { providerTimeoutMs: cli.providerTimeoutMs } : {}),
     ...(cli.providerDebug !== undefined ? { providerDebug: cli.providerDebug } : {}),
+    ...(cli.subAgentEnabled !== undefined ? { subAgentEnabled: cli.subAgentEnabled } : {}),
     ...(cli.subAgentInheritContext !== undefined ? { subAgentInheritContext: cli.subAgentInheritContext } : {}),
     ...(cli.subAgentMaxTurns !== undefined ? { subAgentMaxTurns: cli.subAgentMaxTurns } : {}),
     ...(cli.remoteSessionTtlDays !== undefined ? { remoteSessionTtlDays: cli.remoteSessionTtlDays } : {}),
@@ -541,6 +552,7 @@ function mergeRuntime(previous: RuntimeConfig, raw: RawConfig): RuntimeConfig {
     ...(typeof raw.provider_retry_delay_ms === "number" ? { providerRetryDelayMs: raw.provider_retry_delay_ms } : {}),
     ...(typeof raw.provider_timeout_ms === "number" ? { providerTimeoutMs: raw.provider_timeout_ms } : {}),
     ...(typeof raw.provider_debug === "boolean" ? { providerDebug: raw.provider_debug } : {}),
+    ...(typeof raw.sub_agent_enabled === "boolean" ? { subAgentEnabled: raw.sub_agent_enabled } : {}),
     ...(typeof raw.sub_agent_inherit_context === "boolean"
       ? { subAgentInheritContext: raw.sub_agent_inherit_context }
       : {}),
