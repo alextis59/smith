@@ -544,3 +544,25 @@ Decision:
 - `010` remains unrecovered under the strict prompt rule.
 - Failure class again looks like generic no-edit reconnaissance churn after useful local notes.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Rejected: Generic Reconnaissance Prompt Nudge
+
+Experiment:
+
+- Added one generic system-prompt sentence telling Smith not to let reconnaissance defer implementation edits indefinitely once a likely working set and plausible change are known.
+- This was not SWE-specific, but it was still treated as needing evidence because the user explicitly objected to benchmark-targeted prompt work.
+
+Validation:
+
+- `npm test -- tests/prompt-trace.test.ts`: passed `8` tests.
+- `npm run build`: passed.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `198861ms`, log `/tmp/smith/2026-05-23T19-51-29-234Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun `001-nodebb-nodebb-vnan`: failed by Docker timeout in `920646ms`, log `/tmp/smith/2026-05-23T20-06-57-216Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-lxCg4J/home/.smith/runs/2026-05-23T19-51-52-054Z.trace`.
+- Retained `001` workspace still had no tracked source diff; only `?? appendonlydir/`.
+- Usage worsened from the prior raw-prompt `001` baseline `755880` total tokens to `985393` total tokens.
+
+Decision:
+
+- Reverted the prompt change.
+- Do not count this as a recovery.
+- Current valid score evidence remains `3/10`.

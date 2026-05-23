@@ -1848,3 +1848,80 @@ Classification:
 - Same broad class as raw-prompt `001` and `005`.
 - `010` remains unrecovered under the strict prompt rule.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Rejected Generic Experiment: Reconnaissance Prompt Nudge
+
+Hypothesis:
+
+- Raw-prompt `001`, `005`, and `010` all produced useful working-set evidence but no tracked source patches.
+- A generic system-prompt reminder might help ordinary implementation tasks move from focused reconnaissance to the smallest safe edit.
+- The wording was intentionally not SWE-specific:
+  - once a likely working set and plausible change are identified, make the smallest safe edit, then inspect or verify it;
+  - if no safe edit remains after focused inspection, finish with a blocker instead of repeating similar searches.
+
+Temporary code change:
+
+- Added the generic sentence to `prompts/system.txt`.
+- Added prompt-trace assertions for the new wording.
+
+Focused validation:
+
+```sh
+npm test -- tests/prompt-trace.test.ts
+npm run build
+```
+
+Results:
+
+- Prompt tests passed: `8` tests.
+- Build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result:
+
+- Passed in `198861ms`.
+- Log: `/tmp/smith/2026-05-23T19-51-29-234Z-smith-091-command-router-refactor.json`
+- Trace: `.smith-bench/run-U1eVlc/home/.smith/runs/2026-05-23T19-48-10-656Z.trace`
+- Usage: `84737` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by Docker timeout in `920646ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T20-06-57-216Z-smith-001-nodebb-nodebb-vnan.json`
+- `tracePath`: `.smith-bench/run-lxCg4J/home/.smith/runs/2026-05-23T19-51-52-054Z.trace`
+- Sandbox: `.smith-bench/run-lxCg4J`
+- Usage: `985393` total tokens.
+- Model-selected tool calls in session log: `37`.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-lxCg4J/workspace status --short
+git -C .smith-bench/run-lxCg4J/workspace diff --stat
+```
+
+Observed:
+
+```text
+?? appendonlydir/
+```
+
+- No tracked source diff.
+
+Decision:
+
+- Reverted the prompt change because it did not produce a source patch or verifier and worsened token usage compared with the prior raw-prompt `001` baseline (`755880` total tokens).
+- This reinforces the user's concern that prompt nudges are a weak path for this goal unless they are independently justified and validated.
+- Current valid score evidence remains `3/10`.
