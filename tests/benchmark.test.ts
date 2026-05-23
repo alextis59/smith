@@ -235,6 +235,9 @@ total_tokens: 320
     expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
       "After a local check fails because a test runner, Python module, package, or project dependency is missing, do not retry equivalent local test/import commands; use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run."
     );
+    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
+      "Do not spend the whole run on reconnaissance. After inspecting the implementation files named by the task and the nearest callers/tests, make the smallest focused source edit for the core requirement before secondary UI, docs, generated, or localization inspection."
+    );
   });
 
   it("adds a python shim for benchmark editing containers with only python3", () => {

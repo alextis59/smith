@@ -94,7 +94,8 @@ export const SWE_BENCH_PRO_TASK_INSTRUCTIONS = [
   "This task comes from SWE-bench Pro. The repository checkout is already available in the current workspace.",
   "Project-specific verification runs after your final answer in the original SWE-bench Pro Docker image.",
   "If this editing container lacks project-specific dependencies, use shell inspection and focused edits instead of installing broad dependency sets.",
-  "After a local check fails because a test runner, Python module, package, or project dependency is missing, do not retry equivalent local test/import commands; use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run."
+  "After a local check fails because a test runner, Python module, package, or project dependency is missing, do not retry equivalent local test/import commands; use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run.",
+  "Do not spend the whole run on reconnaissance. After inspecting the implementation files named by the task and the nearest callers/tests, make the smallest focused source edit for the core requirement before secondary UI, docs, generated, or localization inspection."
 ];
 
 export const BENCHMARK_PYTHON_SHIM_SCRIPT = [

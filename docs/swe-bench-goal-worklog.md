@@ -145,3 +145,132 @@ Next concrete investigation:
 - Inspect `.smith-bench/run-BvlbFf` trace and workspace diff to understand why the current `001` rerun times out instead of converging like retained `.smith-bench/run-r8gQ0s`.
 - Compare high-level behavior only; do not mine hidden tests or external patches.
 - Candidate general improvements to evaluate from evidence: stronger task-memory updates before large edits, better patch recovery after broad edits, or bounded self-stop guidance for SWE tasks when enough implementation and static checks are complete.
+
+## 2026-05-23 Evidence: NodeBB 001 Reconnaissance Churn
+
+Artifact inspected:
+
+- Trace: `.smith-bench/run-BvlbFf/home/.smith/runs/2026-05-23T09-14-01-211Z.trace`.
+- Result log: `/tmp/smith/2026-05-23T09-29-06-389Z-smith-001-nodebb-nodebb-vnan.json`.
+- Workspace: `.smith-bench/run-BvlbFf/workspace`.
+
+Observed:
+
+- The run failed cleanly with `stderr: docker timed out after 900000ms`.
+- The retained workspace had no tracked source edits, only `?? appendonlydir/`.
+- The trace showed many inspections across implementation, template, public, and docs surfaces without reaching a patch.
+
+Classification:
+
+- Agent convergence failure: too much reconnaissance before first source edit.
+- Not a harness cleanup failure; post-run Docker check showed no live Smith benchmark container.
+- Not a verifier/scoring issue because the verifier was never reached.
+
+General change selected:
+
+- Add one SWE-bench Pro instruction telling agents not to spend the whole run on reconnaissance and to patch the core task-named implementation path before secondary inspection.
+- This is not NodeBB-specific and does not alter task data, selected tests, parser, run script, verifier, or scoring.
+
+## 2026-05-23 Change: Earlier Core Edit Guidance
+
+Files changed:
+
+- `src/benchmark/runner.ts`
+- `tests/benchmark.test.ts`
+
+Implementation notes:
+
+- Added this SWE-bench Pro task instruction:
+
+```text
+Do not spend the whole run on reconnaissance. After inspecting the implementation files named by the task and the nearest callers/tests, make the smallest focused source edit for the core requirement before secondary UI, docs, generated, or localization inspection.
+```
+
+- Added a focused assertion in `tests/benchmark.test.ts` so the instruction remains covered.
+
+Validation commands and outcomes:
+
+```sh
+npm test -- tests/benchmark.test.ts
+```
+
+Result: passed, 14 tests.
+
+```sh
+npm run build
+```
+
+Result: passed.
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result: passed in `155828ms`, 11 turns, verifier exit `0`. Log: `/tmp/smith/2026-05-23T09-35-32-623Z-smith-091-command-router-refactor.json`.
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result: failed cleanly in `913580ms`. Important fields:
+
+- `stderr`: `docker timed out after 900000ms`
+- `tracePath`: `.smith-bench/run-Q6JYma/home/.smith/runs/2026-05-23T09-35-49-467Z.trace`
+- `sandboxDir`: `.smith-bench/run-Q6JYma`
+- `logPath`: `/tmp/smith/2026-05-23T09-50-55-720Z-smith-001-nodebb-nodebb-vnan.json`
+- Usage: `1113546` total tokens.
+
+Post-run check:
+
+- `docker ps --format '{{.Names}}' | rg 'smith-bench-run-Q6JYma-smith|smith-bench-run-.*-smith' || true` produced no output.
+
+Behavioral evidence:
+
+- The retained workspace changed from no tracked edits to:
+
+```text
+M src/controllers/admin/users.js
+M src/database/mongo/main.js
+M src/database/postgres/main.js
+M src/database/redis/main.js
+M src/socket.io/admin/user.js
+M src/user/email.js
+?? appendonlydir/
+```
+
+- Trace showed the first source patch around line `12547`, with later patches adding adapter `mget` methods and admin/user email validation changes.
+- The run still timed out before local checks, external verifier, or finish.
+
+Decision:
+
+- Keep this as a small general convergence improvement because it converted a no-edit timeout into a substantive candidate patch on the same target task while preserving bounded cleanup and log evidence.
+- Do not run a full SWE-bench Pro benchmark; targeted evidence is not close to `>=7/10`.
+
+## 2026-05-23 Rejected Prompt Refinements
+
+Rejected refinement A:
+
+- Added wording to run one narrow check/static check and finish after named requirements were implemented.
+- Validation before target rerun:
+  - `npm test -- tests/benchmark.test.ts`: passed.
+  - `npm run build`: passed.
+  - `benchmarks/091-command-router-refactor`: passed in `168327ms`, log `/tmp/smith/2026-05-23T09-56-36-727Z-smith-091-command-router-refactor.json`.
+- Target `001` rerun failed in `910696ms`, log `/tmp/smith/2026-05-23T10-11-54-020Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-QM5KX3/home/.smith/runs/2026-05-23T09-56-48-922Z.trace`.
+- Workspace had no tracked source edits, only `?? appendonlydir/`.
+- Decision: remove this wording because it was a regression versus the six-file candidate patch.
+
+Rejected refinement B:
+
+- Added more concrete Requirements/Interface checklist wording and "do not restart discovery after first patch" wording.
+- Validation before target rerun:
+  - `npm test -- tests/benchmark.test.ts`: passed.
+  - `npm run build`: passed.
+  - `benchmarks/091-command-router-refactor`: passed in `165663ms`, log `/tmp/smith/2026-05-23T10-15-42-683Z-smith-091-command-router-refactor.json`.
+- Target `001` rerun failed in `910787ms`, log `/tmp/smith/2026-05-23T10-30-59-223Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-1yrViK/home/.smith/runs/2026-05-23T10-15-54-079Z.trace`.
+- Workspace modified only `src/user/email.js` and had `?? appendonlydir/`; trace showed broad discovery resumed after the first patches.
+- Decision: remove this wording because it did not improve convergence and produced a narrower incomplete patch than the kept instruction.
+
+Next concrete investigation:
+
+- Investigate a general turn-level nudge after successful patches during SWE-bench Pro runs. The failure pattern is now: patching can happen, but the agent continues broad discovery instead of quickly checking or finishing.
+- Candidate areas to inspect: `src/loop.ts` transcript/tool-output handling after `patch`, `src/providers/tools.ts` patch tool descriptions, and benchmark-specific prompt injection that can be appended after patch observations without task-specific content.
