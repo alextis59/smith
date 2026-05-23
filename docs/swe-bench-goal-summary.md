@@ -91,3 +91,27 @@ Validation:
 Next step:
 
 - Continue focusing on convergence after initial inspection. The `rg` shim removes wasted startup turns, but does not solve the main `001` failure mode.
+
+## 2026-05-23 Milestone: Keep SWE Fixes Out Of Tests And Require Real Checks
+
+Problem found:
+
+- Baseline `006-navidrome` reached finish but failed verifier with missing/failed selected tests.
+- Trace `.smith-bench/run-BxaF63/home/.smith/runs/2026-05-22T05-12-57-297Z.trace` showed the agent edited package test files and finished after grep-only symbol checks instead of running package tests.
+- The task metadata setup restores selected test files before verification, so test edits are wasted and can mask compile/test failures.
+
+Change:
+
+- Add SWE-bench Pro instructions not to edit repository tests unless explicitly requested.
+- Add SWE-bench Pro instructions that grep-only symbol checks are not enough after source edits; run the narrowest available compiler, package test, syntax, or static check before finish.
+
+Validation:
+
+- `npm test -- tests/benchmark.test.ts`: passed.
+- `npm run build`: passed.
+- Project benchmark: `benchmarks/091-command-router-refactor`, passed in `117509ms`, log `/tmp/smith/2026-05-23T11-17-36-784Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun: `swe-bench-pro/006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e`, passed in `853342ms`, log `/tmp/smith/2026-05-23T11-32-04-271Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`, trace `.smith-bench/run-GaMHOM/home/.smith/runs/2026-05-23T11-18-14-788Z.trace`.
+
+Next step:
+
+- Re-evaluate remaining failed tasks. With `006` plausibly recovered, expected full-run score is at least `4/10` if previous passes remain stable; still short of the `>=7/10` target.

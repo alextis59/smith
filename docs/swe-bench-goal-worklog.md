@@ -382,3 +382,82 @@ Decision:
 - Keep this as a general benchmark environment improvement because it removes an impossible startup install path and was validated on the representative local benchmark retry.
 - It does not solve `001`; the main failure remains over-inspection and failure to patch/finish reliably.
 - Do not run a full SWE-bench Pro benchmark.
+
+## 2026-05-23 Evidence: Navidrome 006 Failed Because Tests Were Edited And Not Run
+
+Baseline artifact:
+
+- Trace: `.smith-bench/run-BxaF63/home/.smith/runs/2026-05-22T05-12-57-297Z.trace`.
+- Sandbox: `.smith-bench/run-BxaF63`.
+- Task: `006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e`.
+
+Observed:
+
+- The model did implement a broad client encapsulation rename and called finish.
+- It also modified multiple package test files:
+  - `core/agents/lastfm/agent_test.go`
+  - `core/agents/lastfm/client_test.go`
+  - `core/agents/listenbrainz/agent_test.go`
+  - `core/agents/listenbrainz/auth_router_test.go`
+  - `core/agents/listenbrainz/client_test.go`
+  - `core/agents/spotify/client_test.go`
+- The task metadata contains a setup command that checks out those selected test files before verifier execution, so test edits do not contribute to the final evaluated patch.
+- The final model check was grep-only: it verified no remaining exported client symbols, then finished.
+- Baseline verifier failed with selected tests missing/failed for `TestLastFM`.
+
+Classification:
+
+- General SWE behavior issue: modifying tests during repair and treating symbol grep as sufficient verification after source edits.
+- Not a task-specific parser/scoring issue.
+
+General change:
+
+- Add SWE-bench Pro instruction:
+
+```text
+Do not edit repository test files for SWE-bench Pro unless the task explicitly asks for test changes; use tests as evidence and keep the solution in source files.
+```
+
+- Add SWE-bench Pro instruction:
+
+```text
+After source edits, do not treat grep-only symbol checks as sufficient verification. Run the narrowest available compiler, package test, syntax, or static check before finish when the toolchain is available.
+```
+
+Validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+```
+
+Result: both passed.
+
+Representative project benchmark:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result: passed in `117509ms`, verifier exit `0`, log `/tmp/smith/2026-05-23T11-17-36-784Z-smith-091-command-router-refactor.json`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result: passed in `853342ms`. Important fields:
+
+- `tracePath`: `.smith-bench/run-GaMHOM/home/.smith/runs/2026-05-23T11-18-14-788Z.trace`
+- `sandboxDir`: `.smith-bench/run-GaMHOM`
+- `logPath`: `/tmp/smith/2026-05-23T11-32-04-271Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`
+- Usage: `1539135` total tokens.
+- Local check in model output: `go test ./core/agents/lastfm ./core/agents/listenbrainz ./core/agents/spotify`.
+- External verifier selected tests passed: `TestLastFM`, `TestListenBrainz`, `TestSpotify`.
+
+Decision:
+
+- Keep this milestone; it turned one failed SWE-bench Pro task into a targeted pass.
+- Do not update `LeaderBoard.md` yet because no full SWE-bench Pro run has been completed with an improved aggregate score.
+- Do not run a full SWE-bench Pro benchmark yet; estimated score improvement is only from `3/10` to plausibly `4/10`.
