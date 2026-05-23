@@ -238,3 +238,32 @@ Next step:
 
 - Keep full-run evidence at around `6/10` from uncontaminated targeted passes `003`, `006`, and `008` plus baseline `002`, `004`, and `007`.
 - Continue with a non-history-based recovery attempt, likely `009` because it already reaches verifier without evidence of git-history leakage.
+
+## 2026-05-23 Direction Update: Prioritize Codex-Passed Failures
+
+User guidance:
+
+- Do not focus too much on tasks that Codex `gpt-5.4` high failed, because some dataset tasks may be flawed.
+
+Implication:
+
+- Codex `gpt-5.4` high failed `003`, `006`, and `009`.
+- The high-value Smith recovery targets are therefore `001`, `005`, and `010`, because Codex passed them and Smith `gpt-5.4-mini` high has not.
+- The interrupted 009 retry is no longer a priority target.
+
+Next step:
+
+- Validate the current post-check stopping instruction on a Codex-passed failed task, preferably `010`, before considering any full SWE-bench Pro run.
+
+## 2026-05-23 Rejected: Post-Check Stopping Prompt
+
+Evidence:
+
+- The post-check stopping instruction was motivated by a 009 timeout, but 009 is one of the Codex `gpt-5.4` high failed tasks.
+- Validation on Codex-passed failed task `010` did not help: the target rerun failed by Docker timeout after `906003ms`, log `/tmp/smith/2026-05-23T15-27-00-507Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-tTNCqv/home/.smith/runs/2026-05-23T15-11-55-250Z.trace`.
+- The retained workspace had only `scanner/alpine.go` changed; no verifier ran.
+
+Decision:
+
+- Reverted the post-check stopping instruction and its test assertion.
+- Continue prioritizing Codex-passed Smith failures: `001`, `005`, and `010`.

@@ -878,3 +878,72 @@ Decision:
 - Keep the anti-cheating harness fix even though it makes 010 harder; previous history-leaking evidence cannot be used toward the goal.
 - Current non-cheating targeted evidence remains around `6/10`: baseline `002`, `004`, `007` plus recovered `003`, `006`, `008`.
 - Target `009` next because its prior failure reached verifier without evidence of git-history leakage.
+
+## 2026-05-23 Change: Finish Promptly After Focused Checks
+
+Problem evidence:
+
+- Clean 009 rerun after the anti-cheat harness fix failed by timeout before verifier.
+- Command: `node bin/smith.js benchmark run swe-bench-pro/009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json`
+- Result: failed by timeout in `906655ms`.
+- `logPath`: `/tmp/smith/2026-05-23T15-00-16-422Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`
+- `tracePath`: `.smith-bench/run-eshi65/home/.smith/runs/2026-05-23T14-45-11-155Z.trace`
+- Workspace diff at timeout included source changes in `openlibrary/catalog/marc/marc_base.py`, `marc_binary.py`, `marc_xml.py`, and `parse.py`, plus unrelated `tests/integration/__init__.py`, `SMITH.md`, and `SMITH.TASK.md`.
+- Trace showed successful `python -m py_compile` after the source edits, then continued optional fixture inspection and memory-file work instead of finishing to the external verifier.
+
+General change:
+
+- Add SWE-bench Pro instruction:
+
+```text
+After the best available focused check succeeds, finish promptly; do not spend remaining SWE-bench Pro turns on optional fixture archaeology, durable memory files, or broad validation unless a concrete failed check needs diagnosis.
+```
+
+Validation before target rerun:
+
+- `npm test -- tests/benchmark.test.ts`: passed.
+- `npm run build`: passed.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `100460ms`, log `/tmp/smith/2026-05-23T15-03-45-082Z-smith-091-command-router-refactor.json`.
+
+Interrupted target rerun:
+
+- Started another 009 rerun with the new instruction but stopped it after user guidance deprioritized Codex-failed tasks.
+- Process details before stop: node benchmark process for `009` and Docker container `smith-bench-run-4054oL-smith`.
+- Stopped with `docker kill smith-bench-run-4054oL-smith` and `kill -TERM -380092`; the benchmark command exited with code `-1` and produced no final JSON result.
+
+User guidance:
+
+- Do not focus too much on tasks that Codex `gpt-5.4` high failed; some tasks may be flawed.
+- `LeaderBoard.md` says Codex `gpt-5.4` high failed `003`, `006`, and `009`.
+
+Decision:
+
+- Do not spend further targeted recovery effort on 009 for now.
+- The high-value Smith failures are `001`, `005`, and `010`, because Codex `gpt-5.4` high passed those.
+- Keep evaluating the post-check stopping instruction on a Codex-passed failed task before committing it as a validated milestone.
+
+Codex-passed target validation for the post-check stopping instruction:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by timeout in `906003ms`.
+- `stderr`: `docker timed out after 900000ms`
+- `logPath`: `/tmp/smith/2026-05-23T15-27-00-507Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`
+- `tracePath`: `.smith-bench/run-tTNCqv/home/.smith/runs/2026-05-23T15-11-55-250Z.trace`
+- Workspace diff at timeout: only `scanner/alpine.go`, `92` insertions and `36` deletions.
+- No external verifier ran.
+
+Trace classification:
+
+- The agent produced a different Alpine parser rewrite but did not reach a finishing point or verifier.
+- The post-check stopping instruction did not recover a Codex-passed target and was not enough to overcome the 010 Go task failure mode.
+
+Decision:
+
+- Reverted the post-check stopping instruction and its test assertion.
+- Keep the 009 evidence as diagnostic only; do not let a Codex-failed task drive prompt changes unless the same failure mode is validated on a Codex-passed target.
+- Next target should be one of `001`, `005`, or `010`; avoid more 009 iteration unless needed for a clearly general non-task-specific bug.
