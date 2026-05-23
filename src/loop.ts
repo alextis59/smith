@@ -31,6 +31,7 @@ export type RunMode = "single" | "remote" | "interactive";
 const MAX_SUB_AGENT_DEPTH = 2;
 const RIPGREP_CHECK_TIMEOUT_MS = 5_000;
 const RIPGREP_BOOTSTRAP_MAX_TURNS = 6;
+const PROGRESS_REMINDER_TOOL_INTERVAL = 12;
 const RIPGREP_UNAVAILABLE_PROMPT_NOTE =
   "Environment note: the `rg` command is not available in this environment. Smith already checked at startup and, when allowed, attempted a straightforward install without confirming `rg` on PATH. Use grep, find, or language-specific tools instead, and do not spend task time trying to install `rg` unless the user explicitly asks.";
 
@@ -150,6 +151,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let pendingStatefulOutput: string | undefined;
   let responsesInputItems: Record<string, unknown>[] | undefined;
   let codexTurnState: string | undefined;
+  let toolCallsSincePatchOrFinish = 0;
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
   const providerDebugJson =
     options.runtime.providerDebug && options.trace ? createProviderDebugJsonLogger(options.trace.path) : undefined;
@@ -250,6 +252,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         options.trace?.write("tool output", output);
       } else {
         for (const toolCall of toolCalls) {
+          const toolName = smithToolName(toolCall.name);
           const action = await handleToolCall({
             toolCall,
             options,
@@ -265,6 +268,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           providerMessages = action.providerMessages;
           nextResponsesInputItems = action.responsesInputItems;
           nextPendingOutput = [nextPendingOutput, action.toolOutput].filter(Boolean).join("\n");
+          toolCallsSincePatchOrFinish = toolName === "patch" || action.finished ? 0 : toolCallsSincePatchOrFinish + 1;
           if (action.finished) {
             if (totalUsage) options.trace?.write("run usage", formatUsageCost(totalUsage));
             return { chatOut: action.finished, turns: turn, transcript, ...(totalUsage ? { usage: totalUsage } : {}) };
@@ -279,6 +283,14 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
               options.trace?.write("timeout", timeoutOutput);
               options.onTerminalOutput?.(timeoutOutput);
             }
+          }
+          if (toolCallsSincePatchOrFinish > 0 && toolCallsSincePatchOrFinish % PROGRESS_REMINDER_TOOL_INTERVAL === 0) {
+            const reminder = progressReminderOutput(options, toolCallsSincePatchOrFinish, turn, maxTurns);
+            transcript = appendTerminalTurn(transcript, "# progress", reminder);
+            providerMessages = appendProviderUserObservation(providerMessages, reminder);
+            nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, reminder);
+            nextPendingOutput = [nextPendingOutput, reminder].filter(Boolean).join("\n");
+            options.trace?.write("progress reminder", reminder);
           }
         }
       }
@@ -862,6 +874,18 @@ function memoryFilePresence(cwd: string): string {
     projectMemory ? "Local SMITH.md exists; read it with cat SMITH.md before broad inspection." : "No local SMITH.md found.",
     taskMemory ? "Local SMITH.TASK.md exists; read it with cat SMITH.TASK.md before broad inspection." : "No local SMITH.TASK.md found."
   ].join("\n");
+}
+
+function progressReminderOutput(options: SmithRunOptions, toolCallsSincePatchOrFinish: number, turn: number, maxTurns: number): string {
+  const availableTools = availableSmithTools(options).map((tool) => tool.name).join(", ");
+  const patchAvailable = availableSmithTools(options).some((tool) => tool.name === "patch");
+  const status = `Smith progress: ${toolCallsSincePatchOrFinish} tool calls have completed without ${
+    patchAvailable ? "a patch or finish" : "finish"
+  }; turn ${turn} of ${maxTurns}; available tools: ${availableTools}.`;
+  if (!patchAvailable) {
+    return `${status} If the requested read-only findings are sufficient, finish with the result; otherwise continue focused inspection.`;
+  }
+  return `${status} If the task requires file changes and current evidence identifies a safe edit, use patch; if no actionable edit is possible, finish with the blocker.`;
 }
 
 function formatTimeoutOutput(command: string, elapsedMs: number, lastOutput: string): string {

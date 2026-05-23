@@ -2038,3 +2038,117 @@ Decision:
 - Keep the runtime flag because it is generic, defaults to existing behavior, and passed normal project validation.
 - Do not treat it as a SWE recovery path for `001`; it did not produce source edits and worsened usage compared with raw-prompt `001` (`755880` total tokens).
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Generic Runtime Improvement: Progress Reminder
+
+Hypothesis:
+
+- Strict raw-prompt `001`, `005`, and `010` repeatedly spent many tool calls on inspection without reaching a useful source patch.
+- A generic runtime observation after sustained no-patch/no-finish tool use could help ordinary long coding tasks notice stalled progress without adding benchmark-specific prompt text.
+- This is intentionally not tied to SWE-bench Pro, task IDs, verifier names, task prompts, selected tests, or repository-specific content.
+
+Code change:
+
+- Added `PROGRESS_REMINDER_TOOL_INTERVAL = 12` in `src/loop.ts`.
+- `runSmithTask()` now tracks consecutive tool calls since the last `patch` or `finish`.
+- After every `12` such tool calls, Smith appends a normal transcript/provider observation:
+  - tool-call count since patch/finish,
+  - current turn and max turns,
+  - currently available Smith tools,
+  - generic next-action wording that differs for patch-available vs read-only/patch-unavailable runs.
+- Added an integration test proving the provider sees the reminder after `12` inspection calls and that the trace records `## progress reminder`.
+
+Focused validation:
+
+```sh
+npm test -- tests/integration.test.ts tests/prompt-trace.test.ts
+npm run build
+```
+
+Results:
+
+- Tests passed: `25` tests across `2` files.
+- Build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Result:
+
+- Passed in `160683ms`.
+- Log: `/tmp/smith/2026-05-23T20-41-20-090Z-smith-091-command-router-refactor.json`
+- Trace: `.smith-bench/run-w0xZ0h/home/.smith/runs/2026-05-23T20-38-39-927Z.trace`
+- Usage: `77507` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed the official verifier, not the Docker edit timeout.
+- Duration: `999124ms`.
+- Log: `/tmp/smith/2026-05-23T20-58-18-507Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`
+- Trace: `.smith-bench/run-hnvwNA/home/.smith/runs/2026-05-23T20-41-40-688Z.trace`
+- Sandbox: `.smith-bench/run-hnvwNA`
+- Usage: `1957654` total tokens.
+- Model-selected tool calls from session log: `44` `run`, `5` `patch`, `4` `finish`, `3` `sub_agent`.
+
+Workspace evidence:
+
+```sh
+git -C .smith-bench/run-hnvwNA/workspace status --short
+git -C .smith-bench/run-hnvwNA/workspace diff --stat
+```
+
+Observed:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+?? SMITH.md
+```
+
+Diff stat:
+
+```text
+ scanner/alpine.go | 148 ++++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 132 insertions(+), 16 deletions(-)
+```
+
+Verifier failure:
+
+- The official verifier ran selected tests and failed.
+- Scanner build errors:
+  - `scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined`
+  - `scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined`
+  - `scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined`
+- OVAL assertion:
+  - `TestIsOvalDefAffected`: expected `[85] affected` false, actual true; expected empty fixedIn, actual `3.3.2-r0`.
+- Smith finished with a note that `go` was not available on PATH in the edit environment, so it could not run `go test` before finishing.
+
+Prompt-integrity and cleanup checks:
+
+```sh
+rg -n "progress reminder|Smith progress|Complete this benchmark task|primary source-code targets|/task/verify.sh|run the verifier directly|SWE-bench" .smith-bench/run-hnvwNA/home/.smith/runs/2026-05-23T20-41-40-688Z.trace || true
+docker ps --format '{{.Names}} {{.Status}}' | rg 'smith-bench-run-hnvwNA-smith|smith-bench-run-.*-smith' || true
+```
+
+Observed:
+
+- Trace includes `## progress reminder` and the generic `Smith progress: 12 tool calls...` observation.
+- No benchmark wrapper or SWE-specific coaching text appeared.
+- No live Smith benchmark containers remained after cleanup.
+
+Decision:
+
+- Keep the progress reminder as a generic runtime improvement because it converted `010` from no tracked source diff and timeout into source patches, `finish`, and official verifier evidence.
+- Do not count `010` as recovered.
+- Current valid score evidence remains `3/10`.
+- Next high-value generic failure class: the edit environment for fallback Smith containers can lack project toolchains (`go` here), even though the verifier image has them. A future non-prompt harness improvement could explore making more task-image tooling available during editing without giving task-specific instructions.

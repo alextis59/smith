@@ -595,3 +595,33 @@ Decision:
 - Keep the flag as a generic user-facing runtime control with default behavior unchanged.
 - Do not use the `001` result as a recovery; disabling sub-agents did not improve this failure mode and worsened usage compared with the raw-prompt baseline.
 - Current valid score evidence remains `3/10`.
+
+## 2026-05-23 Milestone: Generic Progress Reminder
+
+Change:
+
+- Added a generic runtime progress observation after `12` consecutive tool calls without a patch or finish.
+- The reminder reports tool-call count, current turn, max turns, and available tools.
+- In read-only or patch-unavailable runs, it asks for a finish when findings are sufficient; otherwise it notes that `patch` is available when a safe edit is identified.
+- This is task-agnostic runtime feedback, not SWE-bench-specific prompt text.
+
+Validation:
+
+- `npm test -- tests/integration.test.ts tests/prompt-trace.test.ts`: passed `25` tests.
+- `npm run build`: passed.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `160683ms`, log `/tmp/smith/2026-05-23T20-41-20-090Z-smith-091-command-router-refactor.json`.
+
+Target SWE evidence:
+
+- Target SWE rerun `010-future-architect-vuls`: failed verifier, not timeout, in `999124ms`, log `/tmp/smith/2026-05-23T20-58-18-507Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-hnvwNA/home/.smith/runs/2026-05-23T20-41-40-688Z.trace`.
+- Usage: `1957654` total tokens.
+- Model-selected tool calls: `44` `run`, `5` `patch`, `4` `finish`, `3` `sub_agent`.
+- Retained workspace had source changes in `scanner/alpine.go`, plus staged/working test edits from the agent in `scanner/alpine_test.go` and `oval/util_test.go`, and untracked `SMITH.md`.
+- Official verifier ran and failed with scanner build errors for undefined test helper methods and one `TestIsOvalDefAffected` assertion.
+- Trace search found the generic progress reminder and no benchmark wrapper text or SWE-specific coaching.
+
+Decision:
+
+- Keep the runtime reminder as a generic improvement: it moved `010` from no tracked source diff and Docker timeout to source patches, `finish`, and official verifier evidence.
+- Do not count `010` as recovered.
+- Current valid score evidence remains `3/10`.

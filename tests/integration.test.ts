@@ -662,6 +662,49 @@ max_tool_output_chars = 180
     expect(replayedOutput).not.toContain("B".repeat(250));
   });
 
+  it("adds a generic progress reminder after sustained inspection without edits", async () => {
+    const provider = await startFakeProvider([
+      ...Array.from({ length: 12 }, (_, index) => ({
+        name: "run" as const,
+        arguments: { command: `printf output-${index}` }
+      })),
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-progress-reminder-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "inspect repeatedly"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(13);
+    const reminderRequest = provider.requests[12].body;
+    expect(userMessages(reminderRequest)).toContain("Smith progress: 12 tool calls have completed without a patch or finish");
+    const traceDir = join(home, ".smith", "runs");
+    const trace = readFileSync(join(traceDir, readdirSync(traceDir)[0]), "utf8");
+    expect(trace).toContain("## progress reminder");
+  });
+
   it("remote prints only first finish message to stdout and supports resume", async () => {
     const provider = await startFakeProvider([
       { name: "finish", arguments: { message: "need info" } },
