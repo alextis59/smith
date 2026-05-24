@@ -1111,3 +1111,27 @@ Decision:
 - Do not count `005` as recovered.
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
+
+## 2026-05-24 Generic Repeated Sub-Agent Failure Limit
+
+Change:
+
+- After one child run exhausts its turn budget, `sub_agent` remains hidden until a real task patch.
+- After two child turn-limit failures in one parent run, `sub_agent` is hidden for the rest of that run.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `22` tests.
+- Project benchmark `091-command-router-refactor`: passed in `90908ms`, log `/tmp/smith/2026-05-24T05-29-18-426Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-GhpsuT/home/.smith/runs/2026-05-24T05-27-47-745Z.trace`.
+
+Target evidence:
+
+- Target SWE rerun `005-gravitational-teleport` failed before producing Smith output: log `/tmp/smith/2026-05-24T05-42-58-986Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Error: `/home/smith/benchmark-results/smith.status` and `smith.stdout` were missing.
+- The result recorded `sandboxRetained: true`, but `.smith-bench/run-wBbMN4` was not present afterward, so this target result is invalid for scoring comparison.
+
+Decision:
+
+- Keep the change as generic loop control, but do not count any SWE recovery.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.

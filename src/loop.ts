@@ -158,6 +158,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let codexTurnState: string | undefined;
   let toolCallsSincePatchOrFinish = 0;
   let toolAvailabilityState: ToolAvailabilityState = {};
+  let subAgentTurnLimitFailures = 0;
   let runDeadlineReminderIndex = 0;
   const runStartedAt = Date.now();
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
@@ -304,12 +305,15 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           nextPendingOutput = [nextPendingOutput, action.toolOutput].filter(Boolean).join("\n");
           const madeTaskPatch =
             toolName === "patch" && action.changedFiles !== undefined && !changedFilesAreOnlySmithMemory(action.changedFiles);
-          if (madeTaskPatch) {
+          if (madeTaskPatch && subAgentTurnLimitFailures < 2) {
             toolAvailabilityState = {};
           } else if (action.subAgentTurnLimitFailure) {
+            subAgentTurnLimitFailures += 1;
             toolAvailabilityState = {
               subAgentDisabledReason:
-                "A previous sub_agent child run did not finish within its turn budget, so sub_agent is temporarily unavailable until a task patch succeeds."
+                subAgentTurnLimitFailures >= 2
+                  ? "Multiple sub_agent child runs did not finish within their turn budgets, so sub_agent is unavailable for the rest of this run."
+                  : "A previous sub_agent child run did not finish within its turn budget, so sub_agent is temporarily unavailable until a task patch succeeds."
             };
           }
           toolCallsSincePatchOrFinish = madeTaskPatch || action.finished ? 0 : toolCallsSincePatchOrFinish + 1;

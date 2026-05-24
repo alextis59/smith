@@ -580,6 +580,68 @@ sub_agent_max_turns = 2
     expect(userMessages(provider.requests[4].body)).toContain("Unknown or unavailable tool 'sub_agent'");
   });
 
+  it("disables sub_agent for the run after repeated child turn-limit failures", async () => {
+    const provider = await startFakeProvider([
+      { name: "sub_agent", arguments: { task: "inspect from first child" } },
+      { name: "run", arguments: { command: "printf child-output-1" } },
+      { name: "run", arguments: { command: "printf child-output-2" } },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "sub_agent", arguments: { task: "inspect from second child" } },
+      { name: "run", arguments: { command: "printf child-output-3" } },
+      { name: "run", arguments: { command: "printf child-output-4" } },
+      { name: "finish", arguments: { message: "parent done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-sub-agent-disable-repeated-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 4
+sub_agent_max_turns = 2
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "parent task"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("parent done");
+    expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("new\n");
+    expect(provider.requests).toHaveLength(8);
+    expect(toolNames(provider.requests[4].body)).toContain("sub_agent");
+    expect(toolNames(provider.requests[7].body)).toEqual(["run", "patch", "finish"]);
+    expect(systemMessage(provider.requests[7].body)).toContain(
+      "Multiple sub_agent child runs did not finish within their turn budgets"
+    );
+  });
+
   it("does not expose sub_agent inside child runs once max sub-agent depth is reached", async () => {
     const provider = await startFakeProvider([
       { name: "sub_agent", arguments: { task: "inspect from child" } },

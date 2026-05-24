@@ -4213,3 +4213,86 @@ Decision:
 - The current generic changes are insufficient for `005`; it regressed from prior verifier-reaching behavior back to timeout.
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is not justified.
+
+## 2026-05-24 Generic Repeated Sub-Agent Failure Limit
+
+Hypothesis:
+
+- `005` traces show repeated `sub_agent failed: model did not call finish within 12 turns`.
+- The previous generic policy hid `sub_agent` after one child turn-limit failure, but re-enabled it after each real task patch.
+- That still allows expensive cycles of child timeout, source patch, child timeout, source patch.
+- A more conservative generic policy is to allow re-enable after the first child turn-limit failure, but disable `sub_agent` for the rest of the parent run after the second child turn-limit failure.
+
+Change:
+
+- `src/loop.ts`:
+  - added `subAgentTurnLimitFailures`
+  - keeps the existing temporary hide-until-patch behavior after the first child turn-limit failure
+  - after the second child turn-limit failure, removes `sub_agent` for the rest of the run
+- `tests/integration.test.ts`:
+  - added a two-child-failure scenario
+  - verifies the first real task patch re-enables `sub_agent`
+  - verifies the second child turn-limit failure removes `sub_agent` from subsequent tool availability
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration tests passed: `22` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `90908ms`.
+- Log: `/tmp/smith/2026-05-24T05-29-18-426Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-GhpsuT/home/.smith/runs/2026-05-24T05-27-47-745Z.trace`.
+- Usage: `40912` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `810519ms`.
+- Log: `/tmp/smith/2026-05-24T05-42-58-986Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Error:
+
+```text
+bash: line 86: /home/smith/benchmark-results/smith.status: No such file or directory
+cat: /home/smith/benchmark-results/smith.stdout: No such file or directory
+```
+
+Harness anomaly:
+
+- The benchmark result recorded:
+  - `sandboxPath`: `.smith-bench/run-wBbMN4`
+  - `sandboxRetained`: `true`
+  - empty `modelOutputs`
+  - empty `terminalOutputs`
+- Follow-up inspection found `.smith-bench/run-wBbMN4` missing:
+
+```text
+find: '.smith-bench/run-wBbMN4': No such file or directory
+```
+
+Decision:
+
+- Treat this target run as invalid diagnostic evidence for SWE recovery because Smith output and retained sandbox evidence are missing.
+- Keep the repeated sub-agent failure limit as generic loop control based on prior `005`/`010` trace evidence and focused/project validation.
+- Do not count `005` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
