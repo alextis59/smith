@@ -848,3 +848,26 @@ Decision:
 - Do not count the older prompt-coached `006` pass.
 - Do not prioritize `006` further for now because Codex `gpt-5.4` high also failed it and the user asked not to overfocus flawed/Codex-failed tasks.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+
+## 2026-05-24 Milestone: PTY-Free Shell Fallback And Host Node Mount
+
+Change:
+
+- Generic Smith runtime improvement: `node-pty` now loads lazily, and Smith falls back to a plain non-PTY shell runner when the native PTY module is unavailable or `SMITH_FORCE_BASIC_SHELL=1`.
+- Generic benchmark environment improvement: when the host Node runtime comes from a managed user install such as nvm, SWE-bench Pro edit containers can mount it read-only and probe the task image before falling back to `node:22-bookworm`.
+- This preserves project toolchains in task images when possible without adding task or benchmark-solving instructions.
+
+Validation:
+
+- `npm test -- tests/pty.test.ts tests/benchmark.test.ts`: passed `23` tests.
+- `npm run build`: passed.
+- Docker smoke in the Teleport task image with mounted host Node: `node /smith/bin/smith.js --version` succeeded and `go version` reported `go1.16.15`.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `89905ms`, log `/tmp/smith/2026-05-24T00-49-52-438Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun `005-gravitational-teleport`: failed in `737993ms`, log `/tmp/smith/2026-05-24T01-02-21-459Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-pE8Wo8/home/.smith/runs/2026-05-24T00-50-11-318Z.trace`.
+- The `005` log command shows Smith used the Teleport task image rather than a Node fallback image, and the official verifier ran in the task image.
+
+Decision:
+
+- Keep the change as a generic environment robustness improvement.
+- Do not count `005` as recovered; Smith blocked after a patch context mismatch and left no source patch.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.

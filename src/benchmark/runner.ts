@@ -71,6 +71,7 @@ export type SweBenchProTaskMetadata = {
 };
 
 export const DEFAULT_SMITH_BENCHMARK_IMAGE = "node:22-bookworm";
+const HOST_NODE_ROOT_ENV = "SMITH_BENCH_HOST_NODE_ROOT";
 
 export type BenchmarkCostRates = {
   inputCostPerMillionTokens?: number;
@@ -345,6 +346,7 @@ async function runSmithForSweBenchProTask(context: {
 export function buildSweBenchProSmithScript(metadata: SweBenchProTaskMetadata, command: string): string {
   return [
     "set -euo pipefail",
+    ...hostNodePathScript(),
     "export PATH=/usr/local/go/bin:/go/bin:$PATH",
     "mkdir -p /home/smith",
     "RESULT_DIR=/home/smith/benchmark-results",
@@ -383,6 +385,7 @@ export function buildSmithBenchmarkDockerArgs(context: {
     ...dockerUserArgs(),
     "-e",
     "HOME=/home/smith",
+    ...hostNodeDockerMountArgs(),
     "-v",
     `${repoRoot}:/smith`,
     "-v",
@@ -421,6 +424,7 @@ async function canRunSmithInImage(image: string, repoRoot: string, timeoutMs: nu
         ...dockerUserArgs(),
         "-e",
         "HOME=/tmp",
+        ...hostNodeDockerMountArgs(),
         "-v",
         `${repoRoot}:/smith:ro`,
         image,
@@ -437,10 +441,41 @@ async function canRunSmithInImage(image: string, repoRoot: string, timeoutMs: nu
 
 export function buildSweBenchProSmithImageProbeScript(): string {
   return [
+    ...hostNodePathScript(),
     "export PATH=/usr/local/go/bin:/go/bin:$PATH",
     "command -v node >/dev/null 2>&1",
     "node /smith/bin/smith.js --version >/dev/null 2>&1"
   ].join(" && ");
+}
+
+export function hostNodeDockerMountArgs(env: NodeJS.ProcessEnv = process.env, execPath = process.execPath): string[] {
+  const mount = hostNodeMount(env, execPath);
+  return mount ? ["-v", `${mount.root}:${mount.root}:ro`] : [];
+}
+
+function hostNodePathScript(env: NodeJS.ProcessEnv = process.env, execPath = process.execPath): string[] {
+  const mount = hostNodeMount(env, execPath);
+  return mount ? [`export PATH=${shellQuote(mount.bin)}:$PATH`] : [];
+}
+
+function hostNodeMount(
+  env: NodeJS.ProcessEnv,
+  execPath: string
+): { root: string; bin: string } | undefined {
+  const root = env[HOST_NODE_ROOT_ENV]?.trim() || inferredManagedNodeRoot(execPath);
+  if (!root) return undefined;
+  const bin = join(root, "bin");
+  if (!existsSync(join(bin, "node"))) return undefined;
+  return { root, bin };
+}
+
+function inferredManagedNodeRoot(execPath: string): string | undefined {
+  const bin = dirname(execPath);
+  if (basename(bin) !== "bin") return undefined;
+  const root = dirname(bin);
+  const normalized = root.replace(/\\/g, "/");
+  if (normalized.includes("/.nvm/versions/node/")) return root;
+  return undefined;
 }
 
 function dockerUserArgs(): string[] {

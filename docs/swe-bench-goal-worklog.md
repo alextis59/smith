@@ -3102,3 +3102,82 @@ Decision:
 - Do not continue iterating on `006` now because it is a Codex-failed task and the user warned that some such tasks may be flawed.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
 - Next priority remains unrecovered Codex-passed Smith failures `001`, `005`, and `010`, using only generic Smith improvements that also make sense for ordinary user tasks.
+
+## 2026-05-24 Generic Environment Milestone: PTY-Free Shell Fallback And Host Node Mount
+
+Hypothesis:
+
+- Some task images contain the project language toolchain but cannot run Smith because they lack Node.
+- Falling back to `node:22-bookworm` lets Smith run but removes language tooling such as `go`, which weakens ordinary validation and was visible in `005` as a prior finish message saying `go` was unavailable.
+- A generic fix is to make Smith runnable in more project/toolchain containers rather than adding prompt guidance.
+
+Change:
+
+- `src/pty.ts`:
+  - replaces the top-level `node-pty` import with a lazy dynamic import
+  - adds a `ShellRunner` interface
+  - adds a plain non-PTY shell runner fallback when `node-pty` cannot load or `SMITH_FORCE_BASIC_SHELL=1`
+  - preserves `chat_out`, exit-code reporting, timeout reporting, helper PATH setup, and output normalization
+- `src/loop.ts`:
+  - depends on the generic `ShellRunner` interface instead of the concrete PTY runner type
+- `src/benchmark/runner.ts`:
+  - detects managed host Node installs, currently nvm-style roots, or an explicit `SMITH_BENCH_HOST_NODE_ROOT`
+  - mounts that Node root read-only into candidate SWE-bench Pro edit containers
+  - prepends the mounted Node bin path before probing/running Smith
+  - retains the existing fallback to `node:22-bookworm` when the task image still cannot run Smith
+- `tests/pty.test.ts`:
+  - covers the forced plain shell fallback path
+- `tests/benchmark.test.ts`:
+  - covers host Node mount argument construction
+
+Prompt policy:
+
+- No SWE-bench Pro task instructions were added.
+- `SWE_BENCH_PRO_TASK_INSTRUCTIONS` remains empty.
+- This is a runtime/environment capability, not task-specific solving guidance.
+
+Validation:
+
+```sh
+npm test -- tests/pty.test.ts tests/benchmark.test.ts
+npm run build
+docker run --rm --entrypoint bash --user $(id -u):$(id -g) -e HOME=/tmp -v /home/alextis/.nvm/versions/node/v22.19.0:/home/alextis/.nvm/versions/node/v22.19.0:ro -v /home/alextis/Work/Git/alextis59/smith:/smith:ro jefzda/sweap-images:gravitational.teleport-gravitational__teleport-3fa6904377c006497169945428e8197158667910-v626ec2a48416b10a88641359a169d99e935ff03 -lc 'export PATH=/home/alextis/.nvm/versions/node/v22.19.0/bin:/usr/local/go/bin:/go/bin:$PATH; command -v node; node /smith/bin/smith.js --version; command -v go; go version'
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Focused tests passed: `23` tests.
+- TypeScript build passed.
+- Teleport task-image smoke with host Node mount succeeded:
+  - `node /smith/bin/smith.js --version` printed `0.1.0`
+  - `go version` printed `go version go1.16.15 linux/amd64`
+- Project benchmark `091-command-router-refactor` passed in `89905ms`.
+  - Log: `/tmp/smith/2026-05-24T00-49-52-438Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-iMmCBt/home/.smith/runs/2026-05-24T00-48-22-753Z.trace`.
+- Target `005-gravitational-teleport` failed in `737993ms`.
+  - Log: `/tmp/smith/2026-05-24T01-02-21-459Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-pE8Wo8/home/.smith/runs/2026-05-24T00-50-11-318Z.trace`.
+  - Sandbox: `.smith-bench/run-pE8Wo8`.
+  - Usage: `2098918` total tokens.
+  - Log command: `smith swe-bench-pro instance_gravitational__teleport-3fa6904377c006497169945428e8197158667910-v626ec2a48416b10a88641359a169d99e935ff037 (task image jefzda/sweap-images:gravitational.teleport-gravitational__teleport-3fa6904377c006497169945428e8197158667910-v626ec2a48416b10a88641359a169d99e935ff03)`.
+- The `005` run therefore used the Teleport task image for editing instead of the default Node fallback.
+- Smith finished with a blocker after `45` turns:
+
+```text
+Blocked: I inspected the Kubernetes forwarder and service code, but the required change spans multiple large refactors in lib/kube/proxy/forwarder.go, lib/kube/proxy/server.go, lib/service/kubernetes.go, and related tests. A first focused patch attempt failed due to context mismatch in the large forwarder file, and I do not have enough remaining time to safely complete and verify the full behavior change without risking regressions. No files were modified.
+```
+
+Verifier evidence:
+
+- Official verifier ran and failed in `lib/kube/proxy`.
+- Failure remained build errors against restored tests expecting `Forwarder.cfg` and `Forwarder.clientCredentials`.
+- Retained workspace status showed only verifier-restored `lib/kube/proxy/forwarder_test.go` in the index; no source patch was left by Smith.
+
+Decision:
+
+- Keep the runtime/environment change because it is generic and validated independently.
+- Do not count `005` as recovered.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+- Next likely target should be `010` or `001`; avoid more prompt edits, and avoid spending more cycles on Codex-failed tasks.

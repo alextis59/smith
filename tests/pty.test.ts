@@ -72,4 +72,29 @@ NODE
       runner.kill();
     }
   });
+
+  it("falls back to a plain shell runner when PTY is disabled", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-basic-shell-"));
+    const runner = await PtyShellRunner.start({
+      cwd,
+      shell: "bash",
+      timeoutMs: 2000,
+      env: { ...process.env, SMITH_FORCE_BASIC_SHELL: "1" }
+    });
+    try {
+      const output = await runner.run("printf '%s\\n' hello\nprintf '%s\\n' world", 2000);
+      expect(output.output).toBe("hello\nworld");
+      expect(output.exitCode).toBe(0);
+
+      const failed = await runner.run("false", 2000);
+      expect(failed.exitCode).toBe(1);
+
+      const chatOut = await runner.run("chat_out done", 2000);
+      expect(chatOut.chatOut).toBe("done");
+      expect(chatOut.output).toContain("done");
+      expect(chatOut.output).not.toContain("__SMITH_CHAT_OUT_START__");
+    } finally {
+      runner.kill();
+    }
+  });
 });

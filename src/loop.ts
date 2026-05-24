@@ -11,7 +11,7 @@ import { createProviderDebugJsonLogger } from "./provider-debug.js";
 import { completeWithProfile, ProviderError, type ProviderFetch } from "./providers/index.js";
 import { smithToolName, SMITH_TOOLS, toolBooleanArgument, toolReason, toolTextArgument } from "./providers/tools.js";
 import type { SmithModelResponse, SmithProviderState, SmithToolCall } from "./providers/types.js";
-import { PtyShellRunner } from "./pty.js";
+import { PtyShellRunner, type ShellRunner } from "./pty.js";
 import { summarizeProviderEvents } from "./session-log.js";
 import {
   appendChatIn,
@@ -347,7 +347,7 @@ type ToolActionResult = {
 type ToolCallContext = {
   toolCall: SmithToolCall;
   options: SmithRunOptions;
-  shell: PtyShellRunner;
+  shell: ShellRunner;
   transcript: string;
   providerMessages: TranscriptEntry[];
   responsesInputItems?: Record<string, unknown>[];

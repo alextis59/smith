@@ -1,9 +1,10 @@
+import { execFile } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import pty from "node-pty";
+import type { IPty, IPtyForkOptions } from "node-pty";
 import { CHAT_OUT_END, CHAT_OUT_START, parseChatOutSentinel, stripShellFence } from "./transcript.js";
 
 export type ShellRunResult = {
@@ -23,19 +24,29 @@ export type ShellRunnerOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
+export type ShellRunner = {
+  run(command: string, timeoutMs: number): Promise<ShellRunResult>;
+  kill(): void;
+  readonly helpersPath: string;
+};
+
+type PtyModule = {
+  spawn(file: string, args: string[] | string, options: IPtyForkOptions): IPty;
+};
+
 const PROMPT = "__SMITH_PROMPT__ ";
 const EXIT_STATUS_START = "__SMITH_EXIT_STATUS_START__";
 const EXIT_STATUS_END = "__SMITH_EXIT_STATUS_END__";
 const EXIT_STATUS_COMMAND =
   "printf '\\n%s%s%s\\n' \"$SMITH_EXIT_STATUS_START\" \"$?\" \"$SMITH_EXIT_STATUS_END\"";
 
-export class PtyShellRunner {
-  private readonly terminal: pty.IPty;
+export class PtyShellRunner implements ShellRunner {
+  private readonly terminal: IPty;
   private readonly helperDir: string;
   private buffer = "";
   private closed = false;
 
-  private constructor(terminal: pty.IPty, helperDir: string) {
+  private constructor(terminal: IPty, helperDir: string) {
     this.terminal = terminal;
     this.helperDir = helperDir;
     this.terminal.onData((data) => {
@@ -46,8 +57,11 @@ export class PtyShellRunner {
     });
   }
 
-  static async start(options: ShellRunnerOptions): Promise<PtyShellRunner> {
+  static async start(options: ShellRunnerOptions): Promise<ShellRunner> {
     const helperDir = createHelperDir();
+    const pty = await loadPtyModule(options.env);
+    if (!pty) return new BasicShellRunner(options, helperDir);
+
     const terminal = pty.spawn(options.shell, ["--noprofile", "--norc", "-i"], {
       name: "xterm-256color",
       cols: 120,
@@ -137,6 +151,93 @@ export class PtyShellRunner {
       }, 10);
     });
   }
+}
+
+class BasicShellRunner implements ShellRunner {
+  private readonly options: ShellRunnerOptions;
+  private readonly helperDir: string;
+
+  constructor(options: ShellRunnerOptions, helperDir: string) {
+    this.options = options;
+    this.helperDir = helperDir;
+  }
+
+  async run(command: string, timeoutMs: number): Promise<ShellRunResult> {
+    const cleaned = stripShellFence(command).trimEnd();
+    const started = Date.now();
+    const env = {
+      ...process.env,
+      ...this.options.env,
+      PATH: `${this.helperDir}:${this.options.env?.PATH ?? process.env.PATH ?? ""}`
+    };
+    const result = await execShell(this.options.shell, cleaned, {
+      cwd: this.options.cwd,
+      env,
+      timeoutMs
+    });
+    const parsed = parseChatOutSentinel(result.output);
+    const output = normalizePtyOutput(parsed.output);
+    return {
+      command: cleaned,
+      output,
+      chatOut: parsed.chatOut,
+      timedOut: result.timedOut,
+      elapsedMs: Date.now() - started,
+      lastOutput: tail(output, 1200),
+      ...(result.exitCode !== undefined ? { exitCode: result.exitCode } : {})
+    };
+  }
+
+  kill(): void {
+    rmSync(this.helperDir, { recursive: true, force: true });
+  }
+
+  get helpersPath(): string {
+    return this.helperDir;
+  }
+}
+
+function execShell(
+  shell: string,
+  command: string,
+  options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }
+): Promise<{ output: string; timedOut: boolean; exitCode?: number }> {
+  return new Promise((resolve) => {
+    execFile(
+      shell,
+      ["--noprofile", "--norc", "-lc", command],
+      {
+        cwd: options.cwd,
+        env: options.env,
+        timeout: options.timeoutMs,
+        maxBuffer: 10 * 1024 * 1024
+      },
+      (error, stdout, stderr) => {
+        const output = [stdout, stderr].filter(Boolean).join(stdout && stderr ? "\n" : "");
+        const exitCode = typeof error?.code === "number" ? error.code : error ? undefined : 0;
+        resolve({
+          output,
+          timedOut: Boolean(error?.killed && error.signal === "SIGTERM"),
+          ...(exitCode !== undefined ? { exitCode } : {})
+        });
+      }
+    );
+  });
+}
+
+async function loadPtyModule(env: NodeJS.ProcessEnv | undefined): Promise<PtyModule | undefined> {
+  if (env?.SMITH_FORCE_BASIC_SHELL === "1" || process.env.SMITH_FORCE_BASIC_SHELL === "1") return undefined;
+  try {
+    const loaded = await import("node-pty");
+    const module = (loaded.default ?? loaded) as unknown;
+    return isPtyModule(module) ? module : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isPtyModule(value: unknown): value is PtyModule {
+  return typeof value === "object" && value !== null && typeof (value as { spawn?: unknown }).spawn === "function";
 }
 
 function sleep(ms: number): Promise<void> {

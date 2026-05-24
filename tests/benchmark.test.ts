@@ -15,6 +15,7 @@ import {
   buildSweBenchProSmithScript,
   buildSweBenchProVerifierScript,
   hideSweBenchProGitDir,
+  hostNodeDockerMountArgs,
   parseSmithTraceUsage,
   restoreSweBenchProGitDir,
   resolveBenchmarkTarget,
@@ -360,6 +361,24 @@ total_tokens: 320
     expect(script).toContain("command -v node");
     expect(script).toContain("node /smith/bin/smith.js --version");
     expect(script).not.toContain("process.versions.node");
+  });
+
+  it("can mount a managed host Node runtime into benchmark containers", () => {
+    const root = mkdtempSync(join(tmpdir(), "smith-node-root-"));
+    mkdirSync(join(root, "bin"), { recursive: true });
+    writeFileSync(join(root, "bin", "node"), "#!/bin/sh\n", "utf8");
+    const nvmRoot = join(root, ".nvm", "versions", "node", "v22.19.0");
+    mkdirSync(join(nvmRoot, "bin"), { recursive: true });
+    writeFileSync(join(nvmRoot, "bin", "node"), "#!/bin/sh\n", "utf8");
+
+    const args = hostNodeDockerMountArgs({}, join(nvmRoot, "bin", "node"));
+
+    expect(args).toEqual(["-v", `${nvmRoot}:${nvmRoot}:ro`]);
+    expect(hostNodeDockerMountArgs({}, "/usr/bin/node")).toEqual([]);
+    expect(hostNodeDockerMountArgs({ SMITH_BENCH_HOST_NODE_ROOT: root }, "/usr/bin/node")).toEqual([
+      "-v",
+      `${root}:${root}:ro`
+    ]);
   });
 
   it("runs SWE-bench Pro Smith containers through a bash entrypoint", () => {
