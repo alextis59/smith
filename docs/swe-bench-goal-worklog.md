@@ -3020,3 +3020,85 @@ Decision:
 - Count `003` as strict targeted evidence, while respecting user guidance not to focus too much on Codex-failed tasks.
 - Current strict valid evidence is now `5/10`: `002`, `003`, `004`, `007`, and `008`.
 - Do not run the full suite yet; still need at least two more plausible recoveries, preferably from Codex-passed Smith failures `001`, `005`, or `010`.
+
+## 2026-05-24 Diagnostic Revalidation: 006 Under Raw Prompt
+
+Reason for target:
+
+- Earlier `006-navidrome` pass depended on SWE-specific prompt guidance that the user has ruled out as cheating.
+- This rerun checks whether `006` is recovered by generic runtime/harness changes alone.
+- `006` is a Codex `gpt-5.4` high failed task, so this is a bounded diagnostic and not a priority iteration target.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed in `216805ms`.
+- Log: `/tmp/smith/2026-05-24T00-38-43-189Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`.
+- Trace: `.smith-bench/run-yvl3l2/home/.smith/runs/2026-05-24T00-35-30-794Z.trace`.
+- Sandbox: `.smith-bench/run-yvl3l2`.
+- Usage: `407041` total tokens.
+- Smith called `finish`; official verifier ran and failed.
+
+Verifier failure:
+
+```text
+missing/failed: TestLastFM
+core/agents/lastfm/client_test.go:131:18: client.GetToken undefined (type *client has no field or method GetToken, but does have method getToken)
+```
+
+`TestListenBrainz` and `TestSpotify` passed.
+
+Workspace evidence:
+
+```text
+ M core/agents/lastfm/agent.go
+M  core/agents/lastfm/agent_test.go
+ M core/agents/lastfm/auth_router.go
+ M core/agents/lastfm/client.go
+M  core/agents/lastfm/client_test.go
+ M core/agents/listenbrainz/agent.go
+M  core/agents/listenbrainz/agent_test.go
+ M core/agents/listenbrainz/auth_router.go
+M  core/agents/listenbrainz/auth_router_test.go
+ M core/agents/listenbrainz/client.go
+M  core/agents/listenbrainz/client_test.go
+ M core/agents/spotify/client.go
+M  core/agents/spotify/client_test.go
+ M core/agents/spotify/spotify.go
+?? SMITH.md
+```
+
+```text
+ core/agents/lastfm/agent.go             | 16 ++++++++--------
+ core/agents/lastfm/auth_router.go       |  6 +++---
+ core/agents/lastfm/client.go            | 28 ++++++++++++++--------------
+ core/agents/listenbrainz/agent.go       |  8 ++++----
+ core/agents/listenbrainz/auth_router.go |  6 +++---
+ core/agents/listenbrainz/client.go      | 16 ++++++++--------
+ core/agents/spotify/client.go           | 14 +++++++-------
+ core/agents/spotify/spotify.go          |  6 +++---
+```
+
+Prompt-integrity check:
+
+```sh
+rg -n "Complete this benchmark task|benchmark verifier|/task/verify.sh|run the verifier directly|This task comes from SWE-bench|SWE-bench Pro instance|base commit|Do not inspect git history" .smith-bench/run-yvl3l2/home/.smith/runs/2026-05-24T00-35-30-794Z.trace || true
+```
+
+Observed:
+
+- No matches. The run used the raw task prompt path plus generic Smith system behavior.
+- No live `smith-bench-run-yvl3l2` Smith or verifier containers remained afterward.
+- Disk after the run was tight: about `3.4G` free.
+
+Decision:
+
+- Do not count the older `006` prompt-coached pass.
+- Do not continue iterating on `006` now because it is a Codex-failed task and the user warned that some such tasks may be flawed.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+- Next priority remains unrecovered Codex-passed Smith failures `001`, `005`, and `010`, using only generic Smith improvements that also make sense for ordinary user tasks.

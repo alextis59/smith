@@ -16,6 +16,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - Current unrecovered Codex-passed Smith failures: `001`, `005`, and `010`. Do not run the full SWE-bench Pro suite until generic changes recover enough Codex-passed failures to plausibly reach `>=7/10`.
 - User clarification on 2026-05-23: do not pursue prompt edits or instructions tailored to SWE-bench Pro. Generic Smith capabilities are acceptable only when they apply to ordinary user tasks as well.
 - User reinforcement on 2026-05-23: prompt or runtime instructions written specifically for SWE-bench Pro are cheating for this goal. Treat the older SWE-specific prompt sections below as rejected historical experiments only; do not count their scores, reintroduce their wording, or use them as design direction.
+- User reinforcement on 2026-05-24: benchmark-shaped prompt edits are cheating even when they look like general benchmark guidance. Future changes must be ordinary Smith improvements that would be appropriate for user tasks outside SWE-bench Pro.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 
@@ -833,3 +834,17 @@ Decision:
 
 - Count `003` as strict targeted evidence, but avoid overfocusing Codex-failed tasks per user guidance.
 - Current strict valid evidence is now `5/10`: `002`, `003`, `004`, `007`, and `008`.
+
+## 2026-05-24 Diagnostic: 006 Fails Under Raw Prompt
+
+Evidence:
+
+- Target SWE rerun `006-navidrome` failed under the raw prompt path in `216805ms`, log `/tmp/smith/2026-05-24T00-38-43-189Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`, trace `.smith-bench/run-yvl3l2/home/.smith/runs/2026-05-24T00-35-30-794Z.trace`.
+- Official verifier failed on `TestLastFM` with build error `client.GetToken undefined`; `TestListenBrainz` and `TestSpotify` passed.
+- Prompt-integrity search found no SWE-bench prompt wrapper, `/task/verify.sh` coaching, exposed instance/base commit prompt text, or anti-history prompt text.
+
+Decision:
+
+- Do not count the older prompt-coached `006` pass.
+- Do not prioritize `006` further for now because Codex `gpt-5.4` high also failed it and the user asked not to overfocus flawed/Codex-failed tasks.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
