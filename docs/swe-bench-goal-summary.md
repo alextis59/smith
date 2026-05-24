@@ -1163,3 +1163,29 @@ Decision:
 - Keep the change as generic benchmark harness reliability.
 - Do not count `005` as recovered.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
+
+## 2026-05-24 Generic Sustained-Inspection Throttle
+
+Change:
+
+- After `24` consecutive tool results without a task patch or finish on an editable run, Smith temporarily removes `run` and `sub_agent` from the available tool set until the agent patches or finishes.
+- The throttle is generic loop control for long coding tasks that are stuck inspecting; it is not tied to SWE-bench Pro task names, repositories, tests, languages, or verifier behavior.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `23` tests.
+- Project benchmark `091-command-router-refactor`: passed in `179597ms`, log `/tmp/smith/2026-05-24T06-18-40-848Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-vVGkBl/home/.smith/runs/2026-05-24T06-15-42-993Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed in `680894ms`, log `/tmp/smith/2026-05-24T06-30-10-954Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-n72o4K/home/.smith/runs/2026-05-24T06-18-58-088Z.trace`.
+
+Evidence:
+
+- Trace showed the throttle firing at `24` no-patch tool calls with available tools reduced to `patch, finish`; the agent patched immediately afterward.
+- Compared with the previous valid `005` run, duration improved from `769019ms` to `680894ms`, turns from `51` to `34`, and total tokens from `1772196` to `1421728`.
+- Verifier still failed because the candidate patch left `lib/kube/proxy` build errors around removed/renamed `Forwarder` fields.
+
+Decision:
+
+- Keep the change as generic anti-stall loop control.
+- Do not count `005` as recovered.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.

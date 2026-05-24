@@ -4389,3 +4389,83 @@ Decision:
 - Do not count `005` as recovered; this run exposes an implementation failure in the candidate patch, not a harness failure.
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
+
+## 2026-05-24 Change: Pause Inspection Tools After Sustained No-Patch Progress
+
+Hypothesis:
+
+- The valid `005` trace `.smith-bench/run-BfvvUW/home/.smith/runs/2026-05-24T05-54-19-958Z.trace` showed a generic long-run failure shape: many inspection `run` calls, a progress reminder at `12` no-patch calls, another at `24`, then continued inspection until a late first patch near the deadline.
+- A generic loop-control mechanism can break this pattern without task-specific prompting: once an editable run has spent two full progress-reminder intervals without a task patch or finish, stop offering inspection tools until the agent either patches or finishes.
+
+Change:
+
+- `src/loop.ts`:
+  - added `inspectionDisabledReason` to tool availability state;
+  - after `24` consecutive tool results without a non-memory patch or finish, temporarily removes `run` and `sub_agent` from available tools when `patch` is available;
+  - restores inspection tools after a real task patch;
+  - keeps read-only runs unaffected because `patch` is unavailable there.
+- `tests/integration.test.ts`:
+  - added coverage proving Smith removes inspection tools after repeated no-patch progress reminders and reports `run` as unavailable if the model tries to continue inspecting.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration tests passed: `23` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `179597ms`.
+- Log: `/tmp/smith/2026-05-24T06-18-40-848Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-vVGkBl/home/.smith/runs/2026-05-24T06-15-42-993Z.trace`.
+- Usage: `68037` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `680894ms`.
+- Log: `/tmp/smith/2026-05-24T06-30-10-954Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-n72o4K/home/.smith/runs/2026-05-24T06-18-58-088Z.trace`.
+- Sandbox: `.smith-bench/run-n72o4K`.
+- Usage: `1421728` total tokens.
+- Smith reached `finish`; the SWE verifier ran and failed.
+
+Trace evidence:
+
+- At `24` no-patch tool calls, the progress reminder reported available tools `patch, finish`.
+- The provider request system note said sustained inspection had continued without a task patch or finish, and inspection tools were temporarily unavailable.
+- The next actual model tool call was `patch`.
+- Compared with the previous valid `005` run, wall time improved from `769019ms` to `680894ms`, turns from `51` to `34`, and total tokens from `1772196` to `1421728`.
+
+Verifier evidence:
+
+- The retained patch touched `lib/kube/proxy/forwarder.go` and `lib/service/kubernetes.go`.
+- The verifier still failed because `lib/kube/proxy` did not build:
+  - `unknown field 'cfg' in struct literal of type Forwarder`
+  - `f.cfg undefined`
+  - `unknown field 'clientCredentials' in struct literal of type Forwarder`
+  - `f.clientCredentials undefined`
+
+Decision:
+
+- Keep the sustained-inspection throttle as generic anti-stall loop control.
+- Do not count `005` as recovered; the target still exposes an implementation failure.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.

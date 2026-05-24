@@ -40,6 +40,7 @@ model = "fake-model"
 [runtime]
 danger_review = "off"
 timeout_ms = 5000
+max_turns = 30
 `,
       "utf8"
     );
@@ -152,6 +153,7 @@ model = "fake-model"
 [runtime]
 danger_review = "off"
 timeout_ms = 5000
+max_turns = 30
 `,
       "utf8"
     );
@@ -860,6 +862,52 @@ timeout_ms = 5000
     const traceDir = join(home, ".smith", "runs");
     const trace = readFileSync(join(traceDir, readdirSync(traceDir)[0]), "utf8");
     expect(trace).toContain("## progress reminder");
+  });
+
+  it("temporarily disables inspection tools after repeated no-patch progress reminders", async () => {
+    const provider = await startFakeProvider([
+      ...Array.from({ length: 24 }, (_, index) => ({
+        name: "run" as const,
+        arguments: { command: `printf output-${index}` }
+      })),
+      { name: "run", arguments: { command: "printf should-not-run" } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-inspection-pause-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "inspect repeatedly"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(26);
+    expect(toolNames(provider.requests[24].body)).toEqual(["patch", "finish"]);
+    expect(systemMessage(provider.requests[24].body)).toContain(
+      "Sustained inspection has continued without a task patch or finish"
+    );
+    expect(userMessages(provider.requests[24].body)).toContain("Smith progress: 24 tool calls have completed");
+    expect(userMessages(provider.requests[25].body)).toContain("Unknown or unavailable tool 'run'");
   });
 
   it("does not reset progress reminders for memory-only patches", async () => {

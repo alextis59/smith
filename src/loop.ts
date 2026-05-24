@@ -32,6 +32,7 @@ const MAX_SUB_AGENT_DEPTH = 2;
 const RIPGREP_CHECK_TIMEOUT_MS = 5_000;
 const RIPGREP_BOOTSTRAP_MAX_TURNS = 6;
 const PROGRESS_REMINDER_TOOL_INTERVAL = 12;
+const INSPECTION_PAUSE_TOOL_INTERVAL = PROGRESS_REMINDER_TOOL_INTERVAL * 2;
 const RUN_DEADLINE_REMINDER_THRESHOLDS = [0.75, 0.9] as const;
 const RIPGREP_UNAVAILABLE_PROMPT_NOTE =
   "Environment note: the `rg` command is not available in this environment. Smith already checked at startup and, when allowed, attempted a straightforward install without confirming `rg` on PATH. Use grep, find, or language-specific tools instead, and do not spend task time trying to install `rg` unless the user explicitly asks.";
@@ -76,6 +77,7 @@ export class SmithRunFailure extends Error {
 
 type ToolAvailabilityState = {
   subAgentDisabledReason?: string;
+  inspectionDisabledReason?: string;
 };
 
 export type SmithEnvironmentPreparation = {
@@ -257,6 +259,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       const appendReminders = (pendingOutput: string): string => {
         let output = pendingOutput;
         if (toolCallsSincePatchOrFinish > 0 && toolCallsSincePatchOrFinish % PROGRESS_REMINDER_TOOL_INTERVAL === 0) {
+          toolAvailabilityState = pauseInspectionAfterSustainedNoPatch(options, toolAvailabilityState, toolCallsSincePatchOrFinish);
           const reminder = progressReminderOutput(options, toolAvailabilityState, toolCallsSincePatchOrFinish, turn, maxTurns);
           transcript = appendTerminalTurn(transcript, "# progress", reminder);
           providerMessages = appendProviderUserObservation(providerMessages, reminder);
@@ -310,11 +313,14 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           } else if (action.subAgentTurnLimitFailure) {
             subAgentTurnLimitFailures += 1;
             toolAvailabilityState = {
+              ...toolAvailabilityState,
               subAgentDisabledReason:
                 subAgentTurnLimitFailures >= 2
                   ? "Multiple sub_agent child runs did not finish within their turn budgets, so sub_agent is unavailable for the rest of this run."
                   : "A previous sub_agent child run did not finish within its turn budget, so sub_agent is temporarily unavailable until a task patch succeeds."
             };
+          } else if (madeTaskPatch) {
+            toolAvailabilityState = { ...toolAvailabilityState, inspectionDisabledReason: undefined };
           }
           toolCallsSincePatchOrFinish = madeTaskPatch || action.finished ? 0 : toolCallsSincePatchOrFinish + 1;
           if (action.finished) {
@@ -740,6 +746,9 @@ function availableSmithTools(options: SmithRunOptions, availability: ToolAvailab
   if (availability.subAgentDisabledReason || !options.runtime.subAgentEnabled || depth >= MAX_SUB_AGENT_DEPTH) {
     tools = tools.filter((tool) => tool.name !== "sub_agent");
   }
+  if (availability.inspectionDisabledReason) {
+    tools = tools.filter((tool) => tool.name !== "run" && tool.name !== "sub_agent");
+  }
   return tools;
 }
 
@@ -755,12 +764,16 @@ function systemPromptForAvailableTools(
       "You are running as a Smith sub-agent. Your final user input is your only delegated objective; earlier transcript entries are background context and do not expand the task."
     );
   }
-  if (!tools.some((tool) => tool.name === "sub_agent")) {
+  if (availability.subAgentDisabledReason || !options.runtime.subAgentEnabled || (options.subAgentDepth ?? 0) >= MAX_SUB_AGENT_DEPTH) {
     const available = tools.map((tool) => tool.name).join(", ");
     const reason = availability.subAgentDisabledReason ?? (options.runtime.subAgentEnabled
       ? "Sub-agent depth limit has been reached for this run."
       : "Sub-agent delegation is disabled for this run.");
     notes.push(`${reason} The sub_agent tool is unavailable; complete the work directly with available tools: ${available}.`);
+  }
+  if (availability.inspectionDisabledReason) {
+    const available = tools.map((tool) => tool.name).join(", ");
+    notes.push(`${availability.inspectionDisabledReason} Continue with available tools: ${available}.`);
   }
   if (options.runtime.readOnly) {
     notes.push(
@@ -768,6 +781,21 @@ function systemPromptForAvailableTools(
     );
   }
   return notes.length > 0 ? [systemPrompt, ...notes].join("\n\n") : systemPrompt;
+}
+
+function pauseInspectionAfterSustainedNoPatch(
+  options: SmithRunOptions,
+  availability: ToolAvailabilityState,
+  toolCallsSincePatchOrFinish: number
+): ToolAvailabilityState {
+  if (availability.inspectionDisabledReason) return availability;
+  const patchAvailable = availableSmithTools(options, availability).some((tool) => tool.name === "patch");
+  if (!patchAvailable || toolCallsSincePatchOrFinish < INSPECTION_PAUSE_TOOL_INTERVAL) return availability;
+  return {
+    ...availability,
+    inspectionDisabledReason:
+      "Sustained inspection has continued without a task patch or finish, so inspection tools are temporarily unavailable until a task patch is applied or the run finishes."
+  };
 }
 
 function isProviderStateFallbackError(error: unknown): boolean {
