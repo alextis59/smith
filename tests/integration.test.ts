@@ -485,6 +485,51 @@ max_turns = 2
     expect(provider.requests).toHaveLength(4);
   });
 
+  it("hides sub_agent after a child run exhausts its turn budget until a task patch succeeds", async () => {
+    const provider = await startFakeProvider([
+      { name: "sub_agent", arguments: { task: "inspect from child" } },
+      { name: "run", arguments: { command: "printf child-output-1" } },
+      { name: "run", arguments: { command: "printf child-output-2" } },
+      { name: "sub_agent", arguments: { task: "retry delegated inspection" } },
+      { name: "finish", arguments: { message: "parent done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-sub-agent-disable-after-fail-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 3
+sub_agent_max_turns = 2
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "parent task"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("parent done");
+    expect(provider.requests).toHaveLength(5);
+    expect(toolNames(provider.requests[3].body)).toEqual(["run", "patch", "finish"]);
+    expect(systemMessage(provider.requests[3].body)).toContain(
+      "A previous sub_agent child run did not finish within its turn budget"
+    );
+    expect(userMessages(provider.requests[4].body)).toContain("Unknown or unavailable tool 'sub_agent'");
+  });
+
   it("does not expose sub_agent inside child runs once max sub-agent depth is reached", async () => {
     const provider = await startFakeProvider([
       { name: "sub_agent", arguments: { task: "inspect from child" } },

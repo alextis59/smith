@@ -3787,3 +3787,124 @@ Decision:
 - Count `001` as recovered.
 - Current targeted strict evidence is now `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Do not run the full suite yet; need one more plausible Codex-passed recovery, likely `005` or `010`, before a full run is warranted.
+
+## 2026-05-24 Policy Reinforcement: No Benchmark-Specific Prompt Edits
+
+User clarification:
+
+- Prompt edits made specifically for the benchmark are cheating for this goal.
+- Instructions too specific to SWE-bench tasks or run-time should be discarded.
+- Future changes must be generic improvements applicable to ordinary user tasks.
+
+Audit:
+
+- `SWE_BENCH_PRO_TASK_INSTRUCTIONS` remains empty.
+- `benchmarkPrompt()` returns raw task text for SWE-bench Pro when the instruction list is empty.
+- No Smith code changes were present before starting the next generic change.
+
+Decision:
+
+- Do not reintroduce SWE-specific prompt wording or benchmark-shaped runtime instructions.
+- Treat older SWE-specific prompt sections in these logs as rejected historical evidence only.
+
+## 2026-05-24 Generic Sub-Agent Turn-Limit Throttling
+
+Hypothesis:
+
+- The latest `005` run after provider-history compaction failed by Docker timeout after making late patches and repeatedly spending budget on child runs that did not call `finish`.
+- A child run that exhausts its turn budget is a generic signal that delegation is not currently productive. Re-offering `sub_agent` immediately can lead to repeated expensive delegation loops.
+- A generic fix is to hide `sub_agent` from the parent after a child turn-limit failure until a real task patch succeeds. Re-enabling after a task patch preserves useful delegation after actual progress.
+
+Pre-change target evidence:
+
+- `005` run: `/tmp/smith/2026-05-24T03-51-41-740Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-hNIXSI/home/.smith/runs/2026-05-24T03-36-36-418Z.trace`.
+- Failed by Docker timeout in `909628ms`.
+- Usage: `2875729` total tokens.
+- Retained workspace had `lib/kube/proxy/forwarder.go` changed, but no verifier ran.
+- Late trace evidence included `sub_agent failed: model did not call finish within 12 turns`, progress/deadline reminders, and more inspection/patching near the timeout.
+
+Change:
+
+- `src/loop.ts`:
+  - added `ToolAvailabilityState`
+  - tracks when a `sub_agent` child fails with `model did not call finish within N turns`
+  - removes `sub_agent` from available tools while that state is active
+  - includes the unavailable-tool reason in the generic available-tools system note
+  - clears the state after a real task patch, not after memory-only patches
+  - carries the same available-tools state into progress and deadline reminders
+- `tests/integration.test.ts`:
+  - added coverage where a child exhausts `sub_agent_max_turns`
+  - verifies the next parent request exposes only `run`, `patch`, and `finish`
+  - verifies a later attempted `sub_agent` call is reported as unavailable
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration tests passed: `20` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `184430ms`.
+- Log: `/tmp/smith/2026-05-24T04-00-15-610Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-5QZyia/home/.smith/runs/2026-05-24T03-57-11-411Z.trace`.
+- Usage: `86732` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `753994ms`.
+- Log: `/tmp/smith/2026-05-24T04-12-56-327Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-mA6ntS/home/.smith/runs/2026-05-24T04-00-29-969Z.trace`.
+- Sandbox: `.smith-bench/run-mA6ntS`.
+- Usage: `3116556` total tokens.
+- Smith reached `finish` after `55` turns; unlike the previous run, the official verifier executed.
+
+Verifier failure:
+
+- `lib/kube/proxy/forwarder.go:510:71: f.AccessPoint undefined (type *Forwarder has no field or method AccessPoint)`
+- `lib/kube/proxy/forwarder.go:1233:34: s.parent.Client undefined (type *Forwarder has no field or method Client)`
+- `forwarder_test.go` still referenced removed fields such as `cfg` and `clientCredentials`.
+- Parser output listed the selected `TestParseResourcePath` and `TestAuthenticate` cases as missing/failed because the package build failed.
+
+Trace checks:
+
+```sh
+for p in "previous sub_agent child run" "sub_agent failed: model did not call finish" "Unknown or unavailable tool 'sub_agent'" "Smith deadline"; do
+  printf '%s: ' "$p"
+  rg -c "$p" .smith-bench/run-mA6ntS/home/.smith/runs/2026-05-24T04-00-29-969Z.trace || true
+done
+```
+
+Observed:
+
+- `previous sub_agent child run`: `128` trace matches, including repeated provider replay of the generic unavailability note.
+- `sub_agent failed: model did not call finish`: `55` trace matches.
+- `Unknown or unavailable tool 'sub_agent'`: no direct attempted unavailable tool call found.
+- `Smith deadline`: `11` trace matches.
+
+Decision:
+
+- Keep this as a generic Smith loop/tool-availability improvement.
+- Do not count `005` as recovered; it reached verifier but failed build/tests.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Do not run the full suite yet.
+- Next concrete target: inspect `010` under current generic state or mine the `005` verifier/build failure only for generic Smith loop issues, not task-specific implementation hints.

@@ -74,6 +74,10 @@ export class SmithRunFailure extends Error {
   }
 }
 
+type ToolAvailabilityState = {
+  subAgentDisabledReason?: string;
+};
+
 export type SmithEnvironmentPreparation = {
   systemPrompt: string;
   ripgrepAvailable: boolean;
@@ -153,6 +157,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let responsesInputItems: Record<string, unknown>[] | undefined;
   let codexTurnState: string | undefined;
   let toolCallsSincePatchOrFinish = 0;
+  let toolAvailabilityState: ToolAvailabilityState = {};
   let runDeadlineReminderIndex = 0;
   const runStartedAt = Date.now();
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
@@ -188,7 +193,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         providerMessages,
         statefulTurn,
         providerState,
-        debugJson: providerDebugJson?.write
+        debugJson: providerDebugJson?.write,
+        toolAvailabilityState
       }).catch(async (error: unknown) => {
         if (!statefulTurn || !isProviderStateFallbackError(error)) throw error;
         statefulResponses = false;
@@ -208,7 +214,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             responsesInputItems,
             codexTurnState
           }),
-          debugJson: providerDebugJson?.write
+          debugJson: providerDebugJson?.write,
+          toolAvailabilityState
         });
       });
       const responseProviderState = response.providerState;
@@ -249,14 +256,14 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       const appendReminders = (pendingOutput: string): string => {
         let output = pendingOutput;
         if (toolCallsSincePatchOrFinish > 0 && toolCallsSincePatchOrFinish % PROGRESS_REMINDER_TOOL_INTERVAL === 0) {
-          const reminder = progressReminderOutput(options, toolCallsSincePatchOrFinish, turn, maxTurns);
+          const reminder = progressReminderOutput(options, toolAvailabilityState, toolCallsSincePatchOrFinish, turn, maxTurns);
           transcript = appendTerminalTurn(transcript, "# progress", reminder);
           providerMessages = appendProviderUserObservation(providerMessages, reminder);
           nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, reminder);
           output = [output, reminder].filter(Boolean).join("\n");
           options.trace?.write("progress reminder", reminder);
         }
-        const deadlineReminder = runDeadlineReminderOutput(options, runStartedAt, runDeadlineReminderIndex);
+        const deadlineReminder = runDeadlineReminderOutput(options, toolAvailabilityState, runStartedAt, runDeadlineReminderIndex);
         if (deadlineReminder) {
           runDeadlineReminderIndex += 1;
           transcript = appendTerminalTurn(transcript, "# deadline", deadlineReminder);
@@ -268,7 +275,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         return output;
       };
       if (toolCalls.length === 0) {
-        const output = missingToolCallOutput(response.text, availableSmithTools(options).map((tool) => tool.name));
+        const output = missingToolCallOutput(response.text, availableSmithTools(options, toolAvailabilityState).map((tool) => tool.name));
         transcript = appendTerminalTurn(transcript, "# tool observation", output);
         providerMessages = appendProviderUserObservation(providerMessages, output);
         nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, output);
@@ -287,7 +294,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             providerMessages,
             responsesInputItems: nextResponsesInputItems,
             fallbackToolCallId: responseToolCallId,
-            totalUsage
+            totalUsage,
+            toolAvailabilityState
           });
           totalUsage = action.totalUsage;
           transcript = action.transcript;
@@ -296,6 +304,14 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           nextPendingOutput = [nextPendingOutput, action.toolOutput].filter(Boolean).join("\n");
           const madeTaskPatch =
             toolName === "patch" && action.changedFiles !== undefined && !changedFilesAreOnlySmithMemory(action.changedFiles);
+          if (madeTaskPatch) {
+            toolAvailabilityState = {};
+          } else if (action.subAgentTurnLimitFailure) {
+            toolAvailabilityState = {
+              subAgentDisabledReason:
+                "A previous sub_agent child run did not finish within its turn budget, so sub_agent is temporarily unavailable until a task patch succeeds."
+            };
+          }
           toolCallsSincePatchOrFinish = madeTaskPatch || action.finished ? 0 : toolCallsSincePatchOrFinish + 1;
           if (action.finished) {
             if (totalUsage) options.trace?.write("run usage", formatUsageCost(totalUsage));
@@ -349,6 +365,7 @@ type ToolActionResult = {
   totalUsage?: TokenUsageCost;
   changedFiles?: string[];
   finished?: string;
+  subAgentTurnLimitFailure?: boolean;
 };
 
 type ToolCallContext = {
@@ -360,6 +377,7 @@ type ToolCallContext = {
   responsesInputItems?: Record<string, unknown>[];
   fallbackToolCallId?: string;
   totalUsage?: TokenUsageCost;
+  toolAvailabilityState: ToolAvailabilityState;
 };
 
 async function handleToolCall(context: ToolCallContext): Promise<ToolActionResult> {
@@ -377,7 +395,7 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
   );
   const reasonState = appendToolReason(context.transcript, context.providerMessages, toolName ?? context.toolCall.name, reason);
   const parentContext = { ...context, transcript: reasonState.transcript, providerMessages: reasonState.providerMessages };
-  const availableToolNames = availableSmithTools(context.options).map((tool) => tool.name);
+  const availableToolNames = availableSmithTools(context.options, context.toolAvailabilityState).map((tool) => tool.name);
 
   if (!toolName || !availableToolNames.includes(toolName)) {
     return appendToolObservation(
@@ -583,7 +601,10 @@ async function runSubAgentTool(
   } catch (error) {
     const totalUsage = addUsageCost(context.totalUsage, error instanceof SmithRunFailure ? error.usage : undefined);
     const output = `sub_agent failed: ${errorMessage(error)}`;
-    return appendToolObservation({ ...context, totalUsage }, callId, output);
+    return {
+      ...appendToolObservation({ ...context, totalUsage }, callId, output),
+      ...(isSubAgentTurnLimitFailure(error) ? { subAgentTurnLimitFailure: true } : {})
+    };
   }
 }
 
@@ -660,9 +681,10 @@ async function completeModelTurn(context: {
   statefulTurn: boolean;
   providerState?: SmithProviderState;
   debugJson?: (record: Record<string, unknown>) => void;
+  toolAvailabilityState: ToolAvailabilityState;
 }): Promise<SmithModelResponse> {
-  const tools = availableSmithTools(context.options);
-  const systemPrompt = systemPromptForAvailableTools(context.systemPrompt, tools, context.options);
+  const tools = availableSmithTools(context.options, context.toolAvailabilityState);
+  const systemPrompt = systemPromptForAvailableTools(context.systemPrompt, tools, context.options, context.toolAvailabilityState);
   const messages =
     context.statefulTurn && context.providerState?.previousResponseId
       ? providerMessagesToMessages(
@@ -697,19 +719,24 @@ async function completeModelTurn(context: {
   );
 }
 
-function availableSmithTools(options: SmithRunOptions) {
+function availableSmithTools(options: SmithRunOptions, availability: ToolAvailabilityState = {}) {
   const depth = options.subAgentDepth ?? 0;
   let tools = SMITH_TOOLS;
   if (options.runtime.readOnly) {
     tools = tools.filter((tool) => tool.name !== "patch");
   }
-  if (!options.runtime.subAgentEnabled || depth >= MAX_SUB_AGENT_DEPTH) {
+  if (availability.subAgentDisabledReason || !options.runtime.subAgentEnabled || depth >= MAX_SUB_AGENT_DEPTH) {
     tools = tools.filter((tool) => tool.name !== "sub_agent");
   }
   return tools;
 }
 
-function systemPromptForAvailableTools(systemPrompt: string, tools: typeof SMITH_TOOLS, options: SmithRunOptions): string {
+function systemPromptForAvailableTools(
+  systemPrompt: string,
+  tools: typeof SMITH_TOOLS,
+  options: SmithRunOptions,
+  availability: ToolAvailabilityState = {}
+): string {
   const notes: string[] = [];
   if ((options.subAgentDepth ?? 0) > 0) {
     notes.push(
@@ -718,9 +745,9 @@ function systemPromptForAvailableTools(systemPrompt: string, tools: typeof SMITH
   }
   if (!tools.some((tool) => tool.name === "sub_agent")) {
     const available = tools.map((tool) => tool.name).join(", ");
-    const reason = options.runtime.subAgentEnabled
+    const reason = availability.subAgentDisabledReason ?? (options.runtime.subAgentEnabled
       ? "Sub-agent depth limit has been reached for this run."
-      : "Sub-agent delegation is disabled for this run.";
+      : "Sub-agent delegation is disabled for this run.");
     notes.push(`${reason} The sub_agent tool is unavailable; complete the work directly with available tools: ${available}.`);
   }
   if (options.runtime.readOnly) {
@@ -840,6 +867,10 @@ function inferSubAgentReadOnly(task: string): boolean {
   return /\b(?:do not|don't)\s+(?:edit|modify|change|write)\b|\bwithout editing\b|\bread[- ]only\b|\bno edits?\b/i.test(task);
 }
 
+function isSubAgentTurnLimitFailure(error: unknown): boolean {
+  return error instanceof SmithRunFailure && /^model did not call finish within \d+ turns$/.test(error.message);
+}
+
 async function isRipgrepAvailable(options: SmithRunOptions): Promise<boolean> {
   try {
     await execFileAsync(options.runtime.shell, ["-c", "command -v rg >/dev/null 2>&1"], {
@@ -892,9 +923,15 @@ function memoryFilePresence(cwd: string): string {
   ].join("\n");
 }
 
-function progressReminderOutput(options: SmithRunOptions, toolCallsSincePatchOrFinish: number, turn: number, maxTurns: number): string {
-  const availableTools = availableSmithTools(options).map((tool) => tool.name).join(", ");
-  const patchAvailable = availableSmithTools(options).some((tool) => tool.name === "patch");
+function progressReminderOutput(
+  options: SmithRunOptions,
+  availability: ToolAvailabilityState,
+  toolCallsSincePatchOrFinish: number,
+  turn: number,
+  maxTurns: number
+): string {
+  const availableTools = availableSmithTools(options, availability).map((tool) => tool.name).join(", ");
+  const patchAvailable = availableSmithTools(options, availability).some((tool) => tool.name === "patch");
   const status = `Smith progress: ${toolCallsSincePatchOrFinish} tool calls have completed without ${
     patchAvailable ? "a task patch or finish" : "finish"
   }; turn ${turn} of ${maxTurns}; available tools: ${availableTools}.`;
@@ -906,6 +943,7 @@ function progressReminderOutput(options: SmithRunOptions, toolCallsSincePatchOrF
 
 function runDeadlineReminderOutput(
   options: SmithRunOptions,
+  availability: ToolAvailabilityState,
   runStartedAt: number,
   reminderIndex: number
 ): string | undefined {
@@ -915,8 +953,8 @@ function runDeadlineReminderOutput(
   const elapsedMs = Date.now() - runStartedAt;
   if (elapsedMs < maxRunMs * threshold) return undefined;
   const percentage = Math.round(threshold * 100);
-  const availableTools = availableSmithTools(options).map((tool) => tool.name).join(", ");
-  const patchAvailable = availableSmithTools(options).some((tool) => tool.name === "patch");
+  const availableTools = availableSmithTools(options, availability).map((tool) => tool.name).join(", ");
+  const patchAvailable = availableSmithTools(options, availability).some((tool) => tool.name === "patch");
   const status = `Smith deadline: elapsed ${formatDurationMs(elapsedMs)} of ${formatDurationMs(
     maxRunMs
   )} max run time (${percentage}% threshold); available tools: ${availableTools}.`;

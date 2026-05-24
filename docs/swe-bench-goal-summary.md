@@ -12,8 +12,8 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - Integrity correction: user clarified that prompt edits made specifically for the SWE benchmark are cheating for this goal. Earlier SWE-specific prompt milestones and any passes produced under them are retained below only as historical investigation notes, not valid target evidence.
 - Current valid evidence should count only the baseline full-run passes plus results produced after `befac0f` removed SWE-specific prompt coaching and kept only generic Smith/runtime or harness-integrity changes.
 - Stricter prompt rule: SWE-bench Pro tasks now receive the raw task prompt only, with no Smith benchmark wrapper or SWE-specific coaching. Local project benchmarks still keep their normal `/task/verify.sh` harness framing.
-- Current strict targeted evidence: baseline full-run passes `002`, `004`, `007`, plus recovered `003` and `008` under the raw-prompt path, for `5/10` evidence. `003` is still a Codex `gpt-5.4` failed task, so keep prioritizing Codex-passed Smith failures for further work.
-- Current unrecovered Codex-passed Smith failures: `001`, `005`, and `010`. Do not run the full SWE-bench Pro suite until generic changes recover enough Codex-passed failures to plausibly reach `>=7/10`.
+- Current strict targeted evidence: baseline full-run passes `002`, `004`, `007`, plus recovered `001`, `003`, and `008` under the raw-prompt path, for `6/10` evidence. `003` is still a Codex `gpt-5.4` failed task, so keep prioritizing Codex-passed Smith failures for further work.
+- Current unrecovered Codex-passed Smith failures: `005` and `010`. Do not run the full SWE-bench Pro suite until generic changes recover one more Codex-passed failure to plausibly reach `>=7/10`.
 - User clarification on 2026-05-23: do not pursue prompt edits or instructions tailored to SWE-bench Pro. Generic Smith capabilities are acceptable only when they apply to ordinary user tasks as well.
 - User reinforcement on 2026-05-23: prompt or runtime instructions written specifically for SWE-bench Pro are cheating for this goal. Treat the older SWE-specific prompt sections below as rejected historical experiments only; do not count their scores, reintroduce their wording, or use them as design direction.
 - User reinforcement on 2026-05-24: benchmark-shaped prompt edits are cheating even when they look like general benchmark guidance. Future changes must be ordinary Smith improvements that would be appropriate for user tasks outside SWE-bench Pro.
@@ -1007,3 +1007,29 @@ Decision:
 - Count `001` as recovered under the strict no-cheating rule.
 - Current targeted strict evidence is now `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Do not run the full suite yet; one more Codex-passed Smith failure still needs recovery evidence before a full run is plausible.
+
+## 2026-05-24 Generic Sub-Agent Turn-Limit Throttling
+
+Change:
+
+- If a `sub_agent` child run exhausts its turn budget without calling `finish`, Smith now hides `sub_agent` from the parent until a real task patch succeeds.
+- This is generic Smith tool policy for ordinary tasks; it is not a SWE-bench prompt or benchmark-specific runtime instruction.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `20` tests.
+- Project benchmark `091-command-router-refactor`: passed in `184430ms`, log `/tmp/smith/2026-05-24T04-00-15-610Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-5QZyia/home/.smith/runs/2026-05-24T03-57-11-411Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed in `753994ms`, log `/tmp/smith/2026-05-24T04-12-56-327Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-mA6ntS/home/.smith/runs/2026-05-24T04-00-29-969Z.trace`.
+
+Evidence:
+
+- Compared with the previous `005` run, the task no longer ended by Docker timeout. Smith reached `finish`, then the official verifier ran.
+- The verifier failed with build errors in `lib/kube/proxy/forwarder.go` and restored-test failures; key errors included `f.AccessPoint undefined`, `s.parent.Client undefined`, and test references to removed `cfg` and `clientCredentials` fields.
+- Trace evidence contains the new sub-agent-disabled reason and repeated child turn-limit failures, so the generic policy was exercised.
+
+Decision:
+
+- Keep the generic sub-agent throttling change because it helped Smith reach a verifier instead of timing out, but do not count `005` as recovered.
+- Current targeted strict evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Still do not run the full suite; target `010` or another generic issue from `005` next.
