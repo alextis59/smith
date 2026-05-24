@@ -4170,3 +4170,46 @@ Decision:
 - Do not count `010` as recovered.
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Avoid further `010` iteration unless a new broad Smith issue appears; consider returning to `005` or another generic loop/tool issue.
+
+## 2026-05-24 Diagnostic: 005 Under Current Generic Build
+
+Reason:
+
+- After `010` remained unrecovered, rerun the other Codex-passed unrecovered target, `005`, under the current generic harness/tooling state.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout in `910633ms`.
+- Log: `/tmp/smith/2026-05-24T05-25-29-121Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-A0ww1p/home/.smith/runs/2026-05-24T05-10-23-878Z.trace`.
+- Sandbox: `.smith-bench/run-A0ww1p`.
+- Usage: `2803158` total tokens.
+- No verifier ran.
+
+Retained diff:
+
+```text
+ lib/kube/proxy/forwarder.go | 64 ++++++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 55 insertions(+), 9 deletions(-)
+lib/kube/proxy/forwarder.go
+```
+
+Trace counts:
+
+- `sub_agent failed: model did not call finish`: `58`
+- `Smith deadline`: `38`
+- `Applied patch to`: `11`
+- No read-only test-file `EACCES` evidence on this target.
+
+Decision:
+
+- Do not count `005` as recovered.
+- The current generic changes are insufficient for `005`; it regressed from prior verifier-reaching behavior back to timeout.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is not justified.

@@ -1097,3 +1097,17 @@ Decision:
 - Keep the generic patch feedback because it is ordinary tool-result clarity and reduced the `010` run duration/token usage.
 - Do not count `010` as recovered; strict targeted evidence remains `6/10`.
 - Avoid more `010`-specific iteration unless a new generic issue appears.
+
+## 2026-05-24 Diagnostic 005 Under Current Generic Build
+
+Result:
+
+- Target SWE rerun `005-gravitational-teleport`: failed by Docker timeout in `910633ms`, log `/tmp/smith/2026-05-24T05-25-29-121Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-A0ww1p/home/.smith/runs/2026-05-24T05-10-23-878Z.trace`.
+- Retained diff changed only `lib/kube/proxy/forwarder.go`.
+- No verifier ran.
+
+Decision:
+
+- Do not count `005` as recovered.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
