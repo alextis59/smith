@@ -793,3 +793,17 @@ Decision:
 
 - Do not count `010` as recovered.
 - Do not add prompt or runtime guidance about this task shape; current strict valid evidence remains `4/10`.
+
+## 2026-05-24 Rejected: Generic Test-File Patch Note
+
+Evidence:
+
+- Trialed a generic patch-result note when Smith edits test-like files. It did not mention SWE-bench, selected tests, or verifier behavior.
+- Focused tests/build passed and project benchmark `091-command-router-refactor` passed in `119331ms`, log `/tmp/smith/2026-05-23T23-59-43-122Z-smith-091-command-router-refactor.json`.
+- Target SWE rerun `010-future-architect-vuls` still failed official verifier in `783980ms`, log `/tmp/smith/2026-05-24T00-12-53-662Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-6CW0lO/home/.smith/runs/2026-05-23T23-59-50-545Z.trace`.
+- Trace confirmed the note appeared repeatedly after edits to `scanner/alpine_test.go`, but Smith still finished after validating against edited tests; restored verifier tests failed with the same missing-method and `TestIsOvalDefAffected` failures.
+
+Decision:
+
+- Rejected and reverted the note to avoid accumulating prompt-like guidance without target improvement.
+- Do not count `010` as recovered; current strict valid evidence remains `4/10`.

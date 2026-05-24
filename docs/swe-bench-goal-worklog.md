@@ -2863,3 +2863,54 @@ Decision:
 - Do not count `010` as recovered.
 - This is an implementation miss after edited local tests were restored by the official verifier. Under the user's rule, do not encode task-specific or SWE-specific guidance from this failure.
 - Current strict valid evidence remains `4/10`.
+
+## 2026-05-24 Rejected Experiment: Generic Test-File Patch Note
+
+Hypothesis:
+
+- The prior `010` run edited local tests, passed local checks against those edited tests, and then failed when the official verifier used restored tests.
+- A generic patch-result note for test-like file edits might help ordinary Smith tasks avoid false confidence after changing tests, without mentioning SWE-bench, selected tests, or verifier behavior.
+
+Trial change:
+
+- `src/loop.ts`: after a successful patch, detect changed test-like paths such as `*_test.go`, `*.test.*`, `*.spec.*`, and files under `test/` or `tests/`, then append:
+  - `Smith validation note: this patch changed test-like files (...). Checks that run modified tests may not prove the implementation satisfies the original request; verify the implementation itself before finish.`
+- `tests/integration.test.ts`: added fake-provider coverage that the note appeared after patching `user_test.go`.
+
+Validation:
+
+```sh
+npm test -- tests/integration.test.ts tests/danger-review.test.ts
+npm run build
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Initial focused test run failed because it raced a parallel `npm run build` and executed stale `dist`; rerunning tests after build passed.
+- Focused tests passed: `29` tests.
+- TypeScript build passed.
+- Project benchmark `091-command-router-refactor` passed in `119331ms`.
+  - Log: `/tmp/smith/2026-05-23T23-59-43-122Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-9enGxW/home/.smith/runs/2026-05-23T23-57-44-035Z.trace`.
+- Target `010-future-architect-vuls` failed in `783980ms`.
+  - Log: `/tmp/smith/2026-05-24T00-12-53-662Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-6CW0lO/home/.smith/runs/2026-05-23T23-59-50-545Z.trace`.
+  - Sandbox: `.smith-bench/run-6CW0lO`.
+  - Usage: `1327048` total tokens.
+  - Smith called `finish`; official verifier ran and failed.
+- Trace search confirmed the note appeared repeatedly after patches to `scanner/alpine_test.go`.
+- Retained workspace after verifier setup:
+  - `scanner/alpine.go` source diff only, `142` changed lines.
+  - `oval/util_test.go` and `scanner/alpine_test.go` had index entries from the verifier setup restore.
+- Verifier still failed with:
+  - missing `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`
+  - failing `TestIsOvalDefAffected`
+
+Decision:
+
+- Rejected and reverted the change because it is prompt-like guidance, did not improve `010`, and the user specifically asked not to accumulate benchmark-shaped prompt edits.
+- Rebuilt after revert; `rg -n "Smith validation note" src dist tests || true` produced no matches.
+- Do not count `010` as recovered.
+- Current strict valid evidence remains `4/10`.
