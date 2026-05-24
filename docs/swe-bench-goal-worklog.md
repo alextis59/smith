@@ -4677,3 +4677,90 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `7.3G` with `10` retained `run-*` directories.
+
+## 2026-05-24 Change: Salient Failed Command Output
+
+Hypothesis:
+
+- The prior `010` verifier-reaching trace showed a broad check failing, followed by a finish that could still overstate verification.
+- Smith already appended `exit_status: N`, but in long terminal output that footer can be visually weak and easy for the model to miss.
+- A generic command-result improvement should make failed checks harder to overlook by putting the nonzero status before the output as well as keeping the footer.
+
+Change:
+
+- `src/loop.ts`:
+  - `formatTerminalOutput()` now prefixes nonzero command output with `Command failed with exit status N.`;
+  - zero-exit output remains unchanged except for the existing `exit_status: 0` footer.
+- `tests/integration.test.ts`:
+  - added a fake-provider integration test that runs `node -e "process.stdout.write('details'); process.exit(7)"`;
+  - asserts the provider replay contains the salient header, original output, and `exit_status: 7`.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration tests passed: `25` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `240621ms`.
+- Log: `/tmp/smith/2026-05-24T07-43-58-077Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-WcT5o3/home/.smith/runs/2026-05-24T07-39-57-704Z.trace`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `926531ms`.
+- Log: `/tmp/smith/2026-05-24T07-59-34-096Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-AcVYwy/home/.smith/runs/2026-05-24T07-44-08-336Z.trace`.
+- Sandbox: `.smith-bench/run-AcVYwy`.
+
+Trace evidence:
+
+- A broad check failed:
+
+```text
+Command failed with exit status 1.
+go test ./scanner ./oval ./models
+scanner/alpine.go:108:30: assignment mismatch: 3 variables but o.scanInstalledPackages returns 2 values
+```
+
+- After seeing the salient failure header, Smith patched again and finished with a more accurate caveat instead of claiming all checks passed:
+
+```text
+I wasn't able to rerun the full test suite after that final fix before the run time limit, so verification is pending...
+```
+
+Verifier evidence:
+
+- The external verifier still failed.
+- Restored selected tests still expected Alpine parser methods:
+  - `parseApkInstalledList`;
+  - `parseApkIndex`;
+  - `parseApkUpgradableList`.
+- `TestIsOvalDefAffected` still failed.
+
+Decision:
+
+- Keep the change as generic command-result clarity; it applies to ordinary Smith sessions whenever a shell command fails.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `8.7G` with `12` retained `run-*` directories. Leave a standing reminder to prune old retained sandboxes once their log path, trace path, and relevant evidence have been recorded and committed; avoid letting `.smith-bench` grow unchecked into multi-GB stale state.

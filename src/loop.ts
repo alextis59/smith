@@ -1056,7 +1056,9 @@ function formatTimeoutOutput(command: string, elapsedMs: number, lastOutput: str
 function formatTerminalOutput(output: string, exitCode: number | undefined): string {
   if (exitCode === undefined) return output;
   const status = `exit_status: ${exitCode}`;
-  return output.trim().length > 0 ? `${output.trimEnd()}\n${status}` : status;
+  const body = output.trim().length > 0 ? `${output.trimEnd()}\n${status}` : status;
+  if (exitCode === 0) return body;
+  return [`Command failed with exit status ${exitCode}.`, body].join("\n");
 }
 
 function limitToolOutput(output: string, maxChars: number): string {

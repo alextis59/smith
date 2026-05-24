@@ -1258,3 +1258,31 @@ Decision:
 - Do not count `010` as recovered.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: after this run `.smith-bench` was `7.3G` with `10` retained `run-*` directories.
+
+## 2026-05-24 Salient Failed Command Output
+
+Change:
+
+- Smith now prefixes nonzero terminal-command results with `Command failed with exit status N.` before replaying output to the model.
+- The existing `exit_status: N` footer remains in place for all commands.
+- This is a generic result-clarity improvement for ordinary user tasks and benchmark runs; it does not change prompts, task selection, verifier behavior, scoring, result parsing, or task-specific logic.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `25` tests.
+- Project benchmark `091-command-router-refactor`: passed in `240621ms`, log `/tmp/smith/2026-05-24T07-43-58-077Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-WcT5o3/home/.smith/runs/2026-05-24T07-39-57-704Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `926531ms`, log `/tmp/smith/2026-05-24T07-59-34-096Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-AcVYwy/home/.smith/runs/2026-05-24T07-44-08-336Z.trace`.
+
+Evidence:
+
+- The `010` trace replayed a failed `go test ./scanner ./oval ./models` command with the new salient header before the long compiler output.
+- The model no longer claimed broad validation had passed; the final response said the full test suite could not be rerun after the last fix and verification was pending.
+- The verifier still failed on the selected Alpine parser tests and `TestIsOvalDefAffected`, so this is an evidence-quality improvement, not a recovery.
+
+Decision:
+
+- Keep the failed-command header as generic command-result clarity.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `8.7G` with `12` retained `run-*` directories. Periodically prune old retained runs after their log paths, trace paths, and needed evidence have been recorded and committed.

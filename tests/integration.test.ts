@@ -780,6 +780,44 @@ max_tool_output_chars = 180
     expect(replayedOutput).not.toContain("A".repeat(250));
   });
 
+  it("prefixes failed command output with a salient failure status", async () => {
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "node -e \"process.stdout.write('details'); process.exit(7)\"" } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-command-failure-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "run failing command"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    const replayedOutput = messages(provider.requests[1].body).at(-1)?.content ?? "";
+    expect(replayedOutput).toContain("Command failed with exit status 7.");
+    expect(replayedOutput).toContain("details");
+    expect(replayedOutput).toContain("exit_status: 7");
+  });
+
   it("truncates oversized sub_agent output before replaying it to the parent provider", async () => {
     const provider = await startFakeProvider([
       { name: "sub_agent", arguments: { task: "inspect from child" } },
