@@ -287,7 +287,7 @@ User guidance:
 Change:
 
 - Stopped an in-progress clean `001` rerun before result because it was using the SWE-specific prompt stack.
-- Removed all `SWE_BENCH_PRO_TASK_INSTRUCTIONS`; SWE tasks now receive only the generic benchmark task framing.
+- Removed all `SWE_BENCH_PRO_TASK_INSTRUCTIONS`; SWE tasks now receive raw task text with no benchmark task framing.
 - Kept `.git` hiding/restoration as harness integrity, not agent coaching: the agent cannot inspect historical solution commits, while verifier setup can still restore selected tests.
 
 Validation:
