@@ -17,6 +17,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - User clarification on 2026-05-23: do not pursue prompt edits or instructions tailored to SWE-bench Pro. Generic Smith capabilities are acceptable only when they apply to ordinary user tasks as well.
 - User reinforcement on 2026-05-23: prompt or runtime instructions written specifically for SWE-bench Pro are cheating for this goal. Treat the older SWE-specific prompt sections below as rejected historical experiments only; do not count their scores, reintroduce their wording, or use them as design direction.
 - User reinforcement on 2026-05-24: benchmark-shaped prompt edits are cheating even when they look like general benchmark guidance. Future changes must be ordinary Smith improvements that would be appropriate for user tasks outside SWE-bench Pro.
+- User reinforcement on 2026-05-24: anything done specifically for the SWE benchmark, including prompt edits or runtime instructions tuned to benchmark shape, must be discarded. Valid work must be generic Smith behavior that would be appropriate for ordinary user tasks.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 
@@ -46,14 +47,14 @@ Next step:
 
 - Diagnose why `001` spends the full edit budget despite a previous retained sandbox patch passing selected tests, then make a general improvement around long-task convergence, task memory, or patch reuse/recovery if supported by trace evidence.
 
-## 2026-05-23 Milestone: Nudge SWE Tasks Toward Earlier Edits
+## 2026-05-23 Rejected Experiment: SWE-Specific Earlier-Edit Prompt
 
 Problem found:
 
 - Clean timeout trace `.smith-bench/run-BvlbFf/home/.smith/runs/2026-05-23T09-14-01-211Z.trace` showed `001-nodebb-nodebb-vnan` spent the entire edit budget inspecting source, templates, public files, and docs without modifying tracked files.
 - The retained workspace had only `?? appendonlydir/`, so the agent never reached the benchmark verifier with a candidate solution.
 
-Change:
+Change later discarded:
 
 - Add a general SWE-bench Pro instruction to avoid spending the whole run on reconnaissance.
 - The instruction tells the agent to inspect the task-named implementation files and nearest callers/tests, then make the smallest focused source edit before secondary UI, docs, generated, or localization inspection.
@@ -72,9 +73,9 @@ Rejected follow-up wording:
 - More concrete Requirements/Interface checklist wording timed out on `001` with only `src/user/email.js` modified, log `/tmp/smith/2026-05-23T10-30-59-223Z-smith-001-nodebb-nodebb-vnan.json`.
 - Both were removed because they were not better than the narrower reconnaissance instruction.
 
-Next step:
+Decision:
 
-- Inspect why the six-file candidate patch still did not trigger a narrow check or finish. A likely next general improvement is a loop or prompt mechanism that detects successful patches during SWE runs and biases the next turn toward targeted validation or finish instead of renewed broad discovery.
+- Discard this instruction and do not use it as future design direction. Any future convergence work must live in generic Smith loop/tool behavior and apply to ordinary user tasks, not as SWE-bench prompt coaching.
 
 ## 2026-05-23 Milestone: Avoid Impossible Ripgrep Bootstrap In Benchmarks
 
@@ -220,7 +221,7 @@ Next step:
 
 - Prefer another targeted recovery attempt on `009` or `010`, because both now reach verifier and expose concrete remaining failures. Do not run the full SWE-bench Pro benchmark yet.
 
-## 2026-05-23 Milestone: Hide SWE Git History From Agents
+## 2026-05-23 Milestone: Hide Benchmark Git History From Editing Agents
 
 Problem found:
 
@@ -230,17 +231,17 @@ Problem found:
 Change:
 
 - Stop including the SWE instance ID and base commit in the agent prompt.
-- Add an explicit SWE instruction forbidding git history, refs, tags, instance IDs, directory-name hashes, or commit IDs as solution sources.
-- Hide the workspace `.git` directory during Smith/Codex editing and restore it only before the SWE verifier, since verifier setup commands legitimately use git to restore selected tests.
+- Hide the workspace `.git` directory during Smith/Codex editing and restore it only before the verifier, since setup commands legitimately use git to restore selected tests.
+- Earlier prompt wording that explicitly coached SWE-bench agents about history usage has been discarded under the stricter user policy; only the generic benchmark-integrity control remains valid.
 
 Validation:
 
 - `npm test -- tests/benchmark.test.ts`: passed.
 - `npm run build`: passed.
-- Built CLI contains the anti-history instruction and no longer contains the removed instance/base-commit prompt text.
+- Built CLI no longer contains the removed instance/base-commit prompt text.
 - Project benchmark: `benchmarks/091-command-router-refactor`, passed in `187387ms`, log `/tmp/smith/2026-05-23T14-28-03-129Z-smith-091-command-router-refactor.json`.
 - Clean target SWE rerun: `swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`, failed by Docker timeout after `906109ms`, log `/tmp/smith/2026-05-23T14-43-17-624Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-cU9DTs/home/.smith/runs/2026-05-23T14-28-12-210Z.trace`.
-- Clean 010 prompt evidence showed no instance ID or base commit in the task prompt; trace search found no `git show`/historical-fix access beyond the new anti-history instruction text.
+- Clean 010 prompt evidence showed no instance ID or base commit in the task prompt; trace search found no `git show`/historical-fix access beyond the now-discarded anti-history instruction text.
 
 Historical next step, later superseded by the stricter prompt rule:
 
