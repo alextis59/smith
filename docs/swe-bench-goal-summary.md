@@ -807,3 +807,16 @@ Decision:
 
 - Rejected and reverted the note to avoid accumulating prompt-like guidance without target improvement.
 - Do not count `010` as recovered; current strict valid evidence remains `4/10`.
+
+## 2026-05-24 Rejected/Inconclusive: Node+Go Image Experiment
+
+Evidence:
+
+- Built a disposable generic `smith-node-go:22-bookworm` image to test whether a fallback Node image with Go tooling could help Go tasks without changing prompts or scoring.
+- Target `005-gravitational-teleport` with `--image smith-node-go:22-bookworm` failed before Smith started: workspace copy hit `no space left on device` in `2720ms`, log `/tmp/smith/2026-05-24T00-16-15-706Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Cleaned up the disposable image, failed sandbox `.smith-bench/run-7Sqhqv`, stopped containers, and unused Docker volumes.
+
+Decision:
+
+- Inconclusive and not retained as a Smith change.
+- Current strict valid evidence remains `4/10`.

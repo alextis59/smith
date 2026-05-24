@@ -2914,3 +2914,52 @@ Decision:
 - Rebuilt after revert; `rg -n "Smith validation note" src dist tests || true` produced no matches.
 - Do not count `010` as recovered.
 - Current strict valid evidence remains `4/10`.
+
+## 2026-05-24 Inconclusive Environment Experiment: Node+Go Fallback Image
+
+Hypothesis:
+
+- Several Go tasks fall back to `node:22-bookworm` when the task image cannot run Smith.
+- For ordinary coding tasks, an edit environment with the project language toolchain can materially improve local validation. A generic Node+Go image might help Go tasks without any task-specific prompt or verifier/scoring change.
+
+Experiment:
+
+```sh
+docker build -t smith-node-go:22-bookworm -<<'DOCKERFILE'
+FROM node:22-bookworm
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends golang-go gcc g++ make git ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+DOCKERFILE
+
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --image smith-node-go:22-bookworm --json
+```
+
+Observed:
+
+- Image build succeeded.
+- The `005` run failed before Smith started in `2720ms`.
+- Log: `/tmp/smith/2026-05-24T00-16-15-706Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Failure: `write .../.smith-bench/run-7Sqhqv/workspace/build/tctl: no space left on device`.
+- No trace or Smith usage was produced.
+
+Cleanup:
+
+```sh
+rm -rf .smith-bench/run-7Sqhqv
+docker rmi smith-node-go:22-bookworm
+docker container prune -f
+docker volume prune -f
+df -h . /var/lib/docker
+```
+
+Observed after cleanup:
+
+- Reclaimed about `952.1MB` from Docker volumes plus the disposable image layers and failed sandbox.
+- Filesystem remained tight: about `2.6G` free.
+
+Decision:
+
+- Inconclusive: no task evidence because workspace preparation failed.
+- Do not wire a Node+Go fallback image into Smith from this run.
+- Current strict valid evidence remains `4/10`.
