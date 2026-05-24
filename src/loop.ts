@@ -78,6 +78,7 @@ export class SmithRunFailure extends Error {
 type ToolAvailabilityState = {
   subAgentDisabledReason?: string;
   inspectionDisabledReason?: string;
+  deadlineFinalizationReason?: string;
 };
 
 export type SmithEnvironmentPreparation = {
@@ -258,6 +259,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       let nextPendingOutput = "";
       const appendReminders = (pendingOutput: string): string => {
         let output = pendingOutput;
+        toolAvailabilityState = enforceRunDeadlineFinalization(options, toolAvailabilityState, runStartedAt);
         if (toolCallsSincePatchOrFinish > 0 && toolCallsSincePatchOrFinish % PROGRESS_REMINDER_TOOL_INTERVAL === 0) {
           toolAvailabilityState = pauseInspectionAfterSustainedNoPatch(options, toolAvailabilityState, toolCallsSincePatchOrFinish);
           const reminder = progressReminderOutput(options, toolAvailabilityState, toolCallsSincePatchOrFinish, turn, maxTurns);
@@ -309,7 +311,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           const madeTaskPatch =
             toolName === "patch" && action.changedFiles !== undefined && !changedFilesAreOnlySmithMemory(action.changedFiles);
           if (madeTaskPatch && subAgentTurnLimitFailures < 2) {
-            toolAvailabilityState = {};
+            toolAvailabilityState = retainPersistentToolAvailability(toolAvailabilityState);
           } else if (action.subAgentTurnLimitFailure) {
             subAgentTurnLimitFailures += 1;
             toolAvailabilityState = {
@@ -749,6 +751,9 @@ function availableSmithTools(options: SmithRunOptions, availability: ToolAvailab
   if (availability.inspectionDisabledReason) {
     tools = tools.filter((tool) => tool.name !== "run" && tool.name !== "sub_agent");
   }
+  if (availability.deadlineFinalizationReason) {
+    tools = tools.filter((tool) => tool.name !== "run" && tool.name !== "sub_agent");
+  }
   return tools;
 }
 
@@ -775,6 +780,10 @@ function systemPromptForAvailableTools(
     const available = tools.map((tool) => tool.name).join(", ");
     notes.push(`${availability.inspectionDisabledReason} Continue with available tools: ${available}.`);
   }
+  if (availability.deadlineFinalizationReason) {
+    const available = tools.map((tool) => tool.name).join(", ");
+    notes.push(`${availability.deadlineFinalizationReason} Continue with available tools: ${available}.`);
+  }
   if (options.runtime.readOnly) {
     notes.push(
       "Read-only mode is active. The patch tool is unavailable, and run commands that write files are blocked. Inspect files and finish with findings only."
@@ -788,13 +797,33 @@ function pauseInspectionAfterSustainedNoPatch(
   availability: ToolAvailabilityState,
   toolCallsSincePatchOrFinish: number
 ): ToolAvailabilityState {
-  if (availability.inspectionDisabledReason) return availability;
+  if (availability.inspectionDisabledReason || availability.deadlineFinalizationReason) return availability;
   const patchAvailable = availableSmithTools(options, availability).some((tool) => tool.name === "patch");
   if (!patchAvailable || toolCallsSincePatchOrFinish < INSPECTION_PAUSE_TOOL_INTERVAL) return availability;
   return {
     ...availability,
     inspectionDisabledReason:
       "Sustained inspection has continued without a task patch or finish, so inspection tools are temporarily unavailable until a task patch is applied or the run finishes."
+  };
+}
+
+function retainPersistentToolAvailability(availability: ToolAvailabilityState): ToolAvailabilityState {
+  return {
+    ...(availability.deadlineFinalizationReason ? { deadlineFinalizationReason: availability.deadlineFinalizationReason } : {})
+  };
+}
+
+function enforceRunDeadlineFinalization(
+  options: SmithRunOptions,
+  availability: ToolAvailabilityState,
+  runStartedAt: number
+): ToolAvailabilityState {
+  if (availability.deadlineFinalizationReason || options.runtime.maxRunMs <= 0) return availability;
+  if (Date.now() - runStartedAt < options.runtime.maxRunMs) return availability;
+  return {
+    ...availability,
+    deadlineFinalizationReason:
+      "The configured max run time has elapsed, so inspection tools are unavailable; use patch only for an already-identified final edit or finish with the current result or blocker."
   };
 }
 

@@ -4591,3 +4591,89 @@ Note for future work:
 - Periodically run `du -sh .smith-bench` during long benchmark loops.
 - After a run's log path, trace path, and any needed verifier evidence are recorded, remove old `.smith-bench/run-*` directories that are no longer part of the active investigation.
 - Preserve active runs and any sandboxes referenced by the current uncommitted notes until the milestone has been committed.
+
+## 2026-05-24 Change: Enforce Max-Run Finalization
+
+Hypothesis:
+
+- Several retained traces show Smith continuing tool use after deadline reminders, sometimes until the outer Docker timeout kills the run before verifier execution.
+- `runtime.max_run_ms` already exists and benchmark runs derive it from `--timeout-ms`, but it only emitted reminders.
+- A generic finalization gate can make the configured budget meaningful: after the budget elapses, stop offering inspection/delegation tools and leave only `patch` and `finish` so the run can converge or report a blocker.
+
+Change:
+
+- `src/loop.ts`:
+  - added persistent `deadlineFinalizationReason` tool availability state;
+  - when elapsed time reaches `runtime.max_run_ms`, hides `run` and `sub_agent`;
+  - preserves the deadline-finalization state across later task patches;
+  - keeps the existing read-only and sub-agent-depth rules unchanged.
+- `tests/integration.test.ts`:
+  - added coverage that a run crossing `max_run_ms` exposes only `patch` and `finish`;
+  - verifies a later attempted `run` is rejected as unavailable.
+- `README.md` and `docs/benchmarks.md`:
+  - updated `max_run_ms` documentation to describe finalization behavior after the configured budget elapses.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration tests passed: `24` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `185032ms`.
+- Log: `/tmp/smith/2026-05-24T07-20-35-256Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-W3UN8Z/home/.smith/runs/2026-05-24T07-17-30-658Z.trace`.
+- Usage: `76032` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after reaching verifier in `776252ms`.
+- Log: `/tmp/smith/2026-05-24T07-33-37-960Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-njnqjz/home/.smith/runs/2026-05-24T07-20-42-496Z.trace`.
+- Sandbox: `.smith-bench/run-njnqjz`.
+- Usage: `962197` total tokens.
+
+Trace evidence:
+
+- `010` emitted generic deadline reminders at:
+  - `9m 18s of 12m max run time (75% threshold)`;
+  - `10m 58s of 12m max run time (90% threshold)`.
+- The run did not contain `The configured max run time has elapsed`, so the new finalization gate was not directly exercised by this target.
+- Smith called `finish` before `max_run_ms` elapsed.
+- This means the target evidence is not proof that the new gate caused the improved runtime behavior; it is a no-regression targeted run that reached verifier.
+
+Verifier evidence:
+
+- Restored selected tests failed because `scanner/alpine_test.go` expected:
+  - `parseApkInstalledList`;
+  - `parseApkIndex`;
+  - `parseApkUpgradableList`.
+- `TestIsOvalDefAffected` still failed with `affected=false` expected but `true` actual, and empty `fixedIn` expected but `3.3.2-r0` actual.
+- Final retained workspace had only `scanner/alpine.go` modified in the worktree diff; restored tests were not modified.
+
+Decision:
+
+- Keep the max-run finalization gate because it is generic, covered by focused tests, and addresses a repeated deadline-overrun failure mode.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `7.3G` with `10` retained `run-*` directories.

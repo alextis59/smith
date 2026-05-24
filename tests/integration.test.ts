@@ -1004,6 +1004,46 @@ max_run_ms = 1
     expect(trace).toContain("## deadline reminder");
   });
 
+  it("disables inspection tools after the configured max run time elapses", async () => {
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "sleep 0.02; printf output" } },
+      { name: "run", arguments: { command: "printf should-not-run" } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-deadline-finalize-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "finish near deadline"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(3);
+    expect(toolNames(provider.requests[1].body)).toEqual(["patch", "finish"]);
+    expect(systemMessage(provider.requests[1].body)).toContain("The configured max run time has elapsed");
+    expect(userMessages(provider.requests[2].body)).toContain("Unknown or unavailable tool 'run'");
+  });
+
   it("remote prints only first finish message to stdout and supports resume", async () => {
     const provider = await startFakeProvider([
       { name: "finish", arguments: { message: "need info" } },

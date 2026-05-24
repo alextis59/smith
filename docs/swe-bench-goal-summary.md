@@ -1229,3 +1229,32 @@ Decision:
 - Retained sandboxes are useful for trace and verifier evidence, but `.smith-bench` grows quickly. On 2026-05-24 it was `4.5G` across `8` retained `run-*` directories.
 - Periodically check `du -sh .smith-bench` and remove old `.smith-bench/run-*` directories after their logs/traces have been recorded or they are no longer needed for diagnosis.
 - Do not delete active runs or evidence referenced by the current investigation until the relevant notes are committed.
+
+## 2026-05-24 Generic Max-Run Finalization Gate
+
+Change:
+
+- When `runtime.max_run_ms` elapses, Smith now hides `run` and `sub_agent` for the rest of the run, leaving `patch` and `finish` available.
+- The deadline state persists across later task patches, so a late edit does not reopen inspection tools after the configured budget has expired.
+- This is generic loop control for ordinary long-running Smith tasks and benchmark runs; it does not mention SWE-bench Pro, task names, languages, repositories, tests, or verifier details.
+- README and benchmark docs now describe `max_run_ms` as a deadline with finalization behavior, not only a reminder.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `24` tests.
+- Project benchmark `091-command-router-refactor`: passed in `185032ms`, log `/tmp/smith/2026-05-24T07-20-35-256Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-W3UN8Z/home/.smith/runs/2026-05-24T07-17-30-658Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after reaching verifier in `776252ms`, log `/tmp/smith/2026-05-24T07-33-37-960Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-njnqjz/home/.smith/runs/2026-05-24T07-20-42-496Z.trace`.
+
+Evidence:
+
+- Integration test coverage proves that after `max_run_ms` elapses, the next provider request exposes only `patch` and `finish`, and a attempted `run` call is rejected as unavailable.
+- The `010` target run did not directly exercise the finalization gate: it finished after the 90% reminder and before the 12-minute `max_run_ms` elapsed.
+- The target still reached the official verifier instead of Docker timeout, but verifier failed because restored tests expected `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`, and `TestIsOvalDefAffected` still failed.
+
+Decision:
+
+- Keep the finalization gate as generic deadline control.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: after this run `.smith-bench` was `7.3G` with `10` retained `run-*` directories.
