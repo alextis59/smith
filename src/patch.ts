@@ -48,27 +48,31 @@ export function applySmithPatch(patch: string, cwd = process.cwd()): PatchResult
   const changedFiles: string[] = [];
   const staged = new Map<string, StagedFile>();
 
-  for (const operation of operations) {
-    const file = resolvePatchPath(cwd, operation.path);
-    if (operation.type === "add") {
-      if (readStagedOrFile(staged, file) !== undefined) throw new Error(`file already exists: ${operation.path}`);
-      staged.set(file, { content: `${operation.lines.join("\n")}${operation.lines.length ? "\n" : ""}` });
-      changedFiles.push(operation.path);
-      continue;
-    }
+  try {
+    for (const operation of operations) {
+      const file = resolvePatchPath(cwd, operation.path);
+      if (operation.type === "add") {
+        if (readStagedOrFile(staged, file) !== undefined) throw new Error(`file already exists: ${operation.path}`);
+        staged.set(file, { content: `${operation.lines.join("\n")}${operation.lines.length ? "\n" : ""}` });
+        changedFiles.push(operation.path);
+        continue;
+      }
 
-    if (operation.type === "delete") {
-      if (readStagedOrFile(staged, file) === undefined) throw new Error(`file does not exist: ${operation.path}`);
-      staged.set(file, {});
-      changedFiles.push(operation.path);
-      continue;
-    }
+      if (operation.type === "delete") {
+        if (readStagedOrFile(staged, file) === undefined) throw new Error(`file does not exist: ${operation.path}`);
+        staged.set(file, {});
+        changedFiles.push(operation.path);
+        continue;
+      }
 
-    const current = readStagedOrFile(staged, file);
-    if (current === undefined) throw new Error(`file does not exist: ${operation.path}`);
-    const content = applyUpdateHunks(current, operation.path, operation.hunks);
-    staged.set(file, { content });
-    changedFiles.push(operation.path);
+      const current = readStagedOrFile(staged, file);
+      if (current === undefined) throw new Error(`file does not exist: ${operation.path}`);
+      const content = applyUpdateHunks(current, operation.path, operation.hunks);
+      staged.set(file, { content });
+      changedFiles.push(operation.path);
+    }
+  } catch (error) {
+    throw atomicPatchError(error);
   }
 
   for (const [file, change] of staged) {
@@ -81,6 +85,13 @@ export function applySmithPatch(patch: string, cwd = process.cwd()): PatchResult
   }
 
   return { changedFiles };
+}
+
+function atomicPatchError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(
+    `${message}\nNo files were changed because Smith patches are atomic. If the patch contains independent edits, split them into smaller patch calls.`
+  );
 }
 
 function readStagedOrFile(staged: Map<string, StagedFile>, file: string): string | undefined {

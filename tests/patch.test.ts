@@ -111,7 +111,7 @@ describe("smith_patch", () => {
 *** End Patch`,
         cwd
       )
-    ).toThrow("hunk context not found");
+    ).toThrow(/hunk context not found[\s\S]*No files were changed because Smith patches are atomic[\s\S]*split them into smaller patch calls/);
 
     expect(readFileSync(join(cwd, "first.txt"), "utf8")).toBe("old\n");
     expect(readFileSync(join(cwd, "second.txt"), "utf8")).toBe("actual\n");

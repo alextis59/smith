@@ -884,3 +884,28 @@ Decision:
 
 - Do not count `010` as recovered.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+
+## 2026-05-24 Generic Patch Failure Feedback
+
+Change:
+
+- `smith_patch` failures now explicitly report that no files were changed because Smith patches are atomic, and suggest splitting independent edits into smaller patch calls.
+- This is generic patch-tool recovery feedback, not SWE-bench-specific prompting.
+
+Validation:
+
+- `npm test -- tests/patch.test.ts`: passed `7` tests.
+- `npm run build`: passed.
+- Project benchmark `091-command-router-refactor`: passed in `237311ms`, log `/tmp/smith/2026-05-24T01-32-00-145Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-SSuOzi/home/.smith/runs/2026-05-24T01-28-03-298Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed in `693235ms`, log `/tmp/smith/2026-05-24T01-43-45-572Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-jvD8mJ/home/.smith/runs/2026-05-24T01-32-19-475Z.trace`.
+
+Evidence:
+
+- The 005 run reached `finish` and the official verifier, but still failed with restored tests expecting `Forwarder.cfg` and `Forwarder.clientCredentials`.
+- The new atomic patch failure message did not appear in this target trace, so there is no direct 005 recovery evidence from the change.
+
+Decision:
+
+- Keep as a small generic tooling improvement validated by unit/build/project checks.
+- Do not count `005` as recovered.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.

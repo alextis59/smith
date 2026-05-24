@@ -3245,3 +3245,100 @@ Decision:
 - Do not respond with prompt text about restored tests, benchmark validation, or SWE-bench-specific workflow; that is now considered cheating by project policy.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
 - Continue with Codex-passed Smith failures (`001`, `005`, `010`) only when the proposed change is generic and useful for ordinary Smith usage.
+
+## 2026-05-24 Generic Patch Failure Feedback
+
+Hypothesis:
+
+- A recurring ordinary coding-agent failure mode is a multi-file patch that fails on one hunk and leaves the workspace unchanged.
+- Smith already applies patches atomically, which is good for safety, but the failure output did not explicitly say that no earlier hunks/files were written.
+- More explicit generic feedback may help a model recover by splitting independent edits into smaller patch calls after any future patch-context failure.
+- This is patch-tool behavior for all Smith tasks, not SWE-bench-specific guidance.
+
+Change:
+
+- `src/patch.ts` wraps staging-time patch failures with:
+  - the original failure message
+  - `No files were changed because Smith patches are atomic.`
+  - a generic suggestion to split independent edits into smaller patch calls
+- `tests/patch.test.ts` now asserts the atomic/no-change recovery message on a later-operation failure while preserving the existing no-partial-write behavior.
+
+Focused validation:
+
+```sh
+npm test -- tests/patch.test.ts
+npm run build
+```
+
+Observed:
+
+- Patch tests passed: `7` tests.
+- TypeScript build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `237311ms`.
+- Log: `/tmp/smith/2026-05-24T01-32-00-145Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-SSuOzi/home/.smith/runs/2026-05-24T01-28-03-298Z.trace`.
+- Usage: `73724` total tokens.
+- Smith completed the command-router refactor and ran `/task/verify.sh` successfully.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `693235ms`.
+- Log: `/tmp/smith/2026-05-24T01-43-45-572Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-jvD8mJ/home/.smith/runs/2026-05-24T01-32-19-475Z.trace`.
+- Sandbox: `.smith-bench/run-jvD8mJ`.
+- Usage: `2417558` total tokens.
+- Smith reached `finish` and the official verifier.
+- Smith reported a partial fix:
+  - added `Forwarder.ServeHTTP()`
+  - switched some audit emission to `f.ctx`
+  - initialized the shared session uploader during Kubernetes service startup
+  - ran `go test ./lib/kube/proxy ./lib/service -run TestDoesNotExist -count=0`
+- Official verifier failed in `lib/kube/proxy` because restored tests still expected `Forwarder.cfg` and `Forwarder.clientCredentials`.
+- Retained workspace status:
+
+```text
+ M lib/kube/proxy/forwarder.go
+M  lib/kube/proxy/forwarder_test.go
+ M lib/service/kubernetes.go
+ lib/kube/proxy/forwarder.go | 21 +++++++++++++--------
+ lib/service/kubernetes.go   |  4 ++++
+```
+
+Patch-message evidence:
+
+```sh
+rg -n "No files were changed because Smith patches are atomic|patch failed" .smith-bench/run-jvD8mJ/home/.smith/runs/2026-05-24T01-32-19-475Z.trace || true
+```
+
+- No matches.
+- The target rerun did not exercise the new patch-failure message, so this run is not direct evidence that the change improves `005`.
+
+Prompt-integrity evidence:
+
+```sh
+rg -n "Complete this benchmark task|/task/verify.sh|SWE-bench|base commit|instance_" .smith-bench/run-jvD8mJ/home/.smith/runs/2026-05-24T01-32-19-475Z.trace || true
+```
+
+- No active SWE-bench prompt wrapper or verifier coaching was found.
+
+Decision:
+
+- Keep the change as a small, generic patch-tool clarity improvement with focused tests, build, and project-task validation.
+- Do not count `005` as recovered.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+- The next recovery attempt should not be another prompt tweak. Useful next directions are generic tooling/runtime behavior that helps long ordinary coding tasks complete after partial implementation.
