@@ -1286,3 +1286,31 @@ Decision:
 - Do not count `010` as recovered.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `8.7G` with `12` retained `run-*` directories. Periodically prune old retained runs after their log paths, trace paths, and needed evidence have been recorded and committed.
+
+## 2026-05-24 Post-Deadline Validation Run
+
+Change:
+
+- After `runtime.max_run_ms` elapses, Smith still hides inspection and delegation tools by default.
+- If a task patch succeeds after that deadline, Smith now allows exactly one bounded `run` call for validation, then hides `run` again.
+- Post-deadline inspection commands such as `sed`, `cat`, `rg`, `grep`, `find`, and `ls` are rejected without consuming the one validation opportunity.
+- This is generic deadline behavior for ordinary Smith coding tasks; it is not tied to SWE-bench Pro, task names, languages, repositories, selected tests, or verifier parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `26` tests.
+- Project benchmark `091-command-router-refactor`: passed in `119530ms`, log `/tmp/smith/2026-05-24T08-28-27-045Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-BKzXXO/home/.smith/runs/2026-05-24T08-26-28-125Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `863380ms`, log `/tmp/smith/2026-05-24T08-43-00-717Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-idyExh/home/.smith/runs/2026-05-24T08-28-38-243Z.trace`.
+
+Evidence:
+
+- A preliminary `010` rerun with the one-shot post-deadline run available showed the model using that run for `sed` inspection, not validation. That prompted the generic inspection-command rejection above.
+- The final `010` rerun did not exercise the post-deadline validation allowance because no successful task patch happened after finalization. It still reached verifier, which failed with `scanner/alpine.go:212:9: declared and not used: version`, the same missing selected Alpine parser tests, and `TestIsOvalDefAffected`.
+
+Decision:
+
+- Keep the generic validation-only post-deadline run because focused tests cover the intended behavior and the local project benchmark passed.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `10G` with `16` retained `run-*` directories. Prune old retained runs after their log paths, trace paths, and relevant evidence are recorded and committed.

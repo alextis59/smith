@@ -4764,3 +4764,101 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `8.7G` with `12` retained `run-*` directories. Leave a standing reminder to prune old retained sandboxes once their log path, trace path, and relevant evidence have been recorded and committed; avoid letting `.smith-bench` grow unchecked into multi-GB stale state.
+
+## 2026-05-24 Change: Post-Deadline Validation Run
+
+Hypothesis:
+
+- The previous `010` run showed a late patch after the `runtime.max_run_ms` finalization gate, followed by `finish` because `run` was unavailable.
+- This is a generic long-task failure mode: after the configured budget, broad inspection should stay closed, but a patch applied after the deadline may still need one quick validation command to catch syntax, compile, or test failures before finalizing.
+
+Change:
+
+- `src/loop.ts`:
+  - after `deadlineFinalizationReason` is active, a successful task patch opens one post-deadline `run` opportunity;
+  - that run is capped at `60000ms`;
+  - after the one run executes, `run` is hidden again unless another successful task patch happens;
+  - simple inspection commands such as `sed`, `cat`, `less`, `head`, `tail`, `grep`, `rg`, `find`, `ls`, `pwd`, and `wc` are rejected in this post-deadline slot without consuming the validation opportunity;
+  - likely validation commands include `test`, `build`, `compile`, `lint`, `typecheck`, `check`, `verify`, and common test runners.
+- `tests/integration.test.ts`:
+  - added coverage that a post-deadline task patch opens `run` once;
+  - verifies an inspection command is rejected without consuming the opportunity;
+  - verifies a subsequent validation command executes and then hides `run` again.
+- `README.md` and `docs/benchmarks.md`:
+  - updated `max_run_ms` documentation to mention the one bounded validation command after a post-deadline patch.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration tests passed: `26` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `119530ms`.
+- Log: `/tmp/smith/2026-05-24T08-28-27-045Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-BKzXXO/home/.smith/runs/2026-05-24T08-26-28-125Z.trace`.
+- Usage: `46919` total tokens.
+
+Initial target observation before inspection-command rejection:
+
+- Target `010` failed after verifier in `937350ms`.
+- Log: `/tmp/smith/2026-05-24T08-24-07-914Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-g0bwLm/home/.smith/runs/2026-05-24T08-08-31-467Z.trace`.
+- The trace showed the new post-deadline validation opportunity was available, but the model spent it on `sed -n '1,260p' scanner/alpine.go` rather than a validation command.
+- Decision from this evidence: keep the generic idea, but reject simple inspection commands in the post-deadline validation slot.
+
+Final target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `863380ms`.
+- Log: `/tmp/smith/2026-05-24T08-43-00-717Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-idyExh/home/.smith/runs/2026-05-24T08-28-38-243Z.trace`.
+- Sandbox: `.smith-bench/run-idyExh`.
+- Usage: `732145` total tokens.
+
+Trace evidence:
+
+- The final `010` trace reached the deadline finalization state with available tools `patch, finish`.
+- It did not show the post-deadline validation slot because no successful task patch happened after finalization in that run.
+- Smith finished with: `I couldn't run verification in the remaining time.`
+
+Verifier evidence:
+
+- The external verifier ran and failed.
+- New compile failure:
+
+```text
+scanner/alpine.go:212:9: declared and not used: version
+```
+
+- Selected Alpine parser tests were still missing:
+  - `Test_alpine_parseApkInstalledList`;
+  - `Test_alpine_parseApkIndex`;
+  - `Test_alpine_parseApkUpgradableList`.
+- `TestIsOvalDefAffected` still failed.
+
+Decision:
+
+- Keep the post-deadline validation slot as a generic safety valve; it is covered by focused tests and did not break the local project benchmark.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `10G` with `16` retained `run-*` directories. Old retained runs should be pruned after their log path, trace path, and evidence have been recorded and committed.

@@ -34,6 +34,7 @@ const RIPGREP_BOOTSTRAP_MAX_TURNS = 6;
 const PROGRESS_REMINDER_TOOL_INTERVAL = 12;
 const INSPECTION_PAUSE_TOOL_INTERVAL = PROGRESS_REMINDER_TOOL_INTERVAL * 2;
 const RUN_DEADLINE_REMINDER_THRESHOLDS = [0.75, 0.9] as const;
+const POST_DEADLINE_VALIDATION_RUN_TIMEOUT_MS = 60_000;
 const RIPGREP_UNAVAILABLE_PROMPT_NOTE =
   "Environment note: the `rg` command is not available in this environment. Smith already checked at startup and, when allowed, attempted a straightforward install without confirming `rg` on PATH. Use grep, find, or language-specific tools instead, and do not spend task time trying to install `rg` unless the user explicitly asks.";
 
@@ -79,6 +80,7 @@ type ToolAvailabilityState = {
   subAgentDisabledReason?: string;
   inspectionDisabledReason?: string;
   deadlineFinalizationReason?: string;
+  postDeadlineValidationRunReason?: string;
 };
 
 export type SmithEnvironmentPreparation = {
@@ -311,7 +313,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           const madeTaskPatch =
             toolName === "patch" && action.changedFiles !== undefined && !changedFilesAreOnlySmithMemory(action.changedFiles);
           if (madeTaskPatch && subAgentTurnLimitFailures < 2) {
-            toolAvailabilityState = retainPersistentToolAvailability(toolAvailabilityState);
+            toolAvailabilityState = availabilityAfterTaskPatch(retainPersistentToolAvailability(toolAvailabilityState));
           } else if (action.subAgentTurnLimitFailure) {
             subAgentTurnLimitFailures += 1;
             toolAvailabilityState = {
@@ -322,7 +324,9 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
                   : "A previous sub_agent child run did not finish within its turn budget, so sub_agent is temporarily unavailable until a task patch succeeds."
             };
           } else if (madeTaskPatch) {
-            toolAvailabilityState = { ...toolAvailabilityState, inspectionDisabledReason: undefined };
+            toolAvailabilityState = availabilityAfterTaskPatch({ ...toolAvailabilityState, inspectionDisabledReason: undefined });
+          } else if (action.postDeadlineValidationRunConsumed) {
+            toolAvailabilityState = { ...toolAvailabilityState, postDeadlineValidationRunReason: undefined };
           }
           toolCallsSincePatchOrFinish = madeTaskPatch || action.finished ? 0 : toolCallsSincePatchOrFinish + 1;
           if (action.finished) {
@@ -378,6 +382,7 @@ type ToolActionResult = {
   changedFiles?: string[];
   finished?: string;
   subAgentTurnLimitFailure?: boolean;
+  postDeadlineValidationRunConsumed?: boolean;
 };
 
 type ToolCallContext = {
@@ -503,6 +508,14 @@ async function runShellCommandTool(
   command: string,
   transcriptCommand?: string
 ): Promise<ToolActionResult> {
+  const postDeadlineValidationRun = Boolean(parentContext.toolAvailabilityState.postDeadlineValidationRunReason);
+  if (postDeadlineValidationRun && !isLikelyValidationCommand(command)) {
+    return appendToolObservation(
+      parentContext,
+      callId,
+      "Post-deadline run is reserved for validation commands such as test, build, lint, typecheck, check, or verify. Inspection commands are unavailable after the configured max run time; use patch for a known final edit or finish with the current result."
+    );
+  }
   const review = await reviewDangerousCommand({
     command,
     cwd: parentContext.options.cwd,
@@ -524,7 +537,8 @@ async function runShellCommandTool(
     return { transcript, providerMessages, responsesInputItems, toolOutput: blockedOutput, totalUsage };
   }
 
-  const timeoutMs = timeoutFromToolCall(parentContext.toolCall.arguments, parentContext.options.runtime.timeoutMs);
+  const requestedTimeoutMs = timeoutFromToolCall(parentContext.toolCall.arguments, parentContext.options.runtime.timeoutMs);
+  const timeoutMs = postDeadlineValidationRun ? Math.min(requestedTimeoutMs, POST_DEADLINE_VALIDATION_RUN_TIMEOUT_MS) : requestedTimeoutMs;
   const result = await parentContext.shell.run(command, timeoutMs);
   const terminalOutput = limitToolOutput(
     result.timedOut ? formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput) : formatTerminalOutput(result.output, result.exitCode),
@@ -546,8 +560,19 @@ async function runShellCommandTool(
     providerMessages,
     responsesInputItems,
     toolOutput: terminalOutput,
-    totalUsage
+    totalUsage,
+    ...(postDeadlineValidationRun ? { postDeadlineValidationRunConsumed: true } : {})
   };
+}
+
+function isLikelyValidationCommand(command: string): boolean {
+  const trimmed = command.trim();
+  if (/^(?:env\s+)?(?:sed|cat|less|more|head|tail|grep|rg|find|ls|pwd|wc)\b/i.test(trimmed)) {
+    return false;
+  }
+  return /\b(?:go\s+test|cargo\s+test|pytest|vitest|jest|mocha|rspec|npm\s+(?:run\s+)?test|yarn\s+test|pnpm\s+test|mvn\s+test|gradle\s+test|test|build|compile|lint|typecheck|tsc|check|verify(?:\.sh)?)\b/i.test(
+    trimmed
+  );
 }
 
 async function runSubAgentTool(
@@ -752,7 +777,10 @@ function availableSmithTools(options: SmithRunOptions, availability: ToolAvailab
     tools = tools.filter((tool) => tool.name !== "run" && tool.name !== "sub_agent");
   }
   if (availability.deadlineFinalizationReason) {
-    tools = tools.filter((tool) => tool.name !== "run" && tool.name !== "sub_agent");
+    tools = tools.filter((tool) => tool.name !== "sub_agent");
+    if (!availability.postDeadlineValidationRunReason) {
+      tools = tools.filter((tool) => tool.name !== "run");
+    }
   }
   return tools;
 }
@@ -784,6 +812,10 @@ function systemPromptForAvailableTools(
     const available = tools.map((tool) => tool.name).join(", ");
     notes.push(`${availability.deadlineFinalizationReason} Continue with available tools: ${available}.`);
   }
+  if (availability.postDeadlineValidationRunReason) {
+    const available = tools.map((tool) => tool.name).join(", ");
+    notes.push(`${availability.postDeadlineValidationRunReason} Continue with available tools: ${available}.`);
+  }
   if (options.runtime.readOnly) {
     notes.push(
       "Read-only mode is active. The patch tool is unavailable, and run commands that write files are blocked. Inspect files and finish with findings only."
@@ -809,7 +841,19 @@ function pauseInspectionAfterSustainedNoPatch(
 
 function retainPersistentToolAvailability(availability: ToolAvailabilityState): ToolAvailabilityState {
   return {
-    ...(availability.deadlineFinalizationReason ? { deadlineFinalizationReason: availability.deadlineFinalizationReason } : {})
+    ...(availability.deadlineFinalizationReason ? { deadlineFinalizationReason: availability.deadlineFinalizationReason } : {}),
+    ...(availability.postDeadlineValidationRunReason
+      ? { postDeadlineValidationRunReason: availability.postDeadlineValidationRunReason }
+      : {})
+  };
+}
+
+function availabilityAfterTaskPatch(availability: ToolAvailabilityState): ToolAvailabilityState {
+  if (!availability.deadlineFinalizationReason) return availability;
+  return {
+    ...availability,
+    postDeadlineValidationRunReason:
+      "A task patch was applied after the configured max run time elapsed, so run is available for one bounded validation command before finalizing."
   };
 }
 
