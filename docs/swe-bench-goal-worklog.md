@@ -3342,3 +3342,159 @@ Decision:
 - Do not count `005` as recovered.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
 - The next recovery attempt should not be another prompt tweak. Useful next directions are generic tooling/runtime behavior that helps long ordinary coding tasks complete after partial implementation.
+
+## 2026-05-24 Diagnostic: 001 Still Times Out Before Parser Fix
+
+Purpose:
+
+- Establish current `001-nodebb-nodebb-vnan` behavior after the generic atomic patch feedback checkpoint.
+- `001` is a Codex-passed Smith failure, so it remains a better target than Codex-failed tasks.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout in `919069ms`.
+- Log: `/tmp/smith/2026-05-24T02-02-23-217Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-pwCua7/home/.smith/runs/2026-05-24T01-47-18-048Z.trace`.
+- Sandbox: `.smith-bench/run-pwCua7`.
+- Usage: `1955904` total tokens.
+- Retained workspace diff:
+
+```text
+ M src/database/mongo/main.js
+ M src/database/postgres/main.js
+ M src/database/redis/main.js
+ M src/user/email.js
+?? appendonlydir/
+ src/database/mongo/main.js    | 25 ++++++++++++++++
+ src/database/postgres/main.js | 22 ++++++++++++++
+ src/database/redis/main.js    |  8 +++++
+ src/user/email.js             | 70 ++++++++++++++++++++++++++++++++-----------
+```
+
+Trace evidence:
+
+- Tool calls: `47` run, `1` sub_agent, `5` patch, no parent `finish`.
+- The final patch argument contained multiple complete patch documents:
+  - first document updated `src/user/email.js`
+  - later documents targeted `src/controllers/admin/users.js`, `src/socket.io/admin/user.js`, `src/user/delete.js`, and `src/views/admin/manage/users.tpl`
+- Smith output only `Applied patch to src/user/email.js`.
+- Root cause: `parseSmithPatch()` stopped at the first `*** End Patch` and silently ignored later complete patch documents.
+
+Decision:
+
+- Implement a generic parser fix so one patch tool call can contain multiple complete patch documents.
+- This is a patch-tool correctness issue for ordinary Smith usage, not benchmark-specific prompting.
+
+## 2026-05-24 Generic Multi-Document Patch Parsing
+
+Hypothesis:
+
+- Models sometimes concatenate several complete patch documents in one patch tool call.
+- Smith should either reject trailing patch documents or apply them. Applying them atomically is more useful and matches the user's intent when the documents are valid.
+- The latest `001` trace directly showed silent truncation of later patch documents, leaving required files unmodified without a clear error.
+
+Change:
+
+- `src/patch.ts`:
+  - `parseSmithPatch()` now loops over multiple complete `*** Begin Patch` / `*** End Patch` documents.
+  - Operations from all documents are staged together and still applied atomically by the existing patch engine.
+  - Non-empty trailing text that is not a new patch document remains invalid.
+- `tests/patch.test.ts`:
+  - added coverage that multiple complete patch documents in one call update both files
+  - added coverage that a later-document failure rolls back earlier-document changes
+
+Focused validation:
+
+```sh
+npm test -- tests/patch.test.ts
+npm run build
+```
+
+Observed:
+
+- Patch tests passed: `9` tests.
+- TypeScript build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `210972ms`.
+- Log: `/tmp/smith/2026-05-24T02-08-04-496Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-NWKpxR/home/.smith/runs/2026-05-24T02-04-33-758Z.trace`.
+- Usage: `74478` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout in `913657ms`.
+- Log: `/tmp/smith/2026-05-24T02-23-27-535Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-9Yy6T7/home/.smith/runs/2026-05-24T02-08-22-307Z.trace`.
+- Sandbox: `.smith-bench/run-9Yy6T7`.
+- Usage: `1487568` total tokens.
+- Retained workspace diff:
+
+```text
+ M public/src/admin/manage/users.js
+ M src/controllers/admin/users.js
+ M src/database/mongo/main.js
+ M src/database/postgres/main.js
+ M src/database/redis/main.js
+ M src/socket.io/admin/user.js
+ M src/user/delete.js
+ M src/user/email.js
+ M src/views/admin/manage/users.tpl
+ M test/user/emails.js
+?? appendonlydir/
+ public/src/admin/manage/users.js |  2 ++
+ src/controllers/admin/users.js   | 28 ++++++++++++++++-
+ src/database/mongo/main.js       | 15 ++++++++++
+ src/database/postgres/main.js    | 24 +++++++++++++++
+ src/database/redis/main.js       |  8 +++++
+ src/socket.io/admin/user.js      |  7 ++++-
+ src/user/delete.js               |  1 +
+ src/user/email.js                | 65 ++++++++++++++++++++++++++++++++--------
+ src/views/admin/manage/users.tpl |  2 ++
+ test/user/emails.js              | 12 ++++++++
+```
+
+Parser-fix evidence:
+
+- First source patch output after the fix:
+
+```text
+Applied patch to src/user/email.js, src/socket.io/admin/user.js, src/controllers/admin/users.js, src/user/delete.js, src/database/redis/main.js, src/database/mongo/main.js, src/database/postgres/main.js, src/views/admin/manage/users.tpl, public/src/admin/manage/users.js
+```
+
+- This confirms the later patch documents now land instead of being ignored.
+- The target still timed out with no parent `finish`. The first source patch happened after the 90% deadline reminder, so the remaining failure mode is late implementation and no completion, not parser truncation.
+
+Prompt-integrity evidence:
+
+```sh
+rg -n "Complete this benchmark task|/task/verify.sh|SWE-bench|base commit|instance_" .smith-bench/run-9Yy6T7/home/.smith/runs/2026-05-24T02-08-22-307Z.trace || true
+```
+
+- No active SWE-bench prompt wrapper or verifier coaching was found.
+
+Decision:
+
+- Keep the parser fix as a generic patch-tool correctness milestone.
+- Do not count `001` as recovered.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+- Next likely generic direction: reduce late first-patch behavior or improve completion after broad source patches without adding benchmark-specific prompt instructions.

@@ -117,6 +117,59 @@ describe("smith_patch", () => {
     expect(readFileSync(join(cwd, "second.txt"), "utf8")).toBe("actual\n");
   });
 
+  it("applies multiple complete patch documents in one call", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "first.txt"), "old first\n", "utf8");
+    writeFileSync(join(cwd, "second.txt"), "old second\n", "utf8");
+
+    const result = applySmithPatch(
+      `*** Begin Patch
+*** Update File: first.txt
+@@
+-old first
++new first
+*** End Patch
+*** Begin Patch
+*** Update File: second.txt
+@@
+-old second
++new second
+*** End Patch`,
+      cwd
+    );
+
+    expect(result.changedFiles).toEqual(["first.txt", "second.txt"]);
+    expect(readFileSync(join(cwd, "first.txt"), "utf8")).toBe("new first\n");
+    expect(readFileSync(join(cwd, "second.txt"), "utf8")).toBe("new second\n");
+  });
+
+  it("keeps multiple patch documents atomic when a later document fails", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "first.txt"), "old first\n", "utf8");
+    writeFileSync(join(cwd, "second.txt"), "actual second\n", "utf8");
+
+    expect(() =>
+      applySmithPatch(
+        `*** Begin Patch
+*** Update File: first.txt
+@@
+-old first
++new first
+*** End Patch
+*** Begin Patch
+*** Update File: second.txt
+@@
+-missing second
++new second
+*** End Patch`,
+        cwd
+      )
+    ).toThrow(/hunk context not found[\s\S]*No files were changed because Smith patches are atomic/);
+
+    expect(readFileSync(join(cwd, "first.txt"), "utf8")).toBe("old first\n");
+    expect(readFileSync(join(cwd, "second.txt"), "utf8")).toBe("actual second\n");
+  });
+
   it("applies repeated update contexts in file order instead of matching earlier replacements", () => {
     const cwd = tempDir();
     writeFileSync(join(cwd, "file.txt"), "section\nvalue\nsection\nvalue\n", "utf8");

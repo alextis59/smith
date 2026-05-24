@@ -909,3 +909,29 @@ Decision:
 - Keep as a small generic tooling improvement validated by unit/build/project checks.
 - Do not count `005` as recovered.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+
+## 2026-05-24 Generic Multi-Document Patch Parsing
+
+Change:
+
+- `smith_patch` now accepts multiple complete `*** Begin Patch` / `*** End Patch` documents in one patch tool call and applies them atomically.
+- This fixes a generic parser bug where Smith silently ignored patch documents after the first `*** End Patch`.
+
+Validation:
+
+- `npm test -- tests/patch.test.ts`: passed `9` tests.
+- `npm run build`: passed.
+- Project benchmark `091-command-router-refactor`: passed in `210972ms`, log `/tmp/smith/2026-05-24T02-08-04-496Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-NWKpxR/home/.smith/runs/2026-05-24T02-04-33-758Z.trace`.
+- Target SWE rerun `001-nodebb-nodebb-vnan`: failed by Docker timeout in `913657ms`, log `/tmp/smith/2026-05-24T02-23-27-535Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-9Yy6T7/home/.smith/runs/2026-05-24T02-08-22-307Z.trace`.
+
+Evidence:
+
+- The prior 001 trace showed a patch argument containing multiple complete patch documents, but only the first document applied.
+- After the fix, the first 001 patch applied `9` files in one call: `src/user/email.js`, `src/socket.io/admin/user.js`, `src/controllers/admin/users.js`, `src/user/delete.js`, all three database adapters, the admin template, and the admin client script.
+- 001 still did not reach `finish`; first source patch happened after the 90% deadline reminder and the outer Docker timeout killed the run.
+
+Decision:
+
+- Keep as a generic patch-tool correctness improvement.
+- Do not count `001` as recovered.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.

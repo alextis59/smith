@@ -334,66 +334,78 @@ function stripLeadingWhitespace(line: string): string {
 export function parseSmithPatch(patch: string): Operation[] {
   const lines = patch.replace(/\r\n/g, "\n").split("\n");
   let index = 0;
-  if (lines[index] !== "*** Begin Patch") throw new Error("patch must start with *** Begin Patch");
-  index += 1;
   const operations: Operation[] = [];
 
   while (index < lines.length) {
-    const line = lines[index];
-    if (line === "*** End Patch" || line === "") break;
-    if (line.startsWith("*** Add File: ")) {
-      const path = line.slice("*** Add File: ".length);
-      const addLines: string[] = [];
-      index += 1;
-      while (index < lines.length && !lines[index].startsWith("*** ")) {
-        if (!lines[index].startsWith("+")) throw new Error(`add file lines must start with +: ${path}`);
-        addLines.push(lines[index].slice(1));
+    while (lines[index] === "") index += 1;
+    if (index >= lines.length) break;
+    if (lines[index] !== "*** Begin Patch") throw new Error("patch must start with *** Begin Patch");
+    index += 1;
+
+    let sawEnd = false;
+    while (index < lines.length) {
+      if (lines[index] === "*** End Patch") {
+        sawEnd = true;
         index += 1;
+        break;
       }
-      operations.push({ type: "add", path, lines: addLines });
-      continue;
-    }
-    if (line.startsWith("*** Delete File: ")) {
-      operations.push({ type: "delete", path: line.slice("*** Delete File: ".length) });
-      index += 1;
-      continue;
-    }
-    if (line.startsWith("*** Update File: ")) {
-      const path = line.slice("*** Update File: ".length);
-      const hunks: Hunk[] = [];
-      index += 1;
-      while (index < lines.length && !lines[index].startsWith("*** ")) {
-        if (lines[index] !== "@@" && !lines[index].startsWith("@@ ")) {
-          throw new Error(`expected hunk marker in ${path}`);
-        }
+
+      const line = lines[index];
+      if (line.startsWith("*** Add File: ")) {
+        const path = line.slice("*** Add File: ".length);
+        const addLines: string[] = [];
         index += 1;
-        const hunk: Hunk = { oldLines: [], newLines: [] };
-        while (index < lines.length && !lines[index].startsWith("@@") && !lines[index].startsWith("*** ")) {
-          const hunkLine = lines[index];
-          if (hunkLine.startsWith("-")) {
-            hunk.oldLines.push(hunkLine.slice(1));
-          } else if (hunkLine.startsWith("+")) {
-            hunk.newLines.push(hunkLine.slice(1));
-          } else if (hunkLine.startsWith(" ")) {
-            hunk.oldLines.push(hunkLine.slice(1));
-            hunk.newLines.push(hunkLine.slice(1));
-          } else if (hunkLine === "") {
-            hunk.oldLines.push("");
-            hunk.newLines.push("");
-          } else {
-            throw new Error(`invalid hunk line in ${path}: ${hunkLine}`);
-          }
+        while (index < lines.length && !lines[index].startsWith("*** ")) {
+          if (!lines[index].startsWith("+")) throw new Error(`add file lines must start with +: ${path}`);
+          addLines.push(lines[index].slice(1));
           index += 1;
         }
-        hunks.push(hunk);
+        operations.push({ type: "add", path, lines: addLines });
+        continue;
       }
-      operations.push({ type: "update", path, hunks });
-      continue;
+      if (line.startsWith("*** Delete File: ")) {
+        operations.push({ type: "delete", path: line.slice("*** Delete File: ".length) });
+        index += 1;
+        continue;
+      }
+      if (line.startsWith("*** Update File: ")) {
+        const path = line.slice("*** Update File: ".length);
+        const hunks: Hunk[] = [];
+        index += 1;
+        while (index < lines.length && !lines[index].startsWith("*** ")) {
+          if (lines[index] !== "@@" && !lines[index].startsWith("@@ ")) {
+            throw new Error(`expected hunk marker in ${path}`);
+          }
+          index += 1;
+          const hunk: Hunk = { oldLines: [], newLines: [] };
+          while (index < lines.length && !lines[index].startsWith("@@") && !lines[index].startsWith("*** ")) {
+            const hunkLine = lines[index];
+            if (hunkLine.startsWith("-")) {
+              hunk.oldLines.push(hunkLine.slice(1));
+            } else if (hunkLine.startsWith("+")) {
+              hunk.newLines.push(hunkLine.slice(1));
+            } else if (hunkLine.startsWith(" ")) {
+              hunk.oldLines.push(hunkLine.slice(1));
+              hunk.newLines.push(hunkLine.slice(1));
+            } else if (hunkLine === "") {
+              hunk.oldLines.push("");
+              hunk.newLines.push("");
+            } else {
+              throw new Error(`invalid hunk line in ${path}: ${hunkLine}`);
+            }
+            index += 1;
+          }
+          hunks.push(hunk);
+        }
+        operations.push({ type: "update", path, hunks });
+        continue;
+      }
+
+      throw new Error(`unknown patch operation: ${line}`);
     }
-    throw new Error(`unknown patch operation: ${line}`);
+    if (!sawEnd) throw new Error("patch must end with *** End Patch");
   }
 
-  if (lines[index] !== "*** End Patch") throw new Error("patch must end with *** End Patch");
   if (operations.length === 0) throw new Error("patch contains no operations");
   return operations;
 }
