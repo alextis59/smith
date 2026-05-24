@@ -466,7 +466,7 @@ async function runPatchTool(
     changedFiles = result.changedFiles;
     output = `Applied patch to ${result.changedFiles.join(", ")}`;
   } catch (error) {
-    output = `patch failed: ${errorMessage(error)}`;
+    output = formatPatchFailure(error);
   }
   const transcript = appendTerminalTurn(parentContext.transcript, "patch", output);
   const providerMessages = appendProviderTerminalTurn(parentContext.providerMessages, "patch", output);
@@ -656,6 +656,14 @@ function stripPatchFence(value: string): string {
   const trimmed = value.trim();
   const match = /^(?:```|~~~)(?:patch|diff)?\s*\n([\s\S]*?)\n(?:```|~~~)\s*$/i.exec(trimmed);
   return match ? match[1] : value;
+}
+
+function formatPatchFailure(error: unknown): string {
+  const message = errorMessage(error);
+  const guidance = /\bEACCES\b|permission denied/i.test(message)
+    ? "The target path is not writable in this workspace; do not keep retrying the same patch unless permissions change."
+    : "";
+  return ["patch failed: " + message, guidance].filter(Boolean).join("\n");
 }
 
 function timeoutFromToolCall(args: Record<string, unknown>, fallback: number): number {

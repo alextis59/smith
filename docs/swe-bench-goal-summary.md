@@ -1078,3 +1078,22 @@ Decision:
 - Keep the change as anti-cheating harness integrity.
 - Do not count `010` as recovered; strict targeted evidence remains `6/10`.
 - Do not run the full suite yet.
+
+## 2026-05-24 Generic Patch Permission Feedback
+
+Change:
+
+- Patch failures caused by permission errors now add a generic note that the target path is not writable and retrying the same patch will not help unless permissions change.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `21` tests.
+- Project benchmark `091-command-router-refactor`: passed in `131148ms`, log `/tmp/smith/2026-05-24T04-57-06-568Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-GwyyiR/home/.smith/runs/2026-05-24T04-54-55-679Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed in `678614ms`, log `/tmp/smith/2026-05-24T05-08-31-866Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-3HxzDt/home/.smith/runs/2026-05-24T04-57-13-975Z.trace`.
+
+Decision:
+
+- Keep the generic patch feedback because it is ordinary tool-result clarity and reduced the `010` run duration/token usage.
+- Do not count `010` as recovered; strict targeted evidence remains `6/10`.
+- Avoid more `010`-specific iteration unless a new generic issue appears.

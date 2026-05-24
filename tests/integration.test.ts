@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -219,6 +219,56 @@ timeout_ms = 5000
     expect(readFileSync(join(cwd, "main.go"), "utf8")).toBe('func main() {\n\tprintln("new")\n}\n');
     expect(messages(provider.requests[1].body)[3].content).toBe("patch");
     expect(messages(provider.requests[1].body)[4].content).not.toContain("smith_patch <<");
+  });
+
+  it("adds generic guidance for patch permission failures", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: readonly.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "reported" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-patch-readonly-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "readonly.txt"), "old\n", "utf8");
+    chmodSync(join(cwd, "readonly.txt"), 0o444);
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch readonly"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("patch failed: EACCES");
+    expect(stdout).toContain("The target path is not writable in this workspace");
+    expect(readFileSync(join(cwd, "readonly.txt"), "utf8")).toBe("old\n");
   });
 
   it("records transcript compaction without refreshing the system prompt", async () => {

@@ -4076,3 +4076,97 @@ Decision:
 - Do not count `010` as recovered.
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite still not justified; one more Codex-passed recovery is needed.
+
+## 2026-05-24 Generic Patch Permission Feedback
+
+Hypothesis:
+
+- The protected-test `010` run correctly produced `EACCES` when Smith tried to patch `scanner/alpine_test.go`, but the agent still retried similar test patches.
+- A generic patch-tool output note for permission errors may help Smith stop retrying unwritable paths and redirect effort to writable source files or a blocker report.
+
+Change:
+
+- `src/loop.ts`:
+  - added `formatPatchFailure()`
+  - when a patch failure message contains `EACCES` or `permission denied`, appends: `The target path is not writable in this workspace; do not keep retrying the same patch unless permissions change.`
+- `tests/integration.test.ts`:
+  - added a read-only file patch case proving the permission guidance is surfaced and the file remains unchanged
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration tests passed: `21` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `131148ms`.
+- Log: `/tmp/smith/2026-05-24T04-57-06-568Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-GwyyiR/home/.smith/runs/2026-05-24T04-54-55-679Z.trace`.
+- Usage: `66558` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `678614ms`.
+- Log: `/tmp/smith/2026-05-24T05-08-31-866Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-3HxzDt/home/.smith/runs/2026-05-24T04-57-13-975Z.trace`.
+- Sandbox: `.smith-bench/run-3HxzDt`.
+- Usage: `1215849` total tokens.
+- Smith reached `finish` after `33` turns and the verifier executed.
+- Compared with the prior protected-test run, duration dropped from `964190ms` to `678614ms`, total tokens from `2568715` to `1215849`, and turns from `47` to `33`.
+
+Trace checks:
+
+```sh
+for p in "The target path is not writable in this workspace" "patch failed: EACCES" "Applied patch to scanner/alpine_test.go"; do
+  printf '%s: ' "$p"
+  rg -c "$p" .smith-bench/run-3HxzDt/home/.smith/runs/2026-05-24T04-57-13-975Z.trace || true
+done
+```
+
+Observed:
+
+- `The target path is not writable in this workspace`: `6`
+- `patch failed: EACCES`: `6`
+- `Applied patch to scanner/alpine_test.go`: `3` trace mentions, apparently from provider-history replay or attempted tool output context; retained final diff changed only source.
+
+Retained diff:
+
+```text
+ scanner/alpine.go | 151 +++++++++++++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 126 insertions(+), 25 deletions(-)
+scanner/alpine.go
+```
+
+Verifier failure:
+
+- Still missing expected methods:
+  - `parseApkInstalledList`
+  - `parseApkIndex`
+  - `parseApkUpgradableList`
+- `TestIsOvalDefAffected` still failed with `affected: true` and `fixedIn: 3.3.2-r0`.
+
+Decision:
+
+- Keep the patch permission feedback as generic tool-result clarity.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Avoid further `010` iteration unless a new broad Smith issue appears; consider returning to `005` or another generic loop/tool issue.
