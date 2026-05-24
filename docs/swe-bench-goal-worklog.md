@@ -3181,3 +3181,67 @@ Decision:
 - Do not count `005` as recovered.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
 - Next likely target should be `010` or `001`; avoid more prompt edits, and avoid spending more cycles on Codex-failed tasks.
+
+## 2026-05-24 Diagnostic: 010 After Environment Milestone
+
+Purpose:
+
+- Check whether the generic task-image/host-Node environment improvement was enough to recover the Codex-passed `010-future-architect-vuls` task.
+- Keep this as diagnosis only; do not add SWE-bench-specific prompt or runtime instructions.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `953786ms`.
+- Log: `/tmp/smith/2026-05-24T01-21-26-680Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-RddQvG/home/.smith/runs/2026-05-24T01-05-33-710Z.trace`.
+- Sandbox: `.smith-bench/run-RddQvG`.
+- Usage: `1055287` total tokens.
+- Smith edited `scanner/alpine.go`, `scanner/alpine_test.go`, and `oval/util_test.go`.
+- Official verifier restored tests and failed with missing restored test-facing methods:
+  - `parseApkInstalledList`
+  - `parseApkIndex`
+  - `parseApkUpgradableList`
+  - plus `TestIsOvalDefAffected`
+- Retained workspace status:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+ scanner/alpine.go | 162 +++++++++++++++++++++++++++++++++++++++++++++---------
+```
+
+Prompt-integrity check:
+
+```sh
+rg -n "Complete this benchmark task|benchmark verifier|/task/verify.sh|run the verifier directly|This task comes from SWE-bench|SWE-bench Pro instance|base commit|Do not inspect git history" .smith-bench/run-RddQvG/home/.smith/runs/2026-05-24T01-05-33-710Z.trace || true
+```
+
+- No matches.
+- This confirms the rerun used raw task prompting, with no SWE-bench wrapper or verifier coaching.
+
+Trace notes:
+
+- Smith created a local `SMITH.TASK.md` memory inside the sandbox with its Alpine parsing plan.
+- It applied patches to `scanner/alpine.go`, then `scanner/alpine_test.go`, then `scanner/alpine.go` again.
+- It ran focused scanner tests:
+
+```sh
+go test ./scanner -run 'TestParseApkInfo|TestParseInstalledPackages|TestParseApkVersion'
+```
+
+- It finished with a message claiming the Alpine parsing fix was complete.
+- The restored verifier tests demonstrated the implementation missed public helper shapes expected by the task's tests and had a remaining OVAL utility behavior mismatch.
+
+Decision:
+
+- Do not count `010` as recovered.
+- Do not respond with prompt text about restored tests, benchmark validation, or SWE-bench-specific workflow; that is now considered cheating by project policy.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+- Continue with Codex-passed Smith failures (`001`, `005`, `010`) only when the proposed change is generic and useful for ordinary Smith usage.

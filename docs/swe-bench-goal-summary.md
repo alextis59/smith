@@ -871,3 +871,16 @@ Decision:
 - Keep the change as a generic environment robustness improvement.
 - Do not count `005` as recovered; Smith blocked after a patch context mismatch and left no source patch.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+
+## 2026-05-24 Diagnostic: 010 Still Fails After Environment Milestone
+
+Evidence:
+
+- Target SWE rerun `010-future-architect-vuls` failed in `953786ms`, log `/tmp/smith/2026-05-24T01-21-26-680Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-RddQvG/home/.smith/runs/2026-05-24T01-05-33-710Z.trace`.
+- Prompt-integrity search found no SWE-bench prompt wrapper, `/task/verify.sh` coaching, exposed instance/base commit prompt text, or anti-history prompt text.
+- Official verifier failed with missing restored test-facing methods `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`, plus `TestIsOvalDefAffected`.
+
+Decision:
+
+- Do not count `010` as recovered.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
