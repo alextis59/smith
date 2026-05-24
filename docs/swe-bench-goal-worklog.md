@@ -3498,3 +3498,96 @@ Decision:
 - Do not count `001` as recovered.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
 - Next likely generic direction: reduce late first-patch behavior or improve completion after broad source patches without adding benchmark-specific prompt instructions.
+
+## 2026-05-24 Policy Clarification: No SWE-Specific Prompt Or Runtime Tactics
+
+User clarification:
+
+- Prompt edits specifically for SWE-bench are considered cheating.
+- Similar runtime instructions or tactics specifically for the SWE benchmark should also be considered cheating.
+- Instructions too specific to tasks or the SWE benchmark runtime should be discarded.
+- Improvements must be generic and applicable to tasks an ordinary user could ask Smith to perform.
+
+Standing constraints after clarification:
+
+- Keep `SWE_BENCH_PRO_TASK_INSTRUCTIONS` empty.
+- Do not add SWE-specific prompt text, verifier coaching, selected-test guidance, hidden-test inference, benchmark task tactics, or instance-name behavior.
+- Do not tune behavior solely to Codex-passed/Smith-failed SWE tasks; prioritize generic Smith failures and avoid overfitting to flawed tasks, especially tasks Codex `gpt-5.4` high also failed.
+- Logs may record SWE-bench evidence, but Smith behavior changes must remain generic.
+
+## 2026-05-24 Rejected Timing-Ratio Experiment On 001
+
+Hypothesis:
+
+- The post-parser-fix `001-nodebb-nodebb-vnan` run timed out after its first source patch happened after the 90% internal deadline reminder.
+- A generic benchmark harness change reserving more outer timeout for finalization might allow ordinary benchmark runs to reach `finish` and verifier instead of being killed by Docker.
+
+Temporary change tested:
+
+- In `src/benchmark/runner.ts`, changed implicit benchmark `--max-run-ms` from `Math.floor(timeoutMs * 0.8)` to `Math.floor(timeoutMs * 0.65)`.
+- In `tests/benchmark.test.ts`, updated the expected implicit value from `80000` to `65000`.
+
+Focused validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+```
+
+Observed:
+
+- Benchmark tests passed: `21` tests.
+- TypeScript build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `165981ms`.
+- Log: `/tmp/smith/2026-05-24T02-30-36-954Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-vgtn7D/home/.smith/runs/2026-05-24T02-27-51-192Z.trace`.
+- Usage: `58159` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout in `911156ms`.
+- Log: `/tmp/smith/2026-05-24T02-45-57-978Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-dxWRjs/home/.smith/runs/2026-05-24T02-30-52-706Z.trace`.
+- Sandbox: `.smith-bench/run-dxWRjs`.
+- Usage: `2008784` total tokens.
+- Retained workspace diff:
+
+```text
+ src/controllers/admin/users.js | 30 +++++++++++++++-
+ src/database/mongo/main.js     | 17 +++++++++
+ src/database/postgres/main.js  | 22 ++++++++++++
+ src/database/redis/main.js     |  9 +++++
+ src/socket.io/admin/user.js    |  7 +++-
+ src/user/delete.js             |  1 +
+ src/user/email.js              | 78 +++++++++++++++++++++++++++++++++++-------
+ 7 files changed, 150 insertions(+), 14 deletions(-)
+```
+
+Trace evidence:
+
+- Internal deadline warnings fired at `8m 7s of 9m 45s max run time (75% threshold)` and `9m 36s of 9m 45s max run time (90% threshold)`.
+- After the warnings, the parent continued with additional patch and run calls.
+- The parent still did not reach `finish`; the benchmark ended with `docker timed out after 900000ms`.
+
+Decision:
+
+- Reverted the timing-ratio change because it did not recover the target failure and is too close to benchmark runtime tuning under the clarified policy.
+- No Smith code change was retained.
+- Do not count `001` as recovered.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+- Next direction should avoid prompt/runtime benchmark tactics and instead inspect generic tool or loop behavior that affects ordinary long-running tasks, such as clearer completion state handling or safer large-change decomposition.

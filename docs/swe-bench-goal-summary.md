@@ -935,3 +935,27 @@ Decision:
 - Keep as a generic patch-tool correctness improvement.
 - Do not count `001` as recovered.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+
+## 2026-05-24 Policy Clarification And Rejected Timing Experiment
+
+Policy update:
+
+- User clarified that prompt edits or runtime instructions specifically aimed at SWE-bench are cheating.
+- SWE-bench task prompts must remain raw task text with no benchmark-specific coaching.
+- `SWE_BENCH_PRO_TASK_INSTRUCTIONS` remains empty.
+- Future improvements must be generic Smith behavior applicable to ordinary user tasks.
+
+Rejected experiment:
+
+- Tested an earlier generic benchmark `--max-run-ms` reservation (`65%` of outer timeout instead of `80%`) after 001 repeatedly failed to finish before Docker timeout.
+- Focused tests and build passed before the target rerun:
+  - `npm test -- tests/benchmark.test.ts`: passed `21` tests.
+  - `npm run build`: passed.
+- Project benchmark `091-command-router-refactor`: passed in `165981ms`, log `/tmp/smith/2026-05-24T02-30-36-954Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-vgtn7D/home/.smith/runs/2026-05-24T02-27-51-192Z.trace`.
+- Target SWE rerun `001-nodebb-nodebb-vnan`: failed by Docker timeout in `911156ms`, log `/tmp/smith/2026-05-24T02-45-57-978Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-dxWRjs/home/.smith/runs/2026-05-24T02-30-52-706Z.trace`.
+
+Decision:
+
+- Reverted the timing-ratio change; no Smith code change was retained.
+- The trace showed the earlier deadline warnings fired, but the parent still did not reach `finish` or verifier.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
