@@ -290,6 +290,54 @@ describe("provider adapters", () => {
     ]);
   });
 
+  it("compacts preserved chatgpt-codex patch arguments in native history", () => {
+    const patch = [
+      "*** Begin Patch",
+      "*** Add File: note.txt",
+      "+secret patch body",
+      "*** End Patch"
+    ].join("\n");
+    const raw = [
+      `event: response.output_item.added\ndata: ${JSON.stringify({
+        type: "response.output_item.added",
+        item: {
+          id: "fc_patch",
+          call_id: "call_patch",
+          type: "function_call",
+          name: "patch",
+          arguments: JSON.stringify({ reason: "apply note", patch })
+        }
+      })}`,
+      `event: response.output_item.done\ndata: ${JSON.stringify({
+        type: "response.output_item.done",
+        item: {
+          id: "fc_patch",
+          call_id: "call_patch",
+          type: "function_call",
+          name: "patch",
+          arguments: JSON.stringify({ reason: "apply note", patch })
+        }
+      })}`,
+      'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_1"}}'
+    ].join("\n\n");
+
+    const parsed = parseResponsesSse(raw);
+    expect(parsed.toolCalls).toEqual([{ id: "call_patch", name: "patch", arguments: { reason: "apply note", patch } }]);
+    expect(parsed.outputItems).toHaveLength(1);
+    expect(parsed.outputItems[0]).toMatchObject({
+      id: "fc_patch",
+      call_id: "call_patch",
+      type: "function_call",
+      name: "patch"
+    });
+    const preservedArgs = JSON.parse(String(parsed.outputItems[0].arguments));
+    expect(preservedArgs).toEqual({
+      reason: "apply note",
+      patch: "[smith omitted previous patch body from provider history]"
+    });
+    expect(JSON.stringify(parsed.outputItems)).not.toContain("secret patch body");
+  });
+
   it("retries chatgpt-codex response stream failures", async () => {
     const dir = mkdtempSync(join(tmpdir(), "smith-codex-auth-"));
     const authPath = join(dir, "auth.json");

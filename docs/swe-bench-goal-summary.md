@@ -980,3 +980,30 @@ Decision:
 - Keep as a small generic robustness fix.
 - The `001` trace had no `Model response did not call a Smith tool` entries, so the SWE evidence is neutral and does not count as recovery.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+
+## 2026-05-24 Generic Patch History Compaction Recovers 001
+
+Change:
+
+- ChatGPT Codex native Responses history now compacts preserved historical `patch` function-call arguments.
+- The current executable tool call still contains the full patch; only future replay of completed patch calls replaces the patch body with a Smith omission marker.
+- This is a generic provider-history privacy and context-size fix, not a SWE-bench prompt or runtime instruction.
+
+Validation:
+
+- `npm test -- tests/providers.test.ts`: passed `15` tests.
+- `npm run build`: passed.
+- Project benchmark `091-command-router-refactor`: passed in `58441ms`, log `/tmp/smith/2026-05-24T03-21-49-849Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-lvmgNC/home/.smith/runs/2026-05-24T03-20-51-646Z.trace`.
+- Target SWE rerun `001-nodebb-nodebb-vnan`: passed in `730150ms`, log `/tmp/smith/2026-05-24T03-34-11-744Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-wP7m0X/home/.smith/runs/2026-05-24T03-22-07-594Z.trace`.
+
+Evidence:
+
+- Provider debug showed `43` requests; the final request had `71` native input items and `248249` input JSON characters.
+- `2` requests contained the `smith omitted previous patch body` marker, and `0` requests replayed `*** Begin Patch` in provider input history.
+- The target reached `finish` and official verifier exit `0`.
+
+Decision:
+
+- Count `001` as recovered under the strict no-cheating rule.
+- Current targeted strict evidence is now `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Do not run the full suite yet; one more Codex-passed Smith failure still needs recovery evidence before a full run is plausible.

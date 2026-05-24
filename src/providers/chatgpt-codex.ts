@@ -238,7 +238,7 @@ export function parseResponsesSse(raw: string): {
       if (isRecord(event.item) && shouldPreserveResponseInputItem(event.item)) {
         const key = responseItemKey(event.item, itemId ?? `item_${pendingOutputItems.size}`);
         if (event.type === "response.output_item.done") {
-          outputItems.push(event.item);
+          outputItems.push(compactPreservedResponseInputItem(event.item));
           pendingOutputItems.delete(key);
         } else {
           pendingOutputItems.set(key, { ...event.item });
@@ -269,7 +269,7 @@ export function parseResponsesSse(raw: string): {
   }
 
   const toolCalls = extractToolCalls(functionCalls);
-  outputItems.push(...pendingOutputItems.values());
+  outputItems.push(...Array.from(pendingOutputItems.values()).map(compactPreservedResponseInputItem));
   if (outputItems.length === 0) {
     const text = doneText ?? chunks.join("");
     if (text.trim().length > 0) outputItems.push(assistantOutputMessage(text));
@@ -287,6 +287,18 @@ export function parseResponsesSse(raw: string): {
 function shouldPreserveResponseInputItem(item: Record<string, unknown>): boolean {
   const type = textValue(item.type);
   return type === "message" || type === "function_call";
+}
+
+function compactPreservedResponseInputItem(item: Record<string, unknown>): Record<string, unknown> {
+  if (item.type !== "function_call" || textValue(item.name) !== "patch") return item;
+  const args = parseToolArguments(item.arguments);
+  return {
+    ...item,
+    arguments: JSON.stringify({
+      ...(typeof args.reason === "string" ? { reason: args.reason } : {}),
+      patch: "[smith omitted previous patch body from provider history]"
+    })
+  };
 }
 
 function traceResponsesSse(raw: string): string {

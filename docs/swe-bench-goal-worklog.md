@@ -3678,3 +3678,112 @@ Decision:
 - Keep as a small generic loop robustness fix with focused coverage and project benchmark validation.
 - Do not count `001` as recovered; SWE evidence is neutral for this change.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+
+## 2026-05-24 Generic Provider Fix: Compact Preserved Patch Arguments
+
+Hypothesis:
+
+- The ChatGPT Codex native Responses history stores prior `function_call` items and replays them in later provider requests.
+- For `patch` calls, those preserved items contained the full patch body even though Smith's local transcript intentionally hides patch contents after the patch tool runs.
+- This inflated provider context, replayed large completed patches, and weakened the existing transcript privacy boundary.
+- This is generic provider-history management for ordinary Smith tasks, not a SWE-bench prompt or runtime tactic.
+
+Evidence before the change:
+
+- Latest failed `001` run: `/tmp/smith/2026-05-24T03-08-42-902Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-CJrVH2/home/.smith/runs/2026-05-24T02-53-37-649Z.trace`.
+- Provider debug: `.smith-bench/run-CJrVH2/home/.smith/runs/2026-05-24T02-53-37-649Z.trace.provider-debug.jsonl`.
+- Final provider request in that failed run had `85` native input items, `269165` input JSON characters, and preserved completed `function_call` entries including large patch arguments.
+- The run failed by Docker timeout in `911129ms` without verifier.
+
+Change:
+
+- `src/providers/chatgpt-codex.ts`:
+  - added `compactPreservedResponseInputItem()`
+  - compacts only preserved historical `patch` function-call items
+  - keeps current parsed `toolCalls` unchanged so Smith still receives and executes the real patch
+  - stores historical patch arguments as JSON containing the original `reason` when present and `patch: "[smith omitted previous patch body from provider history]"`
+- `tests/providers.test.ts`:
+  - added coverage proving `parseResponsesSse()` still returns the full executable `patch` tool call
+  - added coverage proving `outputItems` used for future native history omit the patch body
+
+Focused validation:
+
+```sh
+npm test -- tests/providers.test.ts
+npm run build
+```
+
+Observed:
+
+- Provider tests passed: `15` tests.
+- TypeScript build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `58441ms`.
+- Log: `/tmp/smith/2026-05-24T03-21-49-849Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-lvmgNC/home/.smith/runs/2026-05-24T03-20-51-646Z.trace`.
+- Usage: `36770` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Passed in `730150ms`.
+- Log: `/tmp/smith/2026-05-24T03-34-11-744Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-wP7m0X/home/.smith/runs/2026-05-24T03-22-07-594Z.trace`.
+- Provider debug: `.smith-bench/run-wP7m0X/home/.smith/runs/2026-05-24T03-22-07-594Z.trace.provider-debug.jsonl`.
+- Sandbox: `.smith-bench/run-wP7m0X`.
+- Usage: `1428400` total tokens.
+- Official verifier exit: `0`.
+- Parent reached `finish` after `34` turns.
+
+Provider-history evidence:
+
+```sh
+node - <<'NODE'
+const fs=require('fs');
+const p='.smith-bench/run-wP7m0X/home/.smith/runs/2026-05-24T03-22-07-594Z.trace.provider-debug.jsonl';
+let rows=[]; let omitted=0; let patchBodies=0;
+for (const line of fs.readFileSync(p,'utf8').trim().split('\n')) {
+  const r=JSON.parse(line);
+  if (r.direction==='request') {
+    const input=JSON.stringify(r.body.input||[]);
+    rows.push({body:(r.body_json||JSON.stringify(r.body)).length,input:input.length,items:(r.body.input||[]).length});
+    if(input.includes('smith omitted previous patch body')) omitted++;
+    if(input.includes('*** Begin Patch')) patchBodies++;
+  }
+}
+console.log({requests:rows.length, first: rows[0], last: rows.at(-1), omittedRequests: omitted, requestsWithPatchBody: patchBodies});
+NODE
+```
+
+Observed:
+
+```text
+{
+  requests: 43,
+  first: { body: 17099, input: 6305, items: 1 },
+  last: { body: 259043, input: 248249, items: 71 },
+  omittedRequests: 2,
+  requestsWithPatchBody: 0
+}
+```
+
+Decision:
+
+- Keep the provider-history compaction as a generic privacy/context-size improvement.
+- Count `001` as recovered.
+- Current targeted strict evidence is now `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Do not run the full suite yet; need one more plausible Codex-passed recovery, likely `005` or `010`, before a full run is warranted.
