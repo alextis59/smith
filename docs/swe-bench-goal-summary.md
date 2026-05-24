@@ -1189,3 +1189,43 @@ Decision:
 - Keep the change as generic anti-stall loop control.
 - Do not count `005` as recovered.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
+
+## 2026-05-24 Restored-Test Read-Only Mounts
+
+Problem found:
+
+- Target `010-future-architect-vuls` exposed a harness-integrity gap rather than a Smith capability improvement opportunity.
+- Trace `.smith-bench/run-qPXnu8/home/.smith/runs/2026-05-24T06-31-54-205Z.trace` showed Smith first hit `EACCES` editing `scanner/alpine_test.go`, then ran `chmod u+w scanner/alpine_test.go`, rewrote the selected test file, and only later had the benchmark verifier restore tests.
+- Relying only on file mode bits was insufficient because the editing container could change permissions.
+
+Change:
+
+- SWE-bench Pro restored test files are now also bind-mounted back into the Smith editing container as read-only files at their workspace paths.
+- The restored-test tracking records both host path and workspace-relative path so Docker can mount each protected file as `/workspace/<relativePath>:ro`.
+- This is harness integrity, not prompt coaching: it prevents edits to verifier-restored files instead of telling the model benchmark-specific behavior.
+
+Validation:
+
+- `npm test -- tests/benchmark.test.ts`: passed `22` tests.
+- `npm run build`: passed.
+- Project benchmark `091-command-router-refactor`: first rerun failed by model variance before `finish`; retry passed in `199220ms`, log `/tmp/smith/2026-05-24T06-57-32-330Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-oOe9dN/home/.smith/runs/2026-05-24T06-54-13-508Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed by Docker timeout in `906118ms`, log `/tmp/smith/2026-05-24T07-12-46-341Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-59Lpvq/home/.smith/runs/2026-05-24T06-57-40-975Z.trace`.
+
+Evidence:
+
+- The new `010` trace showed attempted test overwrite failing with `bash: scanner/alpine_test.go: Read-only file system`.
+- A follow-up `chmod u+w scanner/alpine_test.go` failed with `Read-only file system`.
+- A remove-and-replace attempt failed with `Device or resource busy`.
+- The retained workspace only had `scanner/alpine.go` modified, so the protected restored test file was not changed.
+
+Decision:
+
+- Keep the read-only bind mounts as generic benchmark harness integrity.
+- Do not count `010` as recovered; the run timed out before `finish` or verifier.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+
+## Operational Note: `.smith-bench` Cleanup
+
+- Retained sandboxes are useful for trace and verifier evidence, but `.smith-bench` grows quickly. On 2026-05-24 it was `4.5G` across `8` retained `run-*` directories.
+- Periodically check `du -sh .smith-bench` and remove old `.smith-bench/run-*` directories after their logs/traces have been recorded or they are no longer needed for diagnosis.
+- Do not delete active runs or evidence referenced by the current investigation until the relevant notes are committed.

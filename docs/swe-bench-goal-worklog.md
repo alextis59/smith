@@ -4469,3 +4469,125 @@ Decision:
 - Do not count `005` as recovered; the target still exposes an implementation failure.
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
+
+## 2026-05-24 Diagnostic: 010 Restored-Test Protection Gap
+
+Prior target evidence:
+
+- Target command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+- Failed in `942193ms`.
+- Log: `/tmp/smith/2026-05-24T06-47-35-549Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-qPXnu8/home/.smith/runs/2026-05-24T06-31-54-205Z.trace`.
+
+Trace evidence:
+
+- Smith attempted to patch `scanner/alpine_test.go` and hit `EACCES`.
+- Smith then ran `chmod u+w scanner/alpine_test.go`.
+- Smith rewrote `scanner/alpine_test.go` using Python.
+- The verifier restored tests before execution, but the trace showed the editing container could still bypass chmod-only protection during the run.
+
+Verifier evidence from that run:
+
+- `scanner` build failed because restored tests expected methods that the candidate source patch did not provide:
+  - `parseApkInstalledList`
+  - `parseApkIndex`
+  - `parseApkUpgradableList`
+- `TestIsOvalDefAffected` also failed with `affected=false` expected but `true` actual, and empty `fixedIn` expected but `3.3.2-r0` actual.
+
+Classification:
+
+- This is a generic harness-integrity issue: verifier-restored files should not be editable during an agent run if the benchmark intends to ignore such edits.
+- A chmod-only guard is insufficient when the container user can change modes.
+- This does not justify any SWE-specific prompt instruction.
+
+## 2026-05-24 Change: Bind-Mount Restored Tests Read-Only
+
+Hypothesis:
+
+- Mounting each restored test file back into the editing container as a read-only file should prevent direct edits, `chmod`, and remove/replace workarounds at the filesystem layer.
+- This is a generic benchmark harness integrity improvement and does not change task prompts, selected tests, verifier logic, scoring, or result parsing.
+
+Change:
+
+- `src/benchmark/runner.ts`:
+  - `ProtectedFileMode` now stores both absolute `path` and workspace `relativePath`.
+  - SWE-bench Pro Smith runs pass protected restored test files into `buildSmithBenchmarkDockerArgs`.
+  - `buildSmithBenchmarkDockerArgs` adds per-file Docker mounts of the form `<host file>:/workspace/<relativePath>:ro` after the writable workspace mount.
+- `tests/benchmark.test.ts`:
+  - asserts restored-test protection preserves the relative path;
+  - asserts Smith Docker args include the read-only restored-test mount.
+
+Focused validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+```
+
+Observed:
+
+- Benchmark tests passed: `22` tests.
+- TypeScript build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- First run failed in `246121ms`, log `/tmp/smith/2026-05-24T06-53-47-172Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-YiKNfV/home/.smith/runs/2026-05-24T06-49-41-271Z.trace`.
+- Failure was `smith: model did not call finish within 20 turns`; the trace showed a poor task strategy and late verifier execution, not evidence tied to read-only mounts, which local project tasks do not use.
+- Retry passed in `199220ms`.
+- Passing retry log: `/tmp/smith/2026-05-24T06-57-32-330Z-smith-091-command-router-refactor.json`.
+- Passing retry trace: `.smith-bench/run-oOe9dN/home/.smith/runs/2026-05-24T06-54-13-508Z.trace`.
+- Usage: `62951` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout in `906118ms`.
+- Log: `/tmp/smith/2026-05-24T07-12-46-341Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-59Lpvq/home/.smith/runs/2026-05-24T06-57-40-975Z.trace`.
+- Sandbox: `.smith-bench/run-59Lpvq`.
+- Usage: `2028575` total tokens.
+
+Trace evidence:
+
+- Direct test overwrite failed with `bash: scanner/alpine_test.go: Read-only file system`.
+- The agent attempted `chmod u+w scanner/alpine_test.go`; it failed with `chmod: changing permissions of 'scanner/alpine_test.go': Read-only file system`.
+- The agent attempted to write `scanner/alpine_test.go.new` and move it over the protected file; `mv` failed with `Device or resource busy`.
+- A Python `unlink()` attempt failed with `OSError [Errno 16] Device or resource busy`.
+- Final retained workspace status showed only `M scanner/alpine.go`; the protected restored test file was not modified.
+
+Decision:
+
+- Keep the read-only restored-test bind mounts.
+- Do not count `010` as recovered because Smith timed out before `finish` and no verifier ran.
+- This run suggests future generic work should target better late-run finish/blocker behavior after repeated failed checks, not SWE-specific prompt text.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+
+## 2026-05-24 Operational Note: `.smith-bench` Cleanup
+
+Observation:
+
+- `.smith-bench` was `4.5G` with `8` retained `run-*` directories after the latest targeted rerun.
+- Retained sandboxes are valuable while diagnosing trace/verifier evidence, but they can grow to several GB quickly.
+
+Note for future work:
+
+- Periodically run `du -sh .smith-bench` during long benchmark loops.
+- After a run's log path, trace path, and any needed verifier evidence are recorded, remove old `.smith-bench/run-*` directories that are no longer part of the active investigation.
+- Preserve active runs and any sandboxes referenced by the current uncommitted notes until the milestone has been committed.

@@ -72,6 +72,7 @@ export type SweBenchProTaskMetadata = {
 
 type ProtectedFileMode = {
   path: string;
+  relativePath: string;
   mode: number;
 };
 
@@ -262,7 +263,16 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
       agentStdout = codex.stdout;
       agentStderr = codex.stderr;
     } else {
-      const smith = await runSmithForSweBenchProTask({ taskCopy, workspace, home, resultsDir, options, repoRoot, metadata });
+      const smith = await runSmithForSweBenchProTask({
+        taskCopy,
+        workspace,
+        home,
+        resultsDir,
+        options,
+        repoRoot,
+        metadata,
+        protectedTestFiles
+      });
       agentStdout = smith.stdout;
       agentStderr = smith.stderr;
       agentImage = smith.image;
@@ -333,8 +343,9 @@ async function runSmithForSweBenchProTask(context: {
   options: BenchmarkRunOptions;
   repoRoot: string;
   metadata: SweBenchProTaskMetadata;
+  protectedTestFiles?: ProtectedFileMode[];
 }): Promise<{ stdout: string; stderr: string; image: string }> {
-  const { taskCopy, workspace, home, resultsDir, options, repoRoot, metadata } = context;
+  const { taskCopy, workspace, home, resultsDir, options, repoRoot, metadata, protectedTestFiles = [] } = context;
   const image = await selectSweBenchProSmithImage({ metadata, options, repoRoot, timeoutMs: options.timeoutMs ?? 120_000 });
   const profileArgs = options.profile ? ["--profile", options.profile] : [];
   const smithArgs = prepareSmithArgsForDocker(
@@ -348,7 +359,17 @@ async function runSmithForSweBenchProTask(context: {
   try {
     const result = await runDockerBenchmarkContainer(
       containerName,
-      buildSmithBenchmarkDockerArgs({ containerName, image, repoRoot, workspace, home, resultsDir, taskCopy, script }),
+      buildSmithBenchmarkDockerArgs({
+        containerName,
+        image,
+        repoRoot,
+        workspace,
+        home,
+        resultsDir,
+        taskCopy,
+        script,
+        readOnlyWorkspaceFiles: protectedTestFiles
+      }),
       { timeout: options.timeoutMs ?? 120_000, maxBuffer: 1024 * 1024 * 50 }
     );
     return { ...result, image };
@@ -390,8 +411,9 @@ export function buildSmithBenchmarkDockerArgs(context: {
   resultsDir: string;
   taskCopy: string;
   script: string;
+  readOnlyWorkspaceFiles?: ProtectedFileMode[];
 }): string[] {
-  const { containerName, image, repoRoot, workspace, home, resultsDir, taskCopy, script } = context;
+  const { containerName, image, repoRoot, workspace, home, resultsDir, taskCopy, script, readOnlyWorkspaceFiles = [] } = context;
   return [
     "run",
     "--rm",
@@ -408,6 +430,7 @@ export function buildSmithBenchmarkDockerArgs(context: {
     `${repoRoot}:/smith`,
     "-v",
     `${workspace}:/workspace`,
+    ...readOnlyWorkspaceFiles.flatMap((file) => ["-v", `${file.path}:/workspace/${file.relativePath}:ro`]),
     "-v",
     `${home}:/home/smith`,
     "-v",
@@ -529,7 +552,7 @@ export function protectSweBenchProRestoredTestFiles(
     const mode = statSync(path).mode & 0o777;
     const readOnlyMode = mode & ~0o222;
     if (readOnlyMode !== mode) chmodSync(path, readOnlyMode);
-    protectedFiles.push({ path, mode });
+    protectedFiles.push({ path, relativePath, mode });
   }
   return protectedFiles;
 }

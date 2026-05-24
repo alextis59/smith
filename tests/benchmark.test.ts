@@ -320,6 +320,7 @@ total_tokens: 320
     );
 
     expect(protectedFiles).toHaveLength(1);
+    expect(protectedFiles[0]?.relativePath).toBe("tests/feature_test.go");
     expect(statSync(selectedTest).mode & 0o222).toBe(0);
     expect(statSync(sourceFile).mode & 0o222).not.toBe(0);
 
@@ -430,12 +431,14 @@ total_tokens: 320
       home: "/home-copy",
       resultsDir: "/results-copy",
       taskCopy: "/task-copy",
-      script: "echo ok"
+      script: "echo ok",
+      readOnlyWorkspaceFiles: [{ path: "/workspace-copy/tests/feature_test.go", relativePath: "tests/feature_test.go", mode: 0o664 }]
     });
 
     expect(args).toContain("--entrypoint");
     expect(args[args.indexOf("--entrypoint") + 1]).toBe("bash");
     expect(args).toContain("/results-copy:/benchmark-results");
+    expect(args).toContain("/workspace-copy/tests/feature_test.go:/workspace/tests/feature_test.go:ro");
     expect(args.slice(-3)).toEqual([DEFAULT_SMITH_BENCHMARK_IMAGE, "-lc", "echo ok"]);
     expect(args).not.toContain("bash -lc");
   });
