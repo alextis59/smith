@@ -1052,3 +1052,29 @@ Decision:
 - Do not count `010` as recovered.
 - Current targeted strict evidence remains `6/10`.
 - This does not justify a benchmark-specific prompt edit; any next change must be a generic Smith behavior improvement.
+
+## 2026-05-24 Harness Integrity: Protect Restored SWE Test Files
+
+Change:
+
+- SWE-bench Pro runner now makes verifier-restored test files read-only during the editing agent run, then restores their original modes before verifier setup.
+- This enforces benchmark integrity without exposing test contents or altering verifier scoring.
+
+Validation:
+
+- `npm test -- tests/benchmark.test.ts`: passed `22` tests.
+- `npm run build`: passed.
+- Project benchmark `091-command-router-refactor`: passed in `106363ms`, log `/tmp/smith/2026-05-24T04-35-35-202Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-cLnKfa/home/.smith/runs/2026-05-24T04-33-49-072Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed in `964190ms`, log `/tmp/smith/2026-05-24T04-51-50-320Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-B2kCyk/home/.smith/runs/2026-05-24T04-35-46-825Z.trace`.
+
+Evidence:
+
+- Trace contained `12` `EACCES` patch failures for `/workspace/scanner/alpine_test.go`, showing the selected test protection was exercised.
+- Retained final diff changed only `scanner/alpine.go`.
+- Verifier still failed with missing expected Alpine parser methods and `TestIsOvalDefAffected`.
+
+Decision:
+
+- Keep the change as anti-cheating harness integrity.
+- Do not count `010` as recovered; strict targeted evidence remains `6/10`.
+- Do not run the full suite yet.

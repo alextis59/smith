@@ -3986,3 +3986,93 @@ Decision:
 - The run reached verifier but broke public test-facing method names and still failed `TestIsOvalDefAffected`.
 - Do not add SWE/Vuls-specific prompt or runtime guidance. Any next change must be generic Smith behavior that would help ordinary coding tasks.
 - Current targeted strict evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+
+## 2026-05-24 Harness Integrity: Protect Restored SWE Test Files
+
+Hypothesis:
+
+- The prior `010` run edited `scanner/alpine_test.go`, one of the files restored by the verifier setup command.
+- Verifier restoration correctly prevented test tampering from affecting scoring, but writable restored tests wasted agent time and let local targeted checks validate against a modified test file.
+- Making verifier-restored test files read-only during the editing phase is an anti-cheating harness-integrity fix. It does not expose selected test contents, change parser/scoring logic, or add benchmark prompt instructions.
+
+Change:
+
+- `src/benchmark/runner.ts`:
+  - added `protectSweBenchProRestoredTestFiles()`
+  - extracts restored test file paths from the existing SWE `setupCommand` after `--`
+  - removes write bits from existing restored files before hiding `.git` and starting the agent
+  - restores original file modes before running the verifier and on error paths
+- `tests/benchmark.test.ts`:
+  - added coverage that a restored test file becomes read-only while unrelated source files remain writable
+  - verifies original file modes are restored
+
+Focused validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+```
+
+Observed:
+
+- Benchmark tests passed: `22` tests.
+- TypeScript build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `106363ms`.
+- Log: `/tmp/smith/2026-05-24T04-35-35-202Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-cLnKfa/home/.smith/runs/2026-05-24T04-33-49-072Z.trace`.
+- Usage: `61118` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `964190ms`.
+- Log: `/tmp/smith/2026-05-24T04-51-50-320Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-B2kCyk/home/.smith/runs/2026-05-24T04-35-46-825Z.trace`.
+- Sandbox: `.smith-bench/run-B2kCyk`.
+- Usage: `2568715` total tokens.
+- Smith reached `finish` after `47` turns and the verifier executed.
+
+Protection evidence:
+
+```sh
+rg -c "patch failed: EACCES: permission denied, open '/workspace/scanner/alpine_test.go'" .smith-bench/run-B2kCyk/home/.smith/runs/2026-05-24T04-35-46-825Z.trace
+git -C .smith-bench/run-B2kCyk/workspace diff --stat
+git -C .smith-bench/run-B2kCyk/workspace diff --name-only
+```
+
+Observed:
+
+```text
+12
+ scanner/alpine.go | 90 ++++++++++++++++++++++++++++++++++++++++++-------------
+ 1 file changed, 69 insertions(+), 21 deletions(-)
+scanner/alpine.go
+```
+
+Verifier failure:
+
+- `scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined`
+- `scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined`
+- `scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined`
+- `TestIsOvalDefAffected`: expected `affected: false`, got `true`; expected empty `fixedIn`, got `3.3.2-r0`.
+
+Decision:
+
+- Keep the read-only restored-test protection as benchmark integrity and anti-cheating.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite still not justified; one more Codex-passed recovery is needed.

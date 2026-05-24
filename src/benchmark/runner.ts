@@ -70,6 +70,11 @@ export type SweBenchProTaskMetadata = {
   passToPass: string[];
 };
 
+type ProtectedFileMode = {
+  path: string;
+  mode: number;
+};
+
 export const DEFAULT_SMITH_BENCHMARK_IMAGE = "node:22-bookworm";
 const HOST_NODE_ROOT_ENV = "SMITH_BENCH_HOST_NODE_ROOT";
 
@@ -243,9 +248,11 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
   let agentImage: string | undefined;
   let verifier: BenchmarkVerifierResult | undefined;
   let hiddenGitDir: string | undefined;
+  let protectedTestFiles: ProtectedFileMode[] = [];
 
   try {
     await prepareSweBenchProWorkspace(metadata, workspace, options.timeoutMs ?? 120_000);
+    protectedTestFiles = protectSweBenchProRestoredTestFiles(metadata, workspace);
     hiddenGitDir = hideSweBenchProGitDir(workspace, sandbox);
     if (agent === "codex") {
       const codex = await runCodexForSweBenchProTask({ taskCopy, workspace, options, metadata });
@@ -257,6 +264,8 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
       agentStderr = smith.stderr;
       agentImage = smith.image;
     }
+    restoreProtectedFileModes(protectedTestFiles);
+    protectedTestFiles = [];
     restoreSweBenchProGitDir(workspace, hiddenGitDir);
     verifier = await runSweBenchProVerifier({ metadata, taskCopy, workspace, sandbox, timeoutMs: options.timeoutMs ?? 120_000 });
     const taskResult: BenchmarkTaskResult = {
@@ -281,6 +290,7 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
     if (!options.keepSandbox) cleanupSandbox(sandbox);
     return taskResult;
   } catch (error) {
+    restoreProtectedFileModes(protectedTestFiles);
     restoreSweBenchProGitDir(workspace, hiddenGitDir);
     const failed = error as { stdout?: string; stderr?: string; code?: number; verifier?: BenchmarkVerifierResult };
     if (failed.verifier) verifier = failed.verifier;
@@ -496,6 +506,37 @@ export function restoreSweBenchProGitDir(workspace: string, hiddenGitDir?: strin
   const gitDir = join(workspace, ".git");
   rmSync(gitDir, { recursive: true, force: true });
   renameSync(hiddenGitDir, gitDir);
+}
+
+export function protectSweBenchProRestoredTestFiles(
+  metadata: SweBenchProTaskMetadata,
+  workspace: string
+): ProtectedFileMode[] {
+  const protectedFiles: ProtectedFileMode[] = [];
+  for (const relativePath of restoredTestPathsFromSetupCommand(metadata.setupCommand)) {
+    const path = join(workspace, relativePath);
+    if (!existsSync(path)) continue;
+    const mode = statSync(path).mode & 0o777;
+    const readOnlyMode = mode & ~0o222;
+    if (readOnlyMode !== mode) chmodSync(path, readOnlyMode);
+    protectedFiles.push({ path, mode });
+  }
+  return protectedFiles;
+}
+
+export function restoreProtectedFileModes(files: ProtectedFileMode[]): void {
+  for (const file of files) {
+    if (existsSync(file.path)) chmodSync(file.path, file.mode);
+  }
+}
+
+function restoredTestPathsFromSetupCommand(command: string | undefined): string[] {
+  const match = /\s--\s+(.+?)\s*$/.exec(command?.trim() ?? "");
+  if (!match) return [];
+  return match[1]
+    .split(/\s+/)
+    .map((path) => path.trim())
+    .filter((path) => path.length > 0 && !path.startsWith("-") && !path.includes("..") && !path.startsWith("/"));
 }
 
 async function runCodexForSweBenchProTask(context: {

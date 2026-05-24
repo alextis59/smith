@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -17,6 +17,8 @@ import {
   hideSweBenchProGitDir,
   hostNodeDockerMountArgs,
   parseSmithTraceUsage,
+  protectSweBenchProRestoredTestFiles,
+  restoreProtectedFileModes,
   restoreSweBenchProGitDir,
   resolveBenchmarkTarget,
   runBenchmarkTask,
@@ -289,6 +291,41 @@ total_tokens: 320
 
     expect(existsSync(join(workspace, ".git", "HEAD"))).toBe(true);
     expect(existsSync(join(sandbox, "workspace.git"))).toBe(false);
+  });
+
+  it("makes SWE-bench Pro restored test files read-only during editing and restores their modes", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "smith-swe-test-protect-"));
+    mkdirSync(join(workspace, "tests"), { recursive: true });
+    const selectedTest = join(workspace, "tests", "feature_test.go");
+    const sourceFile = join(workspace, "src.go");
+    writeFileSync(selectedTest, "package tests\n", "utf8");
+    writeFileSync(sourceFile, "package main\n", "utf8");
+    chmodSync(selectedTest, 0o664);
+    chmodSync(sourceFile, 0o664);
+
+    const protectedFiles = protectSweBenchProRestoredTestFiles(
+      {
+        format: "swe-bench-pro-v1",
+        repo: "owner/repo",
+        instanceId: "instance_owner__repo-abc",
+        baseCommit: "abc123",
+        repoLanguage: "go",
+        dockerImage: "example/image:tag",
+        setupCommand: "git checkout abc123 -- tests/feature_test.go missing_test.go",
+        selectedTestFilesToRun: ["TestFeature"],
+        failToPass: ["TestFeature"],
+        passToPass: []
+      },
+      workspace
+    );
+
+    expect(protectedFiles).toHaveLength(1);
+    expect(statSync(selectedTest).mode & 0o222).toBe(0);
+    expect(statSync(sourceFile).mode & 0o222).not.toBe(0);
+
+    restoreProtectedFileModes(protectedFiles);
+
+    expect(statSync(selectedTest).mode & 0o777).toBe(0o664);
   });
 
   it("adds tool shims for benchmark editing containers with missing basics", () => {
