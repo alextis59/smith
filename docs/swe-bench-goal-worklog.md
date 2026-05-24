@@ -4309,3 +4309,83 @@ Decision:
 - Do not count `005` as recovered.
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
+
+## 2026-05-24 Change: Isolate Benchmark Result Artifacts
+
+Hypothesis:
+
+- The invalid `005` rerun showed the wrapper failing to write `/home/smith/benchmark-results/smith.status` and failing to replay `/home/smith/benchmark-results/smith.stdout`.
+- Because Smith ran with `HOME=/home/smith`, result artifacts under that home directory were exposed to the inner run and could be removed or unlinked before the wrapper collected them.
+- This is a generic benchmark harness reliability issue: the outer wrapper must preserve status/output artifacts independently of the writable agent home.
+
+Change:
+
+- `src/benchmark/runner.ts`:
+  - creates `sandbox/benchmark-results` for every benchmark task;
+  - mounts it at `/benchmark-results` for local benchmark Smith containers and SWE-bench Pro Smith containers;
+  - writes Smith stdout/stderr/status and local verifier stdout/stderr/status there instead of `/home/smith/benchmark-results`;
+  - passes the same mounted results directory to the SWE-bench Pro verifier;
+  - recreates the result directory after Smith/verifier commands and creates empty stdout/stderr files if an inner run removed them before replay.
+- `tests/benchmark.test.ts`:
+  - asserts SWE-bench Pro Smith scripts use `/benchmark-results` and include artifact guards;
+  - asserts the Smith benchmark Docker args mount the result directory separately.
+
+Focused validation:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+```
+
+Observed:
+
+- Benchmark tests passed: `22` tests.
+- TypeScript build passed.
+- `git diff --check` passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `124093ms`.
+- Log: `/tmp/smith/2026-05-24T05-54-05-068Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-pbqKTb/home/.smith/runs/2026-05-24T05-52-01-214Z.trace`.
+- `benchmark-results` contained `smith.status`, `smith.stdout`, `smith.stderr`, `verify.status`, `verify.stdout`, and `verify.stderr`.
+- Usage: `39536` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `769019ms`, but the failure is now valid evidence rather than a missing-artifact harness anomaly.
+- Log: `/tmp/smith/2026-05-24T06-07-02-365Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-BfvvUW/home/.smith/runs/2026-05-24T05-54-19-958Z.trace`.
+- Sandbox: `.smith-bench/run-BfvvUW`.
+- Usage: `1772196` total tokens.
+- Retained `benchmark-results` contained `smith.status`, `smith.stdout`, `smith.stderr`, `stdout.log`, `stderr.log`, and `output.json`.
+- Smith reached `finish`; the SWE verifier ran and failed.
+
+Verifier evidence:
+
+- `lib/kube/proxy` failed to build.
+- Representative errors:
+  - `unknown field 'cfg' in struct literal of type Forwarder`
+  - `f.cfg undefined`
+  - `unknown field 'clientCredentials' in struct literal of type Forwarder`
+  - `f.clientCredentials undefined`
+- Parser output marked selected `TestParseResourcePath` and `TestAuthenticate` cases missing/failed because package build failed.
+
+Decision:
+
+- Keep the result artifact isolation as generic benchmark harness reliability.
+- Do not count `005` as recovered; this run exposes an implementation failure in the candidate patch, not a harness failure.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.

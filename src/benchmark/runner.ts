@@ -214,19 +214,21 @@ export async function runBenchmarkTask(taskPath: string, options: BenchmarkRunOp
   const taskCopy = join(sandbox, "task");
   const workspace = join(sandbox, "workspace");
   const home = join(sandbox, "home");
+  const resultsDir = join(sandbox, "benchmark-results");
   mkdirSync(home, { recursive: true });
+  mkdirSync(resultsDir, { recursive: true });
   cpSync(task, taskCopy, { recursive: true });
   const taskKind = benchmarkTaskKind(taskCopy);
   if (taskKind === "swe-bench-pro") {
-    return runSweBenchProBenchmarkTask({ task, taskCopy, workspace, home, sandbox, options, repoRoot });
+    return runSweBenchProBenchmarkTask({ task, taskCopy, workspace, home, resultsDir, sandbox, options, repoRoot });
   }
 
   cpSync(join(taskCopy, "workspace"), workspace, { recursive: true });
 
   if (agent === "codex") {
-    return runCodexBenchmarkTask({ task, taskCopy, workspace, home, sandbox, options });
+    return runCodexBenchmarkTask({ task, taskCopy, workspace, home, resultsDir, sandbox, options });
   }
-  return runSmithBenchmarkTask({ task, taskCopy, workspace, home, sandbox, options, repoRoot });
+  return runSmithBenchmarkTask({ task, taskCopy, workspace, home, resultsDir, sandbox, options, repoRoot });
 }
 
 type BenchmarkTaskContext = {
@@ -234,12 +236,13 @@ type BenchmarkTaskContext = {
   taskCopy: string;
   workspace: string;
   home: string;
+  resultsDir: string;
   sandbox: string;
   options: BenchmarkRunOptions;
 };
 
 async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { repoRoot: string }): Promise<BenchmarkTaskResult> {
-  const { task, taskCopy, workspace, home, sandbox, options, repoRoot } = context;
+  const { task, taskCopy, workspace, home, resultsDir, sandbox, options, repoRoot } = context;
   const started = Date.now();
   const metadata = readSweBenchProTaskMetadata(taskCopy);
   const agent = options.agent ?? "smith";
@@ -259,7 +262,7 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
       agentStdout = codex.stdout;
       agentStderr = codex.stderr;
     } else {
-      const smith = await runSmithForSweBenchProTask({ taskCopy, workspace, home, options, repoRoot, metadata });
+      const smith = await runSmithForSweBenchProTask({ taskCopy, workspace, home, resultsDir, options, repoRoot, metadata });
       agentStdout = smith.stdout;
       agentStderr = smith.stderr;
       agentImage = smith.image;
@@ -267,7 +270,7 @@ async function runSweBenchProBenchmarkTask(context: BenchmarkTaskContext & { rep
     restoreProtectedFileModes(protectedTestFiles);
     protectedTestFiles = [];
     restoreSweBenchProGitDir(workspace, hiddenGitDir);
-    verifier = await runSweBenchProVerifier({ metadata, taskCopy, workspace, sandbox, timeoutMs: options.timeoutMs ?? 120_000 });
+    verifier = await runSweBenchProVerifier({ metadata, taskCopy, workspace, resultsDir, sandbox, timeoutMs: options.timeoutMs ?? 120_000 });
     const taskResult: BenchmarkTaskResult = {
       task,
       agent,
@@ -326,11 +329,12 @@ async function runSmithForSweBenchProTask(context: {
   taskCopy: string;
   workspace: string;
   home: string;
+  resultsDir: string;
   options: BenchmarkRunOptions;
   repoRoot: string;
   metadata: SweBenchProTaskMetadata;
 }): Promise<{ stdout: string; stderr: string; image: string }> {
-  const { taskCopy, workspace, home, options, repoRoot, metadata } = context;
+  const { taskCopy, workspace, home, resultsDir, options, repoRoot, metadata } = context;
   const image = await selectSweBenchProSmithImage({ metadata, options, repoRoot, timeoutMs: options.timeoutMs ?? 120_000 });
   const profileArgs = options.profile ? ["--profile", options.profile] : [];
   const smithArgs = prepareSmithArgsForDocker(
@@ -344,7 +348,7 @@ async function runSmithForSweBenchProTask(context: {
   try {
     const result = await runDockerBenchmarkContainer(
       containerName,
-      buildSmithBenchmarkDockerArgs({ containerName, image, repoRoot, workspace, home, taskCopy, script }),
+      buildSmithBenchmarkDockerArgs({ containerName, image, repoRoot, workspace, home, resultsDir, taskCopy, script }),
       { timeout: options.timeoutMs ?? 120_000, maxBuffer: 1024 * 1024 * 50 }
     );
     return { ...result, image };
@@ -359,14 +363,17 @@ export function buildSweBenchProSmithScript(metadata: SweBenchProTaskMetadata, c
     ...hostNodePathScript(),
     "export PATH=/usr/local/go/bin:/go/bin:$PATH",
     "mkdir -p /home/smith",
-    "RESULT_DIR=/home/smith/benchmark-results",
+    "RESULT_DIR=/benchmark-results",
     "mkdir -p \"$RESULT_DIR\"",
     ...BENCHMARK_PYTHON_SHIM_SCRIPT,
     `TASK=$(printf '%s\\n\\n' ${benchmarkInstructionsForTask(metadata).map(shellQuote).join(" ")}; cat /task/Task.md)`,
     "set +e",
     `${command} > "$RESULT_DIR/smith.stdout" 2> "$RESULT_DIR/smith.stderr"`,
     "smith_status=$?",
+    "mkdir -p \"$RESULT_DIR\"",
     "printf '%s\\n' \"$smith_status\" > \"$RESULT_DIR/smith.status\"",
+    "[ -f \"$RESULT_DIR/smith.stdout\" ] || : > \"$RESULT_DIR/smith.stdout\"",
+    "[ -f \"$RESULT_DIR/smith.stderr\" ] || : > \"$RESULT_DIR/smith.stderr\"",
     "set -e",
     "cat \"$RESULT_DIR/smith.stdout\"",
     "cat \"$RESULT_DIR/smith.stderr\" >&2",
@@ -380,10 +387,11 @@ export function buildSmithBenchmarkDockerArgs(context: {
   repoRoot: string;
   workspace: string;
   home: string;
+  resultsDir: string;
   taskCopy: string;
   script: string;
 }): string[] {
-  const { containerName, image, repoRoot, workspace, home, taskCopy, script } = context;
+  const { containerName, image, repoRoot, workspace, home, resultsDir, taskCopy, script } = context;
   return [
     "run",
     "--rm",
@@ -402,6 +410,8 @@ export function buildSmithBenchmarkDockerArgs(context: {
     `${workspace}:/workspace`,
     "-v",
     `${home}:/home/smith`,
+    "-v",
+    `${resultsDir}:/benchmark-results`,
     "-v",
     `${taskCopy}:/task:ro`,
     image,
@@ -611,11 +621,11 @@ async function runSweBenchProVerifier(context: {
   metadata: SweBenchProTaskMetadata;
   taskCopy: string;
   workspace: string;
+  resultsDir: string;
   sandbox: string;
   timeoutMs: number;
 }): Promise<BenchmarkVerifierResult> {
-  const { metadata, taskCopy, workspace, sandbox, timeoutMs } = context;
-  const resultsDir = join(sandbox, "benchmark-results");
+  const { metadata, taskCopy, workspace, resultsDir, sandbox, timeoutMs } = context;
   mkdirSync(resultsDir, { recursive: true });
   const script = buildSweBenchProVerifierScript(metadata);
   const command = `docker run --rm --entrypoint bash -v ${workspace}:/app -v ${taskCopy}:/task:ro -v ${resultsDir}:/benchmark-results ${metadata.dockerImage} -lc <verifier>`;
@@ -709,7 +719,7 @@ export function buildSweBenchProVerifierScript(metadata: SweBenchProTaskMetadata
 }
 
 async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot: string }): Promise<BenchmarkTaskResult> {
-  const { task, taskCopy, workspace, home, sandbox, options, repoRoot } = context;
+  const { task, taskCopy, workspace, home, resultsDir, sandbox, options, repoRoot } = context;
   const started = Date.now();
   const image = options.image ?? "node:22-bookworm";
   const profileArgs = options.profile ? ["--profile", options.profile] : [];
@@ -723,14 +733,17 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
   const script = [
     "set -euo pipefail",
     "mkdir -p /home/smith",
-    "RESULT_DIR=/home/smith/benchmark-results",
+    "RESULT_DIR=/benchmark-results",
     "mkdir -p \"$RESULT_DIR\"",
     ...BENCHMARK_PYTHON_SHIM_SCRIPT,
     `TASK=$(printf '%s\\n\\n' ${BENCHMARK_TASK_INSTRUCTIONS.map(shellQuote).join(" ")}; cat /task/Task.md)`,
     "set +e",
     `${command} > "$RESULT_DIR/smith.stdout" 2> "$RESULT_DIR/smith.stderr"`,
     "smith_status=$?",
+    "mkdir -p \"$RESULT_DIR\"",
     "printf '%s\\n' \"$smith_status\" > \"$RESULT_DIR/smith.status\"",
+    "[ -f \"$RESULT_DIR/smith.stdout\" ] || : > \"$RESULT_DIR/smith.stdout\"",
+    "[ -f \"$RESULT_DIR/smith.stderr\" ] || : > \"$RESULT_DIR/smith.stderr\"",
     "set -e",
     "cat \"$RESULT_DIR/smith.stdout\"",
     "cat \"$RESULT_DIR/smith.stderr\" >&2",
@@ -739,7 +752,10 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
     "set +e",
     "bash /task/verify.sh > \"$RESULT_DIR/verify.stdout\" 2> \"$RESULT_DIR/verify.stderr\"",
     "verify_status=$?",
+    "mkdir -p \"$RESULT_DIR\"",
     "printf '%s\\n' \"$verify_status\" > \"$RESULT_DIR/verify.status\"",
+    "[ -f \"$RESULT_DIR/verify.stdout\" ] || : > \"$RESULT_DIR/verify.stdout\"",
+    "[ -f \"$RESULT_DIR/verify.stderr\" ] || : > \"$RESULT_DIR/verify.stderr\"",
     "set -e",
     "cat \"$RESULT_DIR/verify.stdout\"",
     "cat \"$RESULT_DIR/verify.stderr\" >&2",
@@ -766,6 +782,8 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
         "-v",
         `${home}:/home/smith`,
         "-v",
+        `${resultsDir}:/benchmark-results`,
+        "-v",
         `${taskCopy}:/task:ro`,
         image,
         "bash",
@@ -774,7 +792,7 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
       ],
       { timeout: options.timeoutMs ?? 120_000, maxBuffer: 1024 * 1024 * 10 }
     );
-    const smithStdout = readBenchmarkArtifact(home, "smith.stdout") || result.stdout;
+    const smithStdout = readBenchmarkArtifact(resultsDir, "smith.stdout") || result.stdout;
     const tracePath = smithTracePathFromStdout(home, smithStdout);
     const taskResult: BenchmarkTaskResult = {
       task,
@@ -787,7 +805,7 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
       ...(tracePath ? { tracePath } : {}),
       sandboxDir: sandbox,
       usage: usageWithCost(smithUsageFromOutputOrTrace(home, smithStdout), options.cost),
-      verifier: readVerifierResult(home)
+      verifier: readVerifierResult(resultsDir)
     };
     taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
       command,
@@ -801,7 +819,7 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
     const failed = error as { stdout?: string; stderr?: string };
     const stdout = failed.stdout ?? "";
     const stderr = errorStderr(failed, error);
-    const smithStdout = readBenchmarkArtifact(home, "smith.stdout") || stdout;
+    const smithStdout = readBenchmarkArtifact(resultsDir, "smith.stdout") || stdout;
     const tracePath = smithTracePathFromStdout(home, smithStdout);
     const taskResult: BenchmarkTaskResult = {
       task,
@@ -814,7 +832,7 @@ async function runSmithBenchmarkTask(context: BenchmarkTaskContext & { repoRoot:
       ...(tracePath ? { tracePath } : {}),
       sandboxDir: sandbox,
       usage: usageWithCost(smithUsageFromOutputOrTrace(home, smithStdout), options.cost),
-      verifier: readVerifierResult(home)
+      verifier: readVerifierResult(resultsDir)
     };
     taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
       command,
@@ -1232,15 +1250,15 @@ function writeBenchmarkSessionLog(
   });
 }
 
-function readBenchmarkArtifact(home: string, name: string): string {
-  const path = join(home, "benchmark-results", name);
+function readBenchmarkArtifact(resultsDir: string, name: string): string {
+  const path = join(resultsDir, name);
   return existsSync(path) ? readFileSync(path, "utf8") : "";
 }
 
-function readVerifierResult(home: string): BenchmarkVerifierResult | undefined {
-  const status = numericString(readBenchmarkArtifact(home, "verify.status").trim());
-  const stdout = readBenchmarkArtifact(home, "verify.stdout");
-  const stderr = readBenchmarkArtifact(home, "verify.stderr");
+function readVerifierResult(resultsDir: string): BenchmarkVerifierResult | undefined {
+  const status = numericString(readBenchmarkArtifact(resultsDir, "verify.status").trim());
+  const stdout = readBenchmarkArtifact(resultsDir, "verify.stdout");
+  const stderr = readBenchmarkArtifact(resultsDir, "verify.stderr");
   if (status === undefined && !stdout && !stderr) return undefined;
   return {
     command: "bash /task/verify.sh",

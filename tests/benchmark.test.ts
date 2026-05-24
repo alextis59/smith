@@ -389,6 +389,9 @@ total_tokens: 320
     );
 
     expect(script).toContain("export PATH=/usr/local/go/bin:/go/bin:$PATH");
+    expect(script).toContain("RESULT_DIR=/benchmark-results");
+    expect(script).toContain("mkdir -p \"$RESULT_DIR\"\nprintf '%s\\n' \"$smith_status\" > \"$RESULT_DIR/smith.status\"");
+    expect(script).toContain("[ -f \"$RESULT_DIR/smith.stdout\" ] || : > \"$RESULT_DIR/smith.stdout\"");
     expect(script).toContain("node /smith/bin/smith.js --cwd /workspace --quiet --json \"$TASK\"");
   });
 
@@ -425,12 +428,14 @@ total_tokens: 320
       repoRoot: "/repo",
       workspace: "/workspace-copy",
       home: "/home-copy",
+      resultsDir: "/results-copy",
       taskCopy: "/task-copy",
       script: "echo ok"
     });
 
     expect(args).toContain("--entrypoint");
     expect(args[args.indexOf("--entrypoint") + 1]).toBe("bash");
+    expect(args).toContain("/results-copy:/benchmark-results");
     expect(args.slice(-3)).toEqual([DEFAULT_SMITH_BENCHMARK_IMAGE, "-lc", "echo ok"]);
     expect(args).not.toContain("bash -lc");
   });

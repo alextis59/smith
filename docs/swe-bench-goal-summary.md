@@ -1136,3 +1136,30 @@ Decision:
 
 - Keep the change as generic loop control, but do not count any SWE recovery.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
+
+## 2026-05-24 Generic Benchmark Result Artifact Isolation
+
+Change:
+
+- Benchmark Smith runs now write `smith.stdout`, `smith.stderr`, and status files to a separate mounted `/benchmark-results` directory instead of under the writable Smith home directory.
+- The wrapper recreates the result directory after Smith/verifier commands and creates empty stdout/stderr files if the inner run removed them, so wrapper status capture and log replay do not fail because artifacts disappeared.
+- Local benchmark and SWE-bench Pro Smith runs share this generic artifact path; verifier results continue to use the same mounted result directory.
+
+Validation:
+
+- `npm test -- tests/benchmark.test.ts`: passed `22` tests.
+- `npm run build`: passed.
+- Project benchmark `091-command-router-refactor`: passed in `124093ms`, log `/tmp/smith/2026-05-24T05-54-05-068Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-pbqKTb/home/.smith/runs/2026-05-24T05-52-01-214Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed functionally in `769019ms`, but produced valid Smith output, trace, sandbox, usage, and verifier evidence. Log `/tmp/smith/2026-05-24T06-07-02-365Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-BfvvUW/home/.smith/runs/2026-05-24T05-54-19-958Z.trace`.
+
+Evidence:
+
+- The previous invalid `005` rerun failed because `/home/smith/benchmark-results/smith.status` and `smith.stdout` were missing.
+- The new `005` rerun retained `.smith-bench/run-BfvvUW/benchmark-results` with `smith.status`, `smith.stdout`, `smith.stderr`, verifier stdout/stderr logs, and parser output.
+- Verifier failed because the candidate patch removed/renamed fields still referenced by `lib/kube/proxy/forwarder_test.go`; this is a task solution failure, not a harness artifact-loss failure.
+
+Decision:
+
+- Keep the change as generic benchmark harness reliability.
+- Do not count `005` as recovered.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
