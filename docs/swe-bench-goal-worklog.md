@@ -3908,3 +3908,81 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Do not run the full suite yet.
 - Next concrete target: inspect `010` under current generic state or mine the `005` verifier/build failure only for generic Smith loop issues, not task-specific implementation hints.
+
+## 2026-05-24 Diagnostic: 010 Under Current Generic Build
+
+Reason:
+
+- After the generic sub-agent throttling milestone failed to recover `005`, the remaining Codex-passed unrecovered target was `010`.
+- This run used the current generic Smith build with no new code or prompt changes.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `838788ms`.
+- Log: `/tmp/smith/2026-05-24T04-29-17-230Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-gXByii/home/.smith/runs/2026-05-24T04-15-19-360Z.trace`.
+- Sandbox: `.smith-bench/run-gXByii`.
+- Usage: `2734990` total tokens.
+- Smith reached `finish` after `49` turns.
+- Official verifier executed.
+
+Retained diff:
+
+```sh
+git -C .smith-bench/run-gXByii/workspace diff --stat
+git -C .smith-bench/run-gXByii/workspace diff --name-only
+```
+
+Observed:
+
+```text
+ scanner/alpine.go | 95 ++++++++++++++++++++++++++++++++++++++++---------------
+ 1 file changed, 70 insertions(+), 25 deletions(-)
+scanner/alpine.go
+```
+
+Verifier failure:
+
+- Missing/failed selected tests:
+  - `Test_alpine_parseApkInstalledList`
+  - `Test_alpine_parseApkInstalledList/happy`
+  - `Test_alpine_parseApkIndex`
+  - `Test_alpine_parseApkIndex/happy`
+  - `Test_alpine_parseApkUpgradableList`
+  - `Test_alpine_parseApkUpgradableList/happy`
+- Build errors:
+  - `scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined`
+  - `scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined`
+  - `scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined`
+- Remaining functional failure:
+  - `TestIsOvalDefAffected`: expected `affected: false`, got `true`; expected empty `fixedIn`, got `3.3.2-r0`.
+
+Trace counts:
+
+```sh
+for p in "previous sub_agent child run" "sub_agent failed: model did not call finish" "Unknown or unavailable tool 'sub_agent'" "Applied patch to" "scanner/alpine_test.go"; do
+  printf '%s: ' "$p"
+  rg -c "$p" .smith-bench/run-gXByii/home/.smith/runs/2026-05-24T04-15-19-360Z.trace || true
+done
+```
+
+Observed:
+
+- `previous sub_agent child run`: `133`
+- `sub_agent failed: model did not call finish`: `50`
+- `Unknown or unavailable tool 'sub_agent'`: no direct attempted unavailable tool call found.
+- `Applied patch to`: `38`
+- `scanner/alpine_test.go`: `567` trace mentions, but the final retained diff changed only `scanner/alpine.go`.
+
+Decision:
+
+- Do not count `010` as recovered.
+- The run reached verifier but broke public test-facing method names and still failed `TestIsOvalDefAffected`.
+- Do not add SWE/Vuls-specific prompt or runtime guidance. Any next change must be generic Smith behavior that would help ordinary coding tasks.
+- Current targeted strict evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.

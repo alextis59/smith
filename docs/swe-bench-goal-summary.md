@@ -1033,3 +1033,22 @@ Decision:
 - Keep the generic sub-agent throttling change because it helped Smith reach a verifier instead of timing out, but do not count `005` as recovered.
 - Current targeted strict evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Still do not run the full suite; target `010` or another generic issue from `005` next.
+
+## 2026-05-24 Diagnostic 010 Under Current Generic Build
+
+Result:
+
+- Target SWE rerun `010-future-architect-vuls`: failed in `838788ms`, log `/tmp/smith/2026-05-24T04-29-17-230Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-gXByii/home/.smith/runs/2026-05-24T04-15-19-360Z.trace`.
+- Smith reached `finish` after `49` turns and the official verifier ran.
+- Retained final diff changed only `scanner/alpine.go`.
+
+Evidence:
+
+- Verifier failed because selected Alpine parser tests could not find expected methods: `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`.
+- `TestIsOvalDefAffected` also failed: expected `affected: false` but got `true`, and expected empty `fixedIn` but got `3.3.2-r0`.
+
+Decision:
+
+- Do not count `010` as recovered.
+- Current targeted strict evidence remains `6/10`.
+- This does not justify a benchmark-specific prompt edit; any next change must be a generic Smith behavior improvement.
