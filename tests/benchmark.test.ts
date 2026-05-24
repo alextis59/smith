@@ -229,10 +229,21 @@ total_tokens: 320
       "--model",
       "fake",
       "--max-run-ms",
-      "80000"
+      "65000",
+      "--provider-timeout-ms",
+      "30000"
     ]);
-    expect(smithArgsWithBenchmarkMaxRun(["--max-run-ms", "123"], 100_000)).toEqual(["--max-run-ms", "123"]);
-    expect(smithArgsWithBenchmarkMaxRun(["--max-run-ms=123"], 100_000)).toEqual(["--max-run-ms=123"]);
+    expect(smithArgsWithBenchmarkMaxRun(["--model", "fake"], 900_000)).toContain("90000");
+    expect(smithArgsWithBenchmarkMaxRun(["--max-run-ms", "123"], 100_000)).toEqual([
+      "--max-run-ms",
+      "123",
+      "--provider-timeout-ms",
+      "30000"
+    ]);
+    expect(smithArgsWithBenchmarkMaxRun(["--max-run-ms=123", "--provider-timeout-ms=777"], 100_000)).toEqual([
+      "--max-run-ms=123",
+      "--provider-timeout-ms=777"
+    ]);
   });
 
   it("nudges agents away from optional status self-checks", () => {

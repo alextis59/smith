@@ -4962,3 +4962,137 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `12G` with `18` retained `run-*` directories. Prune stale retained runs once their log path, trace path, and relevant evidence have been recorded and committed.
+
+## 2026-05-24 Maintenance Note: `.smith-bench` Growth
+
+Reason:
+
+- The current loop uses `--keep-sandbox` to preserve traces, candidate diffs, and verifier artifacts for evidence-driven diagnosis.
+- Retained sandboxes are useful while investigating a task, but they accumulate quickly; current observed size is `12G` across `18` retained `run-*` directories.
+
+Checklist for future cleanup:
+
+- Run `du -sh .smith-bench` before and after long benchmark sessions.
+- Run `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l` to track retained sandbox count.
+- Before deleting an old sandbox, confirm the result JSON path, trace path, sandbox path, key command failures, verifier evidence, and any candidate diff summary have been copied into this worklog or the summary.
+- Prefer pruning old, closed-attempt sandboxes first; keep the newest active evidence directories for any task still under diagnosis.
+- Do not delete sandboxes that are the only source for an unresolved hypothesis or a not-yet-committed milestone.
+
+## 2026-05-24 Change: Benchmark Timeout Headroom
+
+Trigger evidence:
+
+- User requested an explicit cleanup reminder for `.smith-bench`; added maintenance notes to both logs.
+- Previous `005` evidence showed a retained sandbox failure with an incomplete `Forwarder` refactor and verifier compile errors.
+- Rerunning `005` on the latest Smith before this change produced an outer timeout instead of verifier evidence:
+  - command: `node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json`
+  - result: failed in `911805ms`;
+  - stderr: `docker timed out after 900000ms`;
+  - log: `/tmp/smith/2026-05-24T09-25-54-158Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`;
+  - trace: `.smith-bench/run-gBWnaR/home/.smith/runs/2026-05-24T09-10-48-837Z.trace`.
+- Trace tail showed Smith reached a deadline/finalization turn after partial patches, but the outer Docker timeout killed the process before Smith could finish cleanly.
+
+First attempted fix:
+
+- Changed benchmark-derived `--max-run-ms` from 80% of `--timeout-ms` to 65%.
+- Rationale: benchmark wrapper timeout must leave room for Smith finalization, result capture, cleanup, and verifier execution.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/benchmark.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Benchmark tests passed: `22` tests.
+
+Representative project validation after first fix:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Failed in `305334ms`.
+- stderr: `docker timed out after 300000ms`.
+- log: `/tmp/smith/2026-05-24T09-34-30-972Z-smith-091-command-router-refactor.json`.
+- trace: `.smith-bench/run-5Rs0tS/home/.smith/runs/2026-05-24T09-29-25-925Z.trace`.
+- Trace showed a valid task patch had been applied, then the next provider request consumed the remaining outer benchmark timeout.
+
+Second fix:
+
+- Kept benchmark-derived `--max-run-ms` at 65% of `--timeout-ms`.
+- Added benchmark-derived `--provider-timeout-ms` unless the caller already supplied it.
+- Derivation:
+  - 20% of `--timeout-ms`;
+  - minimum `30000ms`;
+  - maximum `90000ms`.
+- This is generic benchmark harness reliability and does not affect task prompts, selected tests, verifiers, scoring, result parsing, or task-specific logic.
+
+Focused validation after second fix:
+
+```sh
+npm run build
+npm test -- tests/benchmark.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Benchmark tests passed: `22` tests.
+
+Representative project validation after second fix:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `155102ms`.
+- Log: `/tmp/smith/2026-05-24T09-38-49-479Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-N8iscQ/home/.smith/runs/2026-05-24T09-36-15-546Z.trace`.
+- Usage: `55326` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `648657ms`.
+- Log: `/tmp/smith/2026-05-24T09-49-49-013Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-KUcK2S/home/.smith/runs/2026-05-24T09-39-06-777Z.trace`.
+- Sandbox: `.smith-bench/run-KUcK2S`.
+- Usage: `2334911` total tokens.
+
+Verifier evidence:
+
+- The run now reached the external verifier instead of dying at the Docker wrapper timeout.
+- Verifier failed with compile errors in `lib/kube/proxy`:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:378:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:541:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:574:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+lib/kube/proxy/forwarder_test.go:611:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+lib/kube/proxy/forwarder_test.go:641:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+```
+
+Decision:
+
+- Keep the benchmark headroom change because it is generic, focused-test covered, local-benchmark validated, and improves evidence quality by avoiding wrapper timeout loss.
+- Do not count `005` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `15G` with `22` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace/diff evidence is copied into the logs.

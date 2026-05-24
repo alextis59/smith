@@ -1344,3 +1344,32 @@ Decision:
 - Do not count `010` as recovered.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `12G` with `18` retained `run-*` directories. Prune stale retained runs once their evidence is recorded and committed.
+
+## 2026-05-24 Maintenance Note: Retained Sandboxes
+
+- `.smith-bench` can grow by several GB during SWE-bench iteration because each `--keep-sandbox` run retains a full checkout, trace, and artifacts.
+- Before long benchmark sessions, check `du -sh .smith-bench` and `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l`.
+- Periodically remove stale retained runs only after the result JSON path, trace path, sandbox path, key evidence, and any useful diffs have been recorded in this summary/worklog and committed.
+- Keep the newest active evidence sandboxes until the related diagnosis or milestone is closed.
+
+## 2026-05-24 Benchmark Headroom
+
+Change:
+
+- Benchmark-derived Smith runs now use `--max-run-ms` at 65% of `--timeout-ms` instead of 80%.
+- Benchmark-derived Smith runs also add a bounded `--provider-timeout-ms` unless the caller already supplied one.
+- This is generic benchmark harness reliability: it applies across benchmark tasks and prevents late provider turns from consuming the entire wrapper timeout before result capture or verification.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/benchmark.test.ts`: passed `22` tests.
+- Representative project task `091-command-router-refactor`: first run exposed the provider timeout gap and failed with `docker timed out after 300000ms`; after adding the derived provider timeout it passed in `155102ms`, log `/tmp/smith/2026-05-24T09-38-49-479Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-N8iscQ/home/.smith/runs/2026-05-24T09-36-15-546Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `648657ms`, log `/tmp/smith/2026-05-24T09-49-49-013Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-KUcK2S/home/.smith/runs/2026-05-24T09-39-06-777Z.trace`.
+
+Decision:
+
+- Keep the generic benchmark headroom change because it converted `005` from an outer Docker timeout into a verifier-backed failure and preserved the representative local benchmark pass.
+- Do not count `005` as recovered: the verifier still failed on compile errors from an incomplete `Forwarder` refactor (`cfg` and `clientCredentials` fields missing).
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `15G` with `22` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.

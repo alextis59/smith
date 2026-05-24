@@ -881,9 +881,22 @@ function prepareSmithArgsForDocker(home: string, args: string[]): string[] {
   return [...args, "--codex-auth-path", "/home/smith/codex-auth.json"];
 }
 
+const BENCHMARK_SMITH_MAX_RUN_RATIO = 0.65;
+const BENCHMARK_PROVIDER_TIMEOUT_RATIO = 0.2;
+const BENCHMARK_PROVIDER_TIMEOUT_CAP_MS = 90_000;
+const BENCHMARK_PROVIDER_TIMEOUT_FLOOR_MS = 30_000;
+
 export function smithArgsWithBenchmarkMaxRun(args: string[], timeoutMs: number | undefined): string[] {
-  if (timeoutMs === undefined || hasFlag(args, "--max-run-ms")) return args;
-  return [...args, "--max-run-ms", String(Math.max(1, Math.floor(timeoutMs * 0.8)))];
+  if (timeoutMs === undefined) return args;
+  const nextArgs = hasFlag(args, "--max-run-ms")
+    ? args
+    : [...args, "--max-run-ms", String(Math.max(1, Math.floor(timeoutMs * BENCHMARK_SMITH_MAX_RUN_RATIO)))];
+  if (hasFlag(nextArgs, "--provider-timeout-ms")) return nextArgs;
+  const providerTimeoutMs = Math.min(
+    BENCHMARK_PROVIDER_TIMEOUT_CAP_MS,
+    Math.max(BENCHMARK_PROVIDER_TIMEOUT_FLOOR_MS, Math.floor(timeoutMs * BENCHMARK_PROVIDER_TIMEOUT_RATIO))
+  );
+  return [...nextArgs, "--provider-timeout-ms", String(providerTimeoutMs)];
 }
 
 function usesChatGptCodexAdapter(args: string[]): boolean {
