@@ -12,7 +12,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - Integrity correction: user clarified that prompt edits made specifically for the SWE benchmark are cheating for this goal. Earlier SWE-specific prompt milestones and any passes produced under them are retained below only as historical investigation notes, not valid target evidence.
 - Current valid evidence should count only the baseline full-run passes plus results produced after `befac0f` removed SWE-specific prompt coaching and kept only generic Smith/runtime or harness-integrity changes.
 - Stricter prompt rule: SWE-bench Pro tasks now receive the raw task prompt only, with no Smith benchmark wrapper or SWE-specific coaching. Local project benchmarks still keep their normal `/task/verify.sh` harness framing.
-- Current strict targeted evidence: baseline full-run passes `002`, `004`, `007`, plus recovered `008` after generic raw-prompt changes, for `4/10` evidence.
+- Current strict targeted evidence: baseline full-run passes `002`, `004`, `007`, plus recovered `003` and `008` under the raw-prompt path, for `5/10` evidence. `003` is still a Codex `gpt-5.4` failed task, so keep prioritizing Codex-passed Smith failures for further work.
 - Current unrecovered Codex-passed Smith failures: `001`, `005`, and `010`. Do not run the full SWE-bench Pro suite until generic changes recover enough Codex-passed failures to plausibly reach `>=7/10`.
 - User clarification on 2026-05-23: do not pursue prompt edits or instructions tailored to SWE-bench Pro. Generic Smith capabilities are acceptable only when they apply to ordinary user tasks as well.
 - User reinforcement on 2026-05-23: prompt or runtime instructions written specifically for SWE-bench Pro are cheating for this goal. Treat the older SWE-specific prompt sections below as rejected historical experiments only; do not count their scores, reintroduce their wording, or use them as design direction.
@@ -820,3 +820,16 @@ Decision:
 
 - Inconclusive and not retained as a Smith change.
 - Current strict valid evidence remains `4/10`.
+
+## 2026-05-24 Diagnostic: 003 Passes Under Raw Prompt
+
+Evidence:
+
+- Target SWE rerun `003-ansible` passed under the raw prompt path in `743891ms`, log `/tmp/smith/2026-05-24T00-32-57-133Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`, trace `.smith-bench/run-26463c/home/.smith/runs/2026-05-24T00-20-38-192Z.trace`.
+- Official verifier passed all required tests and reported `{"passed": 175}`.
+- Prompt-integrity search found no SWE-bench prompt wrapper, `/task/verify.sh` coaching, exposed instance/base commit prompt text, or anti-history prompt text.
+
+Decision:
+
+- Count `003` as strict targeted evidence, but avoid overfocusing Codex-failed tasks per user guidance.
+- Current strict valid evidence is now `5/10`: `002`, `003`, `004`, `007`, and `008`.

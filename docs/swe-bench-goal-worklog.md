@@ -2963,3 +2963,60 @@ Decision:
 - Inconclusive: no task evidence because workspace preparation failed.
 - Do not wire a Node+Go fallback image into Smith from this run.
 - Current strict valid evidence remains `4/10`.
+
+## 2026-05-24 Diagnostic Revalidation: 003 Under Raw Prompt
+
+Reason for target:
+
+- Earlier `003-ansible` pass predated the strict raw-prompt cleanup and therefore could not be counted.
+- `003` is a Codex `gpt-5.4` high failed task, so this is a one-off diagnostic rather than a priority iteration target.
+- The task image was already available locally and the prior retained sandbox was relatively small, making the run reasonable after Docker image pruning.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Passed in `743891ms`.
+- Log: `/tmp/smith/2026-05-24T00-32-57-133Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`.
+- Trace: `.smith-bench/run-26463c/home/.smith/runs/2026-05-24T00-20-38-192Z.trace`.
+- Sandbox: `.smith-bench/run-26463c`.
+- Usage: `1403380` total tokens.
+- Official verifier ran selected Ansible tests and reported `{"passed": 175}`.
+
+Workspace evidence:
+
+```text
+ M lib/ansible/galaxy/dependency_resolution/dataclasses.py
+ M lib/ansible/utils/collection_loader/_collection_finder.py
+M  test/units/cli/test_galaxy.py
+ M test/units/galaxy/test_collection_install.py
+M  test/units/utils/collection_loader/test_collection_loader.py
+```
+
+```text
+ .../galaxy/dependency_resolution/dataclasses.py    | 39 ++++++----------------
+ .../utils/collection_loader/_collection_finder.py  |  7 +++-
+ test/units/galaxy/test_collection_install.py       |  9 +++++
+ 3 files changed, 25 insertions(+), 30 deletions(-)
+```
+
+Prompt-integrity check:
+
+```sh
+rg -n "Complete this benchmark task|benchmark verifier|/task/verify.sh|run the verifier directly|This task comes from SWE-bench|SWE-bench Pro instance|base commit|Do not inspect git history" .smith-bench/run-26463c/home/.smith/runs/2026-05-24T00-20-38-192Z.trace || true
+```
+
+Observed:
+
+- No matches. The run used the raw task prompt path plus generic Smith system behavior.
+- Smith edited in fallback `node:22-bookworm` because the task image did not pass the Smith compatibility probe, but the official verifier later ran in the task image and passed.
+
+Decision:
+
+- Count `003` as strict targeted evidence, while respecting user guidance not to focus too much on Codex-failed tasks.
+- Current strict valid evidence is now `5/10`: `002`, `003`, `004`, `007`, and `008`.
+- Do not run the full suite yet; still need at least two more plausible recoveries, preferably from Codex-passed Smith failures `001`, `005`, or `010`.
