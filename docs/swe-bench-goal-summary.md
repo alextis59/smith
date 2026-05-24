@@ -959,3 +959,24 @@ Decision:
 - Reverted the timing-ratio change; no Smith code change was retained.
 - The trace showed the earlier deadline warnings fired, but the parent still did not reach `finish` or verifier.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
+
+## 2026-05-24 Generic Text-Only Response Progress Accounting
+
+Change:
+
+- Smith now counts model responses that do not call any Smith tool toward the same progress and deadline reminder path used for ordinary tool calls.
+- The reminder logic is shared for tool-call and no-tool-call turns.
+- This is generic loop correctness for ordinary Smith runs; it does not add SWE-bench prompt or runtime instructions.
+
+Validation:
+
+- `npm test -- tests/danger-review.test.ts`: passed `10` tests.
+- `npm run build`: passed.
+- Project benchmark `091-command-router-refactor`: passed in `231972ms`, log `/tmp/smith/2026-05-24T03-13-53-030Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-tq9AW0/home/.smith/runs/2026-05-24T03-10-01-283Z.trace`.
+- Target SWE rerun `001-nodebb-nodebb-vnan`: failed by Docker timeout in `911129ms`, log `/tmp/smith/2026-05-24T03-08-42-902Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-CJrVH2/home/.smith/runs/2026-05-24T02-53-37-649Z.trace`.
+
+Decision:
+
+- Keep as a small generic robustness fix.
+- The `001` trace had no `Model response did not call a Smith tool` entries, so the SWE evidence is neutral and does not count as recovery.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.

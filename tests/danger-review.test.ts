@@ -211,6 +211,35 @@ describe("danger review", () => {
     expect(result.transcript).not.toContain("command not found");
   });
 
+  it("counts text-only model responses toward progress reminders", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-text-only-progress-"));
+    let count = 0;
+    const fetchImpl: ProviderFetch = async () => {
+      count += 1;
+      const response =
+        count <= 12
+          ? { choices: [{ message: { content: `Text-only response ${count}.` } }] }
+          : openAiToolCallResponse({ name: "finish", arguments: { message: "done" } });
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    };
+
+    const result = await runSmithTask({
+      cwd,
+      prompt: "keep talking without tools",
+      profile: profile("main-model"),
+      runtime: runtime("off"),
+      systemPrompt: "system",
+      fetch: fetchImpl
+    });
+
+    expect(result.chatOut).toBe("done");
+    expect(result.turns).toBe(13);
+    expect(result.transcript).toContain("Smith progress: 12 tool calls have completed without a task patch or finish");
+  });
+
   it("enables prompt cache identity by default for chatgpt-codex runs", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "smith-codex-cache-"));
     const authPath = join(cwd, "auth.json");

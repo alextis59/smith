@@ -246,6 +246,27 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       const toolCalls = response.toolCalls ?? [];
       let nextResponsesInputItems = responseItemsWithOutput;
       let nextPendingOutput = "";
+      const appendReminders = (pendingOutput: string): string => {
+        let output = pendingOutput;
+        if (toolCallsSincePatchOrFinish > 0 && toolCallsSincePatchOrFinish % PROGRESS_REMINDER_TOOL_INTERVAL === 0) {
+          const reminder = progressReminderOutput(options, toolCallsSincePatchOrFinish, turn, maxTurns);
+          transcript = appendTerminalTurn(transcript, "# progress", reminder);
+          providerMessages = appendProviderUserObservation(providerMessages, reminder);
+          nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, reminder);
+          output = [output, reminder].filter(Boolean).join("\n");
+          options.trace?.write("progress reminder", reminder);
+        }
+        const deadlineReminder = runDeadlineReminderOutput(options, runStartedAt, runDeadlineReminderIndex);
+        if (deadlineReminder) {
+          runDeadlineReminderIndex += 1;
+          transcript = appendTerminalTurn(transcript, "# deadline", deadlineReminder);
+          providerMessages = appendProviderUserObservation(providerMessages, deadlineReminder);
+          nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, deadlineReminder);
+          output = [output, deadlineReminder].filter(Boolean).join("\n");
+          options.trace?.write("deadline reminder", deadlineReminder);
+        }
+        return output;
+      };
       if (toolCalls.length === 0) {
         const output = missingToolCallOutput(response.text, availableSmithTools(options).map((tool) => tool.name));
         transcript = appendTerminalTurn(transcript, "# tool observation", output);
@@ -253,6 +274,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, output);
         nextPendingOutput = output;
         options.trace?.write("tool output", output);
+        toolCallsSincePatchOrFinish += 1;
+        nextPendingOutput = appendReminders(nextPendingOutput);
       } else {
         for (const toolCall of toolCalls) {
           const toolName = smithToolName(toolCall.name);
@@ -278,23 +301,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             if (totalUsage) options.trace?.write("run usage", formatUsageCost(totalUsage));
             return { chatOut: action.finished, turns: turn, transcript, ...(totalUsage ? { usage: totalUsage } : {}) };
           }
-          if (toolCallsSincePatchOrFinish > 0 && toolCallsSincePatchOrFinish % PROGRESS_REMINDER_TOOL_INTERVAL === 0) {
-            const reminder = progressReminderOutput(options, toolCallsSincePatchOrFinish, turn, maxTurns);
-            transcript = appendTerminalTurn(transcript, "# progress", reminder);
-            providerMessages = appendProviderUserObservation(providerMessages, reminder);
-            nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, reminder);
-            nextPendingOutput = [nextPendingOutput, reminder].filter(Boolean).join("\n");
-            options.trace?.write("progress reminder", reminder);
-          }
-          const deadlineReminder = runDeadlineReminderOutput(options, runStartedAt, runDeadlineReminderIndex);
-          if (deadlineReminder) {
-            runDeadlineReminderIndex += 1;
-            transcript = appendTerminalTurn(transcript, "# deadline", deadlineReminder);
-            providerMessages = appendProviderUserObservation(providerMessages, deadlineReminder);
-            nextResponsesInputItems = appendResponsesUserMessage(nextResponsesInputItems, deadlineReminder);
-            nextPendingOutput = [nextPendingOutput, deadlineReminder].filter(Boolean).join("\n");
-            options.trace?.write("deadline reminder", deadlineReminder);
-          }
+          nextPendingOutput = appendReminders(nextPendingOutput);
         }
       }
       responsesInputItems = nextResponsesInputItems;

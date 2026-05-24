@@ -3591,3 +3591,90 @@ Decision:
 - Do not count `001` as recovered.
 - Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
 - Next direction should avoid prompt/runtime benchmark tactics and instead inspect generic tool or loop behavior that affects ordinary long-running tasks, such as clearer completion state handling or safer large-change decomposition.
+
+## 2026-05-24 Generic Loop Fix: Text-Only Responses Count Toward Progress
+
+Hypothesis:
+
+- Code inspection found that Smith handled model responses with no tool call by adding a tool-observation message, but did not increment `toolCallsSincePatchOrFinish` and did not run progress/deadline reminder checks for that turn.
+- This is a generic loop defect: if a provider/model drifts into text-only responses, Smith can burn turns without the same recovery reminders ordinary tool calls receive.
+- This was not a SWE-specific prompt or runtime tactic.
+
+Change:
+
+- `src/loop.ts`:
+  - added shared reminder handling for both ordinary tool calls and no-tool-call observations
+  - increments `toolCallsSincePatchOrFinish` when a model response lacks Smith tool calls
+  - applies progress and deadline reminders after such no-tool-call observations
+- `tests/danger-review.test.ts`:
+  - added a regression test where 12 text-only model responses are followed by `finish`
+  - verifies the transcript contains `Smith progress: 12 tool calls have completed without a task patch or finish`
+
+Focused validation:
+
+```sh
+npm test -- tests/danger-review.test.ts
+npm run build
+```
+
+Observed:
+
+- Focused test file passed: `10` tests.
+- TypeScript build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed after final cleanup:
+
+- Passed in `231972ms`.
+- Log: `/tmp/smith/2026-05-24T03-13-53-030Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-tq9AW0/home/.smith/runs/2026-05-24T03-10-01-283Z.trace`.
+- Usage: `79621` total tokens.
+- The final cleanup only shared existing reminder logic; focused tests, build, and project validation were rerun after that cleanup.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout in `911129ms`.
+- Log: `/tmp/smith/2026-05-24T03-08-42-902Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-CJrVH2/home/.smith/runs/2026-05-24T02-53-37-649Z.trace`.
+- Sandbox: `.smith-bench/run-CJrVH2`.
+- Usage: `1719223` total tokens.
+- Retained workspace diff:
+
+```text
+ src/controllers/admin/users.js   | 27 +++++++++++++-
+ src/database/mongo/main.js       | 17 +++++++++
+ src/database/postgres/main.js    | 22 +++++++++++
+ src/database/redis/main.js       |  9 +++++
+ src/socket.io/admin/user.js      |  7 +++-
+ src/user/delete.js               |  1 +
+ src/user/email.js                | 80 +++++++++++++++++++++++++++++++---------
+ src/views/admin/manage/users.tpl |  4 +-
+ 8 files changed, 147 insertions(+), 20 deletions(-)
+```
+
+Trace evidence:
+
+```sh
+rg -c "Model response did not call a Smith tool" .smith-bench/run-CJrVH2/home/.smith/runs/2026-05-24T02-53-37-649Z.trace || true
+```
+
+- No matches; the changed path was not exercised in this target run.
+- The run still ended with `docker timed out after 900000ms`.
+- This SWE rerun used the same behavior before the cleanup that deduplicated reminder code.
+
+Decision:
+
+- Keep as a small generic loop robustness fix with focused coverage and project benchmark validation.
+- Do not count `001` as recovered; SWE evidence is neutral for this change.
+- Current strict valid evidence remains `5/10`: `002`, `003`, `004`, `007`, and `008`.
