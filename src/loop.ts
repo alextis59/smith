@@ -165,6 +165,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let toolAvailabilityState: ToolAvailabilityState = {};
   let subAgentTurnLimitFailures = 0;
   let runDeadlineReminderIndex = 0;
+  let unvalidatedTaskPatch = false;
   const runStartedAt = Date.now();
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
   const providerDebugJson =
@@ -261,7 +262,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
       let nextPendingOutput = "";
       const appendReminders = (pendingOutput: string): string => {
         let output = pendingOutput;
-        toolAvailabilityState = enforceRunDeadlineFinalization(options, toolAvailabilityState, runStartedAt);
+        toolAvailabilityState = enforceRunDeadlineFinalization(options, toolAvailabilityState, runStartedAt, unvalidatedTaskPatch);
         if (toolCallsSincePatchOrFinish > 0 && toolCallsSincePatchOrFinish % PROGRESS_REMINDER_TOOL_INTERVAL === 0) {
           toolAvailabilityState = pauseInspectionAfterSustainedNoPatch(options, toolAvailabilityState, toolCallsSincePatchOrFinish);
           const reminder = progressReminderOutput(options, toolAvailabilityState, toolCallsSincePatchOrFinish, turn, maxTurns);
@@ -328,6 +329,11 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           } else if (action.postDeadlineValidationRunConsumed) {
             toolAvailabilityState = { ...toolAvailabilityState, postDeadlineValidationRunReason: undefined };
           }
+          if (madeTaskPatch) {
+            unvalidatedTaskPatch = true;
+          } else if (action.validationRunExecuted) {
+            unvalidatedTaskPatch = false;
+          }
           toolCallsSincePatchOrFinish = madeTaskPatch || action.finished ? 0 : toolCallsSincePatchOrFinish + 1;
           if (action.finished) {
             if (totalUsage) options.trace?.write("run usage", formatUsageCost(totalUsage));
@@ -383,6 +389,7 @@ type ToolActionResult = {
   finished?: string;
   subAgentTurnLimitFailure?: boolean;
   postDeadlineValidationRunConsumed?: boolean;
+  validationRunExecuted?: boolean;
 };
 
 type ToolCallContext = {
@@ -561,7 +568,8 @@ async function runShellCommandTool(
     responsesInputItems,
     toolOutput: terminalOutput,
     totalUsage,
-    ...(postDeadlineValidationRun ? { postDeadlineValidationRunConsumed: true } : {})
+    ...(postDeadlineValidationRun ? { postDeadlineValidationRunConsumed: true } : {}),
+    ...(isLikelyValidationCommand(command) ? { validationRunExecuted: true } : {})
   };
 }
 
@@ -860,14 +868,21 @@ function availabilityAfterTaskPatch(availability: ToolAvailabilityState): ToolAv
 function enforceRunDeadlineFinalization(
   options: SmithRunOptions,
   availability: ToolAvailabilityState,
-  runStartedAt: number
+  runStartedAt: number,
+  hasUnvalidatedTaskPatch: boolean
 ): ToolAvailabilityState {
   if (availability.deadlineFinalizationReason || options.runtime.maxRunMs <= 0) return availability;
   if (Date.now() - runStartedAt < options.runtime.maxRunMs) return availability;
   return {
     ...availability,
+    ...(hasUnvalidatedTaskPatch
+      ? {
+          postDeadlineValidationRunReason:
+            "A task patch has not been validated and the configured max run time elapsed, so run is available for one bounded validation command before finalizing."
+        }
+      : {}),
     deadlineFinalizationReason:
-      "The configured max run time has elapsed, so inspection tools are unavailable; use patch only for an already-identified final edit or finish with the current result or blocker."
+      "The configured max run time has elapsed, so inspection and delegation tools are unavailable; use run only for an available validation slot, patch only for an already-identified final edit, or finish with the current result or blocker."
   };
 }
 

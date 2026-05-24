@@ -1314,3 +1314,33 @@ Decision:
 - Do not count `010` as recovered.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `10G` with `16` retained `run-*` directories. Prune old retained runs after their log paths, trace paths, and relevant evidence are recorded and committed.
+
+## 2026-05-24 Unvalidated Patch Deadline Validation
+
+Change:
+
+- If an actual task patch is still unvalidated when `runtime.max_run_ms` elapses, Smith now opens the same one bounded validation `run` slot before finalization.
+- The existing post-deadline validation slot still applies when a patch happens after finalization.
+- Simple inspection commands remain rejected in that slot without consuming the validation opportunity.
+- This is generic runtime behavior for ordinary coding tasks that patch near a wall-clock budget; it does not change prompts, selected tests, verifier logic, scoring, result parsing, or task-specific logic.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `27` tests.
+- Project benchmark `091-command-router-refactor`: passed in `143773ms`, log `/tmp/smith/2026-05-24T08-49-56-066Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-w7umNf/home/.smith/runs/2026-05-24T08-47-32-750Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `902379ms`, log `/tmp/smith/2026-05-24T09-05-14-043Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-Rb748m/home/.smith/runs/2026-05-24T08-50-12-441Z.trace`.
+
+Evidence:
+
+- The `010` trace showed the new unvalidated-patch validation slot running `go test ./scanner -run 'TestParseApkInfo|TestParseApkVersion'`.
+- That command failed with a compile mismatch before finish: `assignment mismatch: 2 variables but o.scanInstalledPackages returns 3 values` and `assignment mismatch: 2 variables but d.parseApkInfo returns 3 values`.
+- Smith then attempted a simple inspection command in the post-deadline slot and Smith rejected it with the validation-only message, preserving the intended boundary.
+- The final verifier still failed on missing selected Alpine parser tests and `TestIsOvalDefAffected`.
+
+Decision:
+
+- Keep the unvalidated-patch deadline validation slot because it surfaced a real compile failure before finalization and remains generic.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `12G` with `18` retained `run-*` directories. Prune stale retained runs once their evidence is recorded and committed.

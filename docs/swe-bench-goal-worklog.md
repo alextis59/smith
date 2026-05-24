@@ -4862,3 +4862,103 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `10G` with `16` retained `run-*` directories. Old retained runs should be pruned after their log path, trace path, and evidence have been recorded and committed.
+
+## 2026-05-24 Change: Validate Unvalidated Patch At Deadline
+
+Hypothesis:
+
+- The prior `010` rerun reached finalization with available tools `patch, finish` and did not exercise the post-deadline validation slot because the last successful task patch happened before finalization.
+- This leaves a generic gap: a coding run can apply a task patch shortly before the configured deadline, then lose access to `run` before any validation command checks the patch.
+- General fix: track whether a task patch has been validated. If `runtime.max_run_ms` elapses while such a patch is outstanding, allow the same one bounded validation `run` slot.
+
+Change:
+
+- `src/loop.ts`:
+  - tracks `unvalidatedTaskPatch` after successful non-memory patches;
+  - clears it when a likely validation command runs;
+  - when `max_run_ms` first elapses with an unvalidated task patch, exposes one bounded validation `run` command;
+  - preserves the post-deadline patch behavior from the previous milestone;
+  - continues rejecting simple inspection commands in the validation slot without consuming the slot.
+- `tests/integration.test.ts`:
+  - added a regression test where a task patch happens before deadline finalization, finalization opens one validation run, a `sed` inspection is rejected, then `npm test --silent` executes and closes the slot.
+- `README.md` and `docs/benchmarks.md`:
+  - updated the `max_run_ms` wording to include unvalidated patches at deadline as well as patches after deadline.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration tests passed: `27` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `143773ms`.
+- Log: `/tmp/smith/2026-05-24T08-49-56-066Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-w7umNf/home/.smith/runs/2026-05-24T08-47-32-750Z.trace`.
+- Usage: `56434` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `902379ms`.
+- Log: `/tmp/smith/2026-05-24T09-05-14-043Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-Rb748m/home/.smith/runs/2026-05-24T08-50-12-441Z.trace`.
+- Sandbox: `.smith-bench/run-Rb748m`.
+- Usage: `1634042` total tokens.
+
+Trace evidence:
+
+- The validation slot ran a real check:
+
+```text
+go test ./scanner -run 'TestParseApkInfo|TestParseApkVersion'
+```
+
+- The check failed before finalization:
+
+```text
+scanner/alpine.go:109:20: assignment mismatch: 2 variables but o.scanInstalledPackages returns 3 values
+scanner/alpine_test.go:34:14: assignment mismatch: 2 variables but d.parseApkInfo returns 3 values
+```
+
+- Smith later attempted an inspection command in the post-deadline validation slot and received:
+
+```text
+Post-deadline run is reserved for validation commands such as test, build, lint, typecheck, check, or verify.
+```
+
+- Smith finished with an explicit blocker report instead of claiming verification succeeded.
+
+Verifier evidence:
+
+- The external verifier still failed.
+- Restored selected tests still expected:
+  - `parseApkInstalledList`;
+  - `parseApkIndex`;
+  - `parseApkUpgradableList`.
+- `TestIsOvalDefAffected` still failed.
+
+Decision:
+
+- Keep the unvalidated-patch deadline validation slot because it is generic, focused-test covered, project-validated, and target evidence shows it surfaced a real compile failure.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `12G` with `18` retained `run-*` directories. Prune stale retained runs once their log path, trace path, and relevant evidence have been recorded and committed.
