@@ -438,6 +438,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: read-only mode is not active and patch is available. Do not claim a read-only or permission blocker unless a tool output shows a read-only or permission failure. Use patch for a safe edit, or finish with the actual blocker from the tool evidence."
       );
     }
+    if (shouldRejectUnsupportedValidationUnavailableFinish(message, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: run is currently available. Do not claim validation is impossible because only patch/finish or no run tool is available. Run a relevant validation command, or finish with the actual blocker."
+      );
+    }
     const transcript = appendTerminalTurn(parentContext.transcript, "finish", message);
     const providerMessages = appendProviderTerminalTurn(parentContext.providerMessages, "finish", message);
     parentContext.options.trace?.write("finish", message);
@@ -713,6 +720,17 @@ function transcriptHasReadOnlyEvidence(transcript: string): boolean {
   return /\b(?:Read-only mode is active|patch failed:[\s\S]{0,200}(?:EACCES|EROFS|EPERM|permission denied|read-only file system|not writable)|(?:EACCES|EROFS|EPERM|permission denied|read-only file system))\b/i.test(
     transcript
   );
+}
+
+function shouldRejectUnsupportedValidationUnavailableFinish(message: string, availableToolNames: string[]): boolean {
+  if (!availableToolNames.includes("run")) return false;
+  if (!/\b(?:validat\w*|test|build|lint|typecheck|check|verify)\b/i.test(message)) return false;
+  if (!/\b(?:not able|unable|cannot|can't|could not|couldn't|wasn'?t able|blocked|impossible)\b/i.test(message)) {
+    return false;
+  }
+  return /\b(?:only\s+(?:patch\s*(?:\/|,|\s+and\s+)\s*finish|finish\s*(?:\/|,|\s+and\s+)\s*patch)|no\s+(?:run|validation)\s+tool|run\s+(?:is\s+)?unavailable|no further tool)\b/i.test(
+    message
+  ) || /\b(?:validation|test|build|lint|typecheck|check|verify)\s+(?:commands?|tooling)\s+(?:were|are|is|was)?\s*unavailable\b/i.test(message);
 }
 
 function appendToolReason(

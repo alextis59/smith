@@ -1547,3 +1547,24 @@ Decision:
 - Do not count `010` as recovered. This target run did not hit the new read-only guidance; it patched only `scanner/alpine.go`, then the verifier still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `33G` with `46` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Validation Tool Availability Finish Guard
+
+Change:
+
+- Added a generic finish guard that rejects final answers claiming validation is impossible because `run` or validation commands are unavailable when the `run` tool is actually available.
+- This is generic runtime consistency feedback; it does not mention SWE-bench, benchmarks, restored tests, task IDs, languages, filenames, verifier behavior, or scoring.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `33` tests.
+- Project benchmark `091-command-router-refactor`: passed in `93817ms`, log `/tmp/smith/2026-05-28T18-30-39-223Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-FLduSe/home/.smith/runs/2026-05-28T18-29-05-741Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `803837ms`, log `/tmp/smith/2026-05-28T18-44-08-185Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-csY8iJ/home/.smith/runs/2026-05-28T18-30-45-184Z.trace`.
+
+Decision:
+
+- Keep the guard because focused tests, build, and the representative project task passed.
+- Do not count `010` as recovered. The latest run did perform targeted scanner validation and reached verifier, but restored tests still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `35G` with `50` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.

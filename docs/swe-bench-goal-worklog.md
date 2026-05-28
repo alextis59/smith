@@ -5930,3 +5930,111 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `33G` with `46` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.
+
+## 2026-05-28 Change: Validation Tool Availability Finish Guard
+
+Context:
+
+- The prior `010` rerun ended with a final answer claiming validation was impossible because only `patch/finish` were available, even though the final provider request exposed `run`.
+- A first guard caught "only patch/finish" wording in focused tests, but the next `010` rerun used a new unsupported phrase:
+
+```text
+I could not run the focused tests because the workspace switched to post-deadline mode and validation commands were unavailable, so the patch is unverified.
+```
+
+- The corresponding final provider request showed `run`, `patch`, and `finish` were available, and the system prompt said one bounded validation command was available before finalizing.
+- Generic hypothesis: in any coding task, if `run` is currently available, Smith should not finish by claiming validation commands are unavailable.
+
+Change:
+
+- `src/loop.ts`:
+  - added `shouldRejectUnsupportedValidationUnavailableFinish`.
+  - when `run` is currently available, `finish` is rejected if the final message combines validation/test/check/build wording with an unsupported unavailable-tool claim such as only `patch/finish`, no run tool, no further tool, run unavailable, or validation commands/tooling unavailable.
+  - the rejection tells Smith to run a relevant validation command or finish with the actual blocker.
+- `tests/integration.test.ts`:
+  - adds coverage for rejecting the exact post-deadline validation-unavailable wording and then accepting a later finish after a successful `npm test --silent`.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed: `33` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `93817ms`.
+- Log: `/tmp/smith/2026-05-28T18-30-39-223Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-FLduSe/home/.smith/runs/2026-05-28T18-29-05-741Z.trace`.
+- Sandbox: `.smith-bench/run-FLduSe`.
+- Usage: `51766` total tokens.
+
+Target SWE reruns:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed before broadening the guard:
+
+- Failed after verifier in `888834ms`.
+- Log: `/tmp/smith/2026-05-28T18-28-12-144Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-v52Egy/home/.smith/runs/2026-05-28T18-13-24-039Z.trace`.
+- Evidence: final provider request exposed `run`, `patch`, `finish`, but Smith claimed validation commands were unavailable. This identified the phrase missed by the first guard.
+
+Observed after broadening the guard:
+
+- Failed after verifier in `803837ms`.
+- Log: `/tmp/smith/2026-05-28T18-44-08-185Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-csY8iJ/home/.smith/runs/2026-05-28T18-30-45-184Z.trace`.
+- Sandbox: `.smith-bench/run-csY8iJ`.
+- Usage: `980248` total tokens.
+
+Trace and sandbox evidence:
+
+- Smith ran a targeted validation command before finish:
+
+```text
+go test ./scanner -run 'TestParseApk|Test_debian_parseInstalledPackages'
+ok  	github.com/future-architect/vuls/scanner	0.417s
+```
+
+- Smith's final answer reported that validation instead of claiming validation was unavailable.
+- Retained sandbox diff changed only source:
+
+```text
+scanner/alpine.go | 160 ++++++++++++++++++++++++++++++++++++++++++++++--------
+```
+
+Verifier evidence:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined (type *alpine has no field or method parseApkInstalledList)
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined (type *alpine has no field or method parseApkIndex)
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined (type *alpine has no field or method parseApkUpgradableList)
+```
+
+```text
+TestIsOvalDefAffected
+expected affected: false, actual: true
+expected fixedIn: empty, actual: 3.3.2-r0
+```
+
+Decision:
+
+- Keep the validation-availability finish guard because it is generic, focused-test covered, project validated, and the latest target rerun no longer used the unsupported validation-unavailable final claim.
+- Do not count `010` as recovered. The remaining target failure is now implementation quality: missing restored-test-facing helper methods and the OVAL assertion.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `35G` with `50` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.
