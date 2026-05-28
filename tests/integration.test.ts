@@ -133,7 +133,7 @@ timeout_ms = 5000
           ].join("\n")
         }
       },
-      { name: "finish", arguments: { message: "patched" } }
+      { name: "finish", arguments: { message: "patched; validation pending" } }
     ]);
     servers.push(provider.server);
 
@@ -190,7 +190,7 @@ max_turns = 30
           ].join("\n")
         }
       },
-      { name: "finish", arguments: { message: "patched" } }
+      { name: "finish", arguments: { message: "patched; validation pending" } }
     ]);
     servers.push(provider.server);
 
@@ -374,7 +374,7 @@ max_context_tokens = 800
       { name: "run", arguments: { command: "printf parent-output" } },
       { name: "sub_agent", arguments: { task: "inspect from child" } },
       { name: "finish", arguments: { message: "child answer" } },
-      { name: "finish", arguments: { message: "parent done" } }
+      { name: "finish", arguments: { message: "parent done; validation pending" } }
     ]);
     servers.push(provider.server);
 
@@ -422,7 +422,7 @@ timeout_ms = 5000
       { name: "run", arguments: { command: "printf parent-output" } },
       { name: "sub_agent", arguments: { task: "inspect from child" } },
       { name: "finish", arguments: { message: "child answer" } },
-      { name: "finish", arguments: { message: "parent done" } }
+      { name: "finish", arguments: { message: "parent done; validation pending" } }
     ]);
     servers.push(provider.server);
 
@@ -499,7 +499,7 @@ sub_agent_enabled = false
       { name: "sub_agent", arguments: { task: "inspect from child", max_turns: 1 } },
       { name: "run", arguments: { command: "printf child-output" } },
       { name: "finish", arguments: { message: "child answer" } },
-      { name: "finish", arguments: { message: "parent done" } }
+      { name: "finish", arguments: { message: "parent done; validation pending" } }
     ]);
     servers.push(provider.server);
 
@@ -655,7 +655,7 @@ sub_agent_max_turns = 2
       { name: "sub_agent", arguments: { task: "inspect from second child" } },
       { name: "run", arguments: { command: "printf child-output-3" } },
       { name: "run", arguments: { command: "printf child-output-4" } },
-      { name: "finish", arguments: { message: "parent done" } }
+      { name: "finish", arguments: { message: "parent done; validation pending" } }
     ]);
     servers.push(provider.server);
 
@@ -1389,6 +1389,8 @@ max_turns = 30
         }
       },
       { name: "run", arguments: { command: "npm test -- --grep selected", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "done" } },
+      { name: "run", arguments: { command: "npm test", timeout_ms: 5000 } },
       { name: "finish", arguments: { message: "done" } }
     ]);
     servers.push(provider.server);
@@ -1422,9 +1424,64 @@ max_turns = 30
     });
 
     expect(stdout).toContain("done");
-    expect(provider.requests).toHaveLength(3);
+    expect(provider.requests).toHaveLength(5);
     expect(userMessages(provider.requests[2].body)).toContain("checked");
     expect(userMessages(provider.requests[2].body)).toContain("Validation warning: this command selected a subset of checks");
+    expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a task patch is still pending validation");
+  });
+
+  it("allows unvalidated patch finish when the message reports pending validation", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Changed note.txt, but validation pending because the project test command is not practical here."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-unvalidated-finish-pending-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch without validation"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("validation pending");
+    expect(provider.requests).toHaveLength(2);
   });
 
   it("rejects unsupported read-only finish claims when patch is available", async () => {
@@ -1448,7 +1505,7 @@ max_turns = 30
           ].join("\n")
         }
       },
-      { name: "finish", arguments: { message: "patched" } }
+      { name: "finish", arguments: { message: "patched; validation pending" } }
     ]);
     servers.push(provider.server);
 

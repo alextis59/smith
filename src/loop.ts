@@ -304,7 +304,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             responsesInputItems: nextResponsesInputItems,
             fallbackToolCallId: responseToolCallId,
             totalUsage,
-            toolAvailabilityState
+            toolAvailabilityState,
+            unvalidatedTaskPatch
           });
           totalUsage = action.totalUsage;
           transcript = action.transcript;
@@ -402,6 +403,7 @@ type ToolCallContext = {
   fallbackToolCallId?: string;
   totalUsage?: TokenUsageCost;
   toolAvailabilityState: ToolAvailabilityState;
+  unvalidatedTaskPatch: boolean;
 };
 
 async function handleToolCall(context: ToolCallContext): Promise<ToolActionResult> {
@@ -443,6 +445,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         parentContext,
         callId,
         "Finish rejected: run is currently available. Do not claim validation is impossible because only patch/finish or no run tool is available. Run a relevant validation command, or finish with the actual blocker."
+      );
+    }
+    if (shouldRejectUnvalidatedTaskPatchFinish(message, parentContext.unvalidatedTaskPatch, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: a task patch is still pending validation. Run a relevant validation command, or finish with an explicit blocker or pending-validation report if validation is not practical."
       );
     }
     const transcript = appendTerminalTurn(parentContext.transcript, "finish", message);
@@ -740,6 +749,22 @@ function shouldRejectUnsupportedValidationUnavailableFinish(message: string, ava
   return /\b(?:only\s+(?:patch\s*(?:\/|,|\s+and\s+)\s*finish|finish\s*(?:\/|,|\s+and\s+)\s*patch)|no\s+(?:run|validation)\s+tool|run\s+(?:is\s+)?unavailable|no further tool)\b/i.test(
     message
   ) || /\b(?:validation|test|build|lint|typecheck|check|verify)\s+(?:commands?|tooling)\s+(?:were|are|is|was)?\s*unavailable\b/i.test(message);
+}
+
+function shouldRejectUnvalidatedTaskPatchFinish(
+  message: string,
+  unvalidatedTaskPatch: boolean,
+  availableToolNames: string[]
+): boolean {
+  if (!unvalidatedTaskPatch || !availableToolNames.includes("run")) return false;
+  if (finishAcknowledgesPendingValidation(message)) return false;
+  return true;
+}
+
+function finishAcknowledgesPendingValidation(message: string): boolean {
+  return /\b(?:validation pending|pending validation|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation failed|tests? failed|build failed|lint failed|typecheck failed|blocked|blocker|partial|incomplete)\b/i.test(
+    message
+  );
 }
 
 function appendToolReason(

@@ -6351,3 +6351,146 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `42G` with `59` retained `run-*` directories. Add a recurring maintenance habit: after each committed milestone, preserve the important log and trace paths in this worklog, then prune stale retained run sandboxes so `.smith-bench` does not keep growing by several GB.
+
+## 2026-05-28 Diagnostic: 010 After Headroom Retune
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `759202ms`.
+- Log: `/tmp/smith/2026-05-28T20-25-30-206Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-5td4Ag/home/.smith/runs/2026-05-28T20-12-52-014Z.trace`.
+- Sandbox: `.smith-bench/run-5td4Ag`.
+- Usage: `1375812` total tokens.
+
+Trace and sandbox evidence:
+
+- Smith changed only `scanner/alpine.go`:
+
+```text
+scanner/alpine.go | 166 ++++++++++++++++++++++++++++++++++++++++++++++--------
+```
+
+- Smith finished with an overconfident completion report after only selected validation:
+
+```text
+go test ./scanner -run 'TestParseApkInfo|TestParseApkVersion'
+```
+
+- The run already had generic narrow-validation warnings available, but the runtime did not prevent a completion-style finish while the patch remained pending broader validation.
+
+Verifier evidence:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined (type *alpine has no field or method parseApkInstalledList)
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined (type *alpine has no field or method parseApkIndex)
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined (type *alpine has no field or method parseApkUpgradableList)
+```
+
+```text
+TestIsOvalDefAffected
+expected affected: false, actual: true
+expected fixedIn: empty, actual: 3.3.2-r0
+```
+
+Hypothesis:
+
+- Smith tracks `unvalidatedTaskPatch`, but before this change it allowed `finish` after a task patch even when the only passing validation was no-op or selected-test validation.
+- Generic improvement: reject overconfident completion finishes while a task patch is still pending validation and `run` is available. Allow explicit blocker or pending-validation reports so Smith can still stop honestly when validation is impractical.
+
+## 2026-05-28 Change: Pending Validation Finish Guard
+
+Change:
+
+- `src/loop.ts`:
+  - Passes the existing `unvalidatedTaskPatch` state into finish handling.
+  - Rejects `finish` when a task patch remains pending validation and `run` is available, unless the final message explicitly acknowledges pending/incomplete validation or a blocker.
+- `tests/integration.test.ts`:
+  - Extends the selected-test validation regression so an overconfident finish after a narrow check is rejected, then a broader validation command can clear the pending state.
+  - Adds coverage that explicit pending-validation reports are allowed.
+  - Updates existing patch-only fixture finishes to report pending validation when they are not testing validation behavior.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed: `35` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `202076ms`.
+- Log: `/tmp/smith/2026-05-28T20-31-41-196Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-coHZ3z/home/.smith/runs/2026-05-28T20-28-19-360Z.trace`.
+- Sandbox: `.smith-bench/run-coHZ3z`.
+- Usage: `70342` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `878894ms`.
+- Log: `/tmp/smith/2026-05-28T20-46-25-506Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-kdtU1W/home/.smith/runs/2026-05-28T20-31-47-404Z.trace`.
+- Sandbox: `.smith-bench/run-kdtU1W`.
+- Usage: `1270489` total tokens.
+
+Trace and sandbox evidence:
+
+- Smith changed only `scanner/alpine.go`:
+
+```text
+scanner/alpine.go | 155 ++++++++++++++++++++++++++++++++++++++++++++++--------
+```
+
+- The trace included three generic selected-validation warnings.
+- This target rerun did not hit the new finish rejection directly; Smith chose broader validation before finish:
+
+```text
+go test ./scanner -run 'TestParseApk|TestAlpine'
+go test ./scanner ./oval
+```
+
+- The run still completed result capture and verifier execution before the outer timeout.
+
+Verifier evidence:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined (type *alpine has no field or method parseApkInstalledList)
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined (type *alpine has no field or method parseApkIndex)
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined (type *alpine has no field or method parseApkUpgradableList)
+```
+
+```text
+TestIsOvalDefAffected
+expected affected: false, actual: true
+expected fixedIn: empty, actual: 3.3.2-r0
+```
+
+Decision:
+
+- Keep the finish guard. It is generic runtime integrity behavior, focused tests cover the intended rejection/allow paths, and the representative project benchmark passed.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `45G` with `62` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.

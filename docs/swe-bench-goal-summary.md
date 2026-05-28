@@ -1633,3 +1633,26 @@ Decision:
 - Do not count `005` as recovered. The verifier still failed on compatibility errors around `Forwarder.cfg` and `Forwarder.clientCredentials`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `42G` with `59` retained `run-*` directories. Periodically prune stale retained runs after the commands, logs, trace paths, and needed snippets are recorded, so this folder does not grow into several more GB unnecessarily.
+
+## 2026-05-28 Pending Validation Finish Guard
+
+Change:
+
+- Added a generic finish guard for task patches that are still pending validation while `run` is available.
+- If Smith tries to finish with an ordinary completion report before a real validation command clears the pending-patch state, the finish is rejected and Smith is told to run relevant validation or explicitly report a blocker/pending-validation state.
+- Explicit pending-validation or blocker reports remain allowed.
+- This is generic runtime behavior for ordinary coding tasks; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `35` tests.
+- Project benchmark `091-command-router-refactor`: passed in `202076ms`, log `/tmp/smith/2026-05-28T20-31-41-196Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-coHZ3z/home/.smith/runs/2026-05-28T20-28-19-360Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `878894ms`, log `/tmp/smith/2026-05-28T20-46-25-506Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-kdtU1W/home/.smith/runs/2026-05-28T20-31-47-404Z.trace`.
+
+Decision:
+
+- Keep the guard because it is generic, focused-test covered, build-clean, and the representative project task passed.
+- Do not count `010` as recovered. The target rerun still failed on missing Alpine parser compatibility methods and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `45G` with `62` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.
