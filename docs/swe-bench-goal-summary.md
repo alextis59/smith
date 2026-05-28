@@ -1525,3 +1525,25 @@ Decision:
 - Do not count `005` as recovered. The model claimed it preserved compatibility, but the verifier still failed on missing `Forwarder.cfg` and `Forwarder.clientCredentials` fields after its local package validation passed.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `33G` with `44` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Read-only Patch Recovery Guidance
+
+Change:
+
+- Expanded generic patch permission guidance to recognize `EROFS`, `EPERM`, and `read-only file system` errors in addition to `EACCES` and `permission denied`.
+- The guidance now tells Smith to patch other writable files when the task can still be solved there, instead of treating one unwritable path as the whole blocker.
+- This is generic patch-tool feedback for ordinary read-only or permission-denied paths; it does not mention SWE-bench, benchmarks, restored tests, task IDs, languages, filenames, verifier behavior, or scoring.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `32` tests after rerunning against the rebuilt CLI.
+- Project benchmark `091-command-router-refactor`: passed in `171916ms`, log `/tmp/smith/2026-05-28T17-54-22-633Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-dtkEHR/home/.smith/runs/2026-05-28T17-51-31-144Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `641103ms`, log `/tmp/smith/2026-05-28T18-05-09-368Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-OrJGnA/home/.smith/runs/2026-05-28T17-54-28-949Z.trace`.
+
+Decision:
+
+- Keep the generic permission guidance because focused tests, build, and the representative project task passed.
+- Do not count `010` as recovered. This target run did not hit the new read-only guidance; it patched only `scanner/alpine.go`, then the verifier still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `33G` with `46` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.

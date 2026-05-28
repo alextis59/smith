@@ -272,6 +272,7 @@ timeout_ms = 5000
 
     expect(stdout).toContain("patch failed: EACCES");
     expect(stdout).toContain("The target path is not writable in this workspace");
+    expect(stdout).toContain("patch those instead of treating this path as the whole blocker");
     expect(readFileSync(join(cwd, "readonly.txt"), "utf8")).toBe("old\n");
   });
 

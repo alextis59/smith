@@ -5822,3 +5822,111 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `33G` with `44` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.
+
+## 2026-05-28 Change: Read-only Patch Recovery Guidance
+
+Context:
+
+- Recent `010` traces showed a generic pattern where Smith can treat a read-only path as the whole-task blocker even when implementation files remain writable.
+- The existing patch permission guidance only matched `EACCES` and `permission denied`, and only said not to retry the same patch unless permissions change.
+- Generic hypothesis: patch-tool output should also handle `EROFS`, `EPERM`, and read-only filesystem wording, and should steer the agent toward writable implementation files when that can solve the task.
+- This change is generic runtime/tool feedback. It does not mention SWE-bench, benchmarks, selected/restored tests, task IDs, languages, filenames, verifier logic, result parsing, or scoring.
+
+Change:
+
+- `src/loop.ts`:
+  - `formatPatchFailure` now treats `EACCES`, `EROFS`, `EPERM`, `permission denied`, and `read-only file system` as permission/read-only patch failures.
+  - Permission/read-only patch failures now append:
+
+```text
+The target path is not writable in this workspace; do not keep retrying the same patch unless permissions change. If the task can be solved by changing other writable files, patch those instead of treating this path as the whole blocker.
+```
+
+- `tests/integration.test.ts`:
+  - extends the existing patch-permission guidance test to assert the new "other writable files" recovery wording.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- First integration run was started in parallel with the build and failed because the CLI integration test observed the previous built output.
+- Rerun after build completed passed: `32` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `171916ms`.
+- Log: `/tmp/smith/2026-05-28T17-54-22-633Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-dtkEHR/home/.smith/runs/2026-05-28T17-51-31-144Z.trace`.
+- Sandbox: `.smith-bench/run-dtkEHR`.
+- Usage: `54145` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `641103ms`.
+- Log: `/tmp/smith/2026-05-28T18-05-09-368Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-OrJGnA/home/.smith/runs/2026-05-28T17-54-28-949Z.trace`.
+- Sandbox: `.smith-bench/run-OrJGnA`.
+- Usage: `875867` total tokens.
+
+Trace and sandbox evidence:
+
+- The new permission/read-only guidance was not exercised by this target run: trace search found no `EACCES`, `EROFS`, `read-only file system`, or `whole blocker` guidance occurrences.
+- Retained sandbox diff changed only source:
+
+```text
+scanner/alpine.go | 133 ++++++++++++++++++++++++++++++++++++++++++------------
+```
+
+- Changed files:
+
+```text
+scanner/alpine.go
+```
+
+- The run hit the sustained-inspection throttle at `24` tool calls without a task patch and temporarily exposed only `patch, finish`; Smith then patched `scanner/alpine.go`.
+- Smith finished with:
+
+```text
+I wasn’t able to run a validation step in this turn because only patch/finish were available, so please run the Alpine scanner tests if you want confirmation.
+```
+
+Verifier evidence:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined (type *alpine has no field or method parseApkInstalledList)
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined (type *alpine has no field or method parseApkIndex)
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined (type *alpine has no field or method parseApkUpgradableList)
+```
+
+```text
+TestIsOvalDefAffected
+expected affected: false, actual: true
+expected fixedIn: empty, actual: 3.3.2-r0
+```
+
+Decision:
+
+- Keep the permission/read-only guidance because it is generic and validation passed.
+- Do not count `010` as recovered.
+- The target failure now points away from read-only patch recovery for this particular run and back toward incomplete source compatibility methods plus the OVAL assertion.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `33G` with `46` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.
