@@ -1827,3 +1827,25 @@ Decision:
 - Do not count `005` as recovered. The target rerun did not finish on cached `go test`; it used `-count=1`, surfaced real `lib/kube/proxy` test failures, and timed out while still repairing them.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `55G` with `78` retained `run-*` directories. Think about pruning stale retained runs from time to time after useful log and trace evidence has been recorded.
+
+## 2026-05-29 Post-Deadline Failed-Validation Inspection
+
+Change:
+
+- After a post-deadline validation command fails, Smith now keeps `run` available for one short inspection command such as `cat`, `sed`, `rg`, `find`, `ls`, `nl`, or `tail`.
+- The inspection slot is capped at `15000ms`, is consumed after one use, and is cleared by the next task patch.
+- This is generic runtime behavior for ordinary tasks near a deadline; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `43` tests.
+- Project benchmark `091-command-router-refactor`: passed in `70142ms`, log `/tmp/smith/2026-05-28T23-35-48-169Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-deZzsd/home/.smith/runs/2026-05-28T23-34-38-353Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `776569ms`, log `/tmp/smith/2026-05-28T23-48-56-474Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-FL2IL9/home/.smith/runs/2026-05-28T23-36-03-394Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and project validation passed.
+- Do not count `005` as recovered. The target trace did not exercise the new post-deadline inspection slot; Smith finished after an in-run package validation, and the external verifier failed against restored tests with missing `Forwarder.cfg` and `Forwarder.clientCredentials` fields.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `57G` with `80` retained `run-*` directories. Prune stale retained runs periodically after useful commands, logs, traces, and diagnostic snippets are recorded so the folder does not grow unchecked by several GB.

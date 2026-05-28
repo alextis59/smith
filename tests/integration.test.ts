@@ -1490,6 +1490,85 @@ max_run_ms = 1
     expect(toolNames(provider.requests[3].body)).toEqual(["patch", "finish"]);
   });
 
+  it("allows one short inspection after a failed post-deadline validation command", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent", timeout_ms: 5000 } },
+      { name: "run", arguments: { command: "cat note.txt", timeout_ms: 5000 } },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-new",
+            "+newer",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm run verify --silent", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-failed-post-deadline-inspection-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({
+        scripts: {
+          test: "printf failed; exit 1",
+          verify: "printf checked"
+        }
+      }),
+      "utf8"
+    );
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "finish near deadline"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(6);
+    expect(userMessages(provider.requests[2].body)).toContain("Validation failed: any pending task patch is not validated");
+    expect(systemMessage(provider.requests[2].body)).toContain("one short inspection command");
+    expect(userMessages(provider.requests[3].body)).toContain("new");
+    expect(userMessages(provider.requests[5].body)).toContain("checked");
+  });
+
   it("warns that failed validation does not validate a task patch", async () => {
     const provider = await startFakeProvider([
       {

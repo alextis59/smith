@@ -7307,3 +7307,102 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `55G` with `78` retained `run-*` directories. Think about pruning stale retained sandboxes from time to time after useful command, log, trace, and diagnostic snippets are recorded.
+
+## 2026-05-29 Worklog: Post-Deadline Failed-Validation Inspection
+
+Hypothesis:
+
+- The prior `005-gravitational-teleport` run reached the post-deadline validation slot, ran a real `go test ./lib/kube/proxy ./lib/service -count=1`, and surfaced concrete failures.
+- After that failed validation, ordinary inspection commands were unavailable because the run was past the configured max run time.
+- A generic improvement is to allow one short inspection command after a failed post-deadline validation, so Smith can read the failure-adjacent file or output before making a final patch or blocker report.
+
+Change:
+
+- `src/loop.ts`: added `postDeadlineInspectionRunReason` to tool availability state.
+- `src/loop.ts`: when a post-deadline validation command fails, keep `run` available for one short inspection command.
+- `src/loop.ts`: added `isLikelyInspectionCommand()` for read-only inspection commands and capped the post-deadline inspection slot at `15000ms`.
+- `src/loop.ts`: consuming a post-deadline validation success or applying another task patch clears the inspection slot.
+- `tests/integration.test.ts`: added `allows one short inspection after a failed post-deadline validation command`.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- First focused integration run failed four tests because the inspection command was incorrectly allowed during the validation slot; fixed the gating logic.
+- Second focused integration run failed the new test because it expected a validation command after inspection without applying another patch; adjusted the test to patch after inspection, matching Smith's validation lifecycle.
+- Final focused integration run passed `43` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `70142ms`.
+- Log: `/tmp/smith/2026-05-28T23-35-48-169Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-deZzsd/home/.smith/runs/2026-05-28T23-34-38-353Z.trace`.
+- Sandbox: `.smith-bench/run-deZzsd`.
+- Usage: `46028` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `776569ms`.
+- Log: `/tmp/smith/2026-05-28T23-48-56-474Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-FL2IL9/home/.smith/runs/2026-05-28T23-36-03-394Z.trace`.
+- Sandbox: `.smith-bench/run-FL2IL9`.
+- Usage: `3035641` total tokens.
+
+Trace and sandbox evidence:
+
+- The new post-deadline inspection path was not exercised in this target run.
+- Smith finished after claiming:
+
+```text
+go test ./lib/kube/proxy ./lib/service
+```
+
+- The verifier rebuilt against restored tests and failed with compile errors:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:378:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:541:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+```
+
+- Retained source diff:
+
+```text
+lib/kube/proxy/forwarder.go | 62 +++++++++++++++++++++++++++++++++++++--------
+lib/service/kubernetes.go   |  4 +++
+```
+
+- Restored selected-test/index diff:
+
+```text
+lib/kube/proxy/forwarder_test.go | 80 ++++++++++------------------------------
+```
+
+Decision:
+
+- Keep the change because it is a generic deadline recovery behavior and did not regress focused or project validation.
+- Do not count `005` as recovered. The remaining target failure is task implementation quality and source/test API compatibility after selected tests are restored, not benchmark scoring or verifier parsing.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `57G` with `80` retained `run-*` directories. Add a recurring maintenance habit: after recording useful commands, log paths, trace paths, verifier snippets, and retained sandbox conclusions, prune stale `.smith-bench/run-*` directories so retained benchmark artifacts do not grow by several more GB.
