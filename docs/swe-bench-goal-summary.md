@@ -1805,3 +1805,25 @@ Decision:
 - Do not count `010` as recovered. SWE benchmark runs hide `.git` during Smith execution, so this git-based dirty-test warning did not appear in the target trace; the verifier still failed on Alpine scanner API/test compatibility and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `53G` with `76` retained `run-*` directories. Think about pruning stale retained runs from time to time after useful log and trace evidence has been recorded, so `.smith-bench` does not grow unchecked by several more GB.
+
+## 2026-05-29 Cached Go Test Validation Warning
+
+Change:
+
+- When `go test` reports cached package results while a task patch is still pending, Smith now warns that cached test output does not validate the current patch.
+- Cached validation no longer clears Smith's pending-validation state or consumes the post-deadline validation slot.
+- This is generic validation bookkeeping for Go projects; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `42` tests.
+- Project benchmark `091-command-router-refactor`: passed in `70219ms`, log `/tmp/smith/2026-05-28T23-13-01-026Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-cTBT3f/home/.smith/runs/2026-05-28T23-11-51-044Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed by Docker timeout in `915927ms`, log `/tmp/smith/2026-05-28T23-28-22-422Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-LpeU6S/home/.smith/runs/2026-05-28T23-13-17-068Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and project validation passed.
+- Do not count `005` as recovered. The target rerun did not finish on cached `go test`; it used `-count=1`, surfaced real `lib/kube/proxy` test failures, and timed out while still repairing them.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `55G` with `78` retained `run-*` directories. Think about pruning stale retained runs from time to time after useful log and trace evidence has been recorded.

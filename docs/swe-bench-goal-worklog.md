@@ -7211,3 +7211,99 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `53G` with `76` retained `run-*` directories. Think about pruning stale retained sandboxes from time to time after useful command, log, trace, and diagnostic snippets are recorded, so `.smith-bench` does not grow unchecked by several more GB.
+
+## 2026-05-29 Worklog: Cached Go Test Validation Warning
+
+Hypothesis:
+
+- Latest `005-gravitational-teleport` evidence showed Smith accepting a package validation command where `go test ./lib/kube/proxy ./lib/service` returned `ok .../lib/kube/proxy (cached)`.
+- The verifier later rebuilt `lib/kube/proxy` and failed on compile errors against restored tests.
+- Generic improvement: if `go test` reuses cached results while a task patch is pending, keep validation pending and tell Smith to rerun with cache disabled or force a real recheck.
+
+Change:
+
+- `src/loop.ts`: added `isCachedValidationOutput()` for `go test` output containing `ok <package> (cached)`.
+- A cached validation warning is appended only when a task patch is pending.
+- Cached validation no longer sets `validationRunExecuted` and no longer consumes the post-deadline validation slot.
+- `tests/integration.test.ts`: added `keeps validation pending when go test reuses cached results` using a fake `go` executable.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed `42` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `70219ms`.
+- Log: `/tmp/smith/2026-05-28T23-13-01-026Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-cTBT3f/home/.smith/runs/2026-05-28T23-11-51-044Z.trace`.
+- Sandbox: `.smith-bench/run-cTBT3f`.
+- Usage: `35464` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout in `915927ms`.
+- Log: `/tmp/smith/2026-05-28T23-28-22-422Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-LpeU6S/home/.smith/runs/2026-05-28T23-13-17-068Z.trace`.
+- Sandbox: `.smith-bench/run-LpeU6S`.
+- Usage: `4100171` total tokens.
+
+Trace and sandbox evidence:
+
+- The prior failure mode was a false local pass with cached package output:
+
+```text
+ok  github.com/gravitational/teleport/lib/kube/proxy (cached)
+ok  github.com/gravitational/teleport/lib/service 2.220s
+```
+
+- The new target run did not finish on cached validation. Smith used explicit no-cache validation:
+
+```text
+go test ./lib/kube/proxy ./lib/service -count=1
+```
+
+- That surfaced real failures instead of a false pass:
+
+```text
+Validation failed: any pending task patch is not validated as complete.
+```
+
+```text
+--- FAIL: TestAuthenticate/local_user_and_remote_cluster
+Error: Received unexpected error:
+    [00] access denied
+```
+
+- Retained workspace source diff:
+
+```text
+lib/kube/proxy/forwarder.go | 119 ++++++++++++++++++++++++++++++++++----------
+```
+
+Decision:
+
+- Keep the change because it prevents a generic false-validation path in Go projects and did not regress focused or project validation.
+- Do not count `005` as recovered. The task now fails by timeout after real `-count=1` test failures rather than by verifier rebuild after cached local validation.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `55G` with `78` retained `run-*` directories. Think about pruning stale retained sandboxes from time to time after useful command, log, trace, and diagnostic snippets are recorded.

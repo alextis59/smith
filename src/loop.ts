@@ -628,6 +628,12 @@ async function runShellCommandTool(
   const validationCommand = isLikelyValidationCommand(command);
   const noOpValidation = validationCommand && isNoOpValidationOutput(rawTerminalOutput);
   const failedValidation = validationCommand && !noOpValidation && (result.timedOut || result.exitCode !== 0);
+  const cachedValidation =
+    validationCommand &&
+    parentContext.unvalidatedTaskPatch &&
+    !noOpValidation &&
+    !failedValidation &&
+    isCachedValidationOutput(command, rawTerminalOutput);
   const narrowValidation =
     validationCommand && !noOpValidation && !failedValidation && isNarrowValidationCommand(command);
   let annotatedTerminalOutput = rawTerminalOutput;
@@ -635,6 +641,8 @@ async function runShellCommandTool(
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.`;
   } else if (failedValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.`;
+  } else if (cachedValidation) {
+    annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command reused cached test results while a task patch is pending. Rerun validation with caching disabled, for example with an appropriate no-cache or force-recheck option, before treating the patch as validated.`;
   } else if (narrowValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command selected a subset of checks. Any pending task patch is only narrowly validated; run a broader package or project test, build, lint, typecheck, check, or verify command before finish when practical.`;
   }
@@ -662,10 +670,12 @@ async function runShellCommandTool(
     responsesInputItems,
     toolOutput: terminalOutput,
     totalUsage,
-    ...(postDeadlineValidationRun && !noOpValidation && !failedValidation && !narrowValidation
+    ...(postDeadlineValidationRun && !noOpValidation && !failedValidation && !cachedValidation && !narrowValidation
       ? { postDeadlineValidationRunConsumed: true }
       : {}),
-    ...(validationCommand && !noOpValidation && !failedValidation && !narrowValidation ? { validationRunExecuted: true } : {}),
+    ...(validationCommand && !noOpValidation && !failedValidation && !cachedValidation && !narrowValidation
+      ? { validationRunExecuted: true }
+      : {}),
     ...(runChangedFiles.length > 0 ? { changedFiles: runChangedFiles } : {})
   };
 }
@@ -682,6 +692,10 @@ function isLikelyValidationCommand(command: string): boolean {
 
 function isNoOpValidationOutput(output: string): boolean {
   return /\b(?:no tests? to run|no tests? found|collected 0 items|0 tests? (?:run|collected|found))\b/i.test(output);
+}
+
+function isCachedValidationOutput(command: string, output: string): boolean {
+  return /\bgo\s+test\b/i.test(command) && /\bok\s+\S+\s+\(cached\)/i.test(output);
 }
 
 function isNarrowValidationCommand(command: string): boolean {
