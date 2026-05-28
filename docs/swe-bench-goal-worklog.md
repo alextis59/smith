@@ -5711,3 +5711,114 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `31G` with `42` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.
+
+## 2026-05-28 Change: Generic Refactor Compatibility Guidance
+
+Context:
+
+- User concern remains active: prompt or runtime changes that are specifically for SWE-bench are cheating and should be discarded.
+- The latest `005` evidence showed a generic failure shape: Smith refactored/renamed API fields, local package validation passed, then verifier-restored callers still referenced the old surface.
+- I did not change any benchmark prompt, task prompt, selected tests, parser, run script, scoring, result parsing, verifier logic, or task-specific code path.
+- Generic hypothesis: ordinary coding-agent behavior should preserve existing call sites and compatibility surfaces during refactors unless a user explicitly asks for a breaking change.
+
+Change:
+
+- `prompts/system.txt`:
+  - added this generic instruction next to the existing exact-identifier preservation guidance:
+
+```text
+When refactoring or renaming code, inspect existing call sites and preserve compatibility shims, aliases, wrappers, or config fields when practical unless the task explicitly asks for a breaking change.
+```
+
+- `tests/prompt-trace.test.ts`:
+  - asserts the generic compatibility phrase is present in the loaded prompt.
+
+Focused validation:
+
+```sh
+npm test -- tests/prompt-trace.test.ts
+npm run build
+```
+
+Observed:
+
+- Prompt trace suite passed: `8` tests.
+- TypeScript build passed.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `158606ms`.
+- Log: `/tmp/smith/2026-05-28T17-36-47-852Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-rLH5dK/home/.smith/runs/2026-05-28T17-34-09-478Z.trace`.
+- Sandbox: `.smith-bench/run-rLH5dK`.
+- Usage: `51214` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `705348ms`.
+- Log: `/tmp/smith/2026-05-28T17-48-37-839Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-iDDpv2/home/.smith/runs/2026-05-28T17-36-55-696Z.trace`.
+- Sandbox: `.smith-bench/run-iDDpv2`.
+- Usage: `1345272` total tokens.
+
+Trace and sandbox evidence:
+
+- The loaded system prompt included the new generic compatibility sentence.
+- Smith's final answer claimed:
+
+```text
+Added config aliases and defaults for the forwarder responsibilities requested (`Authz`, `AuthClient`, `CachingAuthClient`, `ReverseTunnelSrv`, `ConnPingPeriod`), while preserving existing fields for compatibility.
+```
+
+- Sandbox diff:
+
+```text
+lib/kube/proxy/forwarder.go | 42 ++++++++++++++++++++++++++++++++++++++++++
+lib/service/kubernetes.go   |  4 ++++
+```
+
+- The candidate `ForwarderConfig` had alias/default handling for new responsibility names such as `Authz`, `AuthClient`, `CachingAuthClient`, `ReverseTunnelSrv`, and `ConnPingPeriod`.
+- The candidate `Forwarder` struct still lacked the compatibility fields referenced by verifier-restored callers:
+
+```text
+type Forwarder struct {
+	sync.Mutex
+	httprouter.Router
+	ForwarderConfig
+	...
+}
+```
+
+Verifier evidence:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:378:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:541:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:574:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+lib/kube/proxy/forwarder_test.go:611:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+lib/kube/proxy/forwarder_test.go:641:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+```
+
+Decision:
+
+- Keep the prompt change as a generic coding-agent quality improvement because it is not benchmark-specific and passed focused/build/project validation.
+- Do not count `005` as recovered. The prompt moved the final answer language toward compatibility, but the patch did not actually preserve all needed compatibility surfaces.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `33G` with `44` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.

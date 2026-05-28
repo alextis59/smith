@@ -1504,3 +1504,24 @@ Decision:
 - Do not count `005` as recovered: the verifier still failed on restored-test-facing `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility errors. The final Smith answer also overstated validation because local `go test ./lib/kube/proxy ./lib/service` passed before verifier restoration exposed the remaining incompatibility.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `31G` with `42` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Generic Refactor Compatibility Guidance
+
+Change:
+
+- Added one generic base-prompt instruction: when refactoring or renaming code, Smith should inspect existing call sites and preserve compatibility shims, aliases, wrappers, or config fields when practical unless the task explicitly asks for a breaking change.
+- This intentionally does not mention SWE-bench, benchmarks, restored tests, task IDs, languages, file names, verifier behavior, or any task-specific identifiers.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/prompt-trace.test.ts`: passed `8` tests.
+- Project benchmark `091-command-router-refactor`: passed in `158606ms`, log `/tmp/smith/2026-05-28T17-36-47-852Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-rLH5dK/home/.smith/runs/2026-05-28T17-34-09-478Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `705348ms`, log `/tmp/smith/2026-05-28T17-48-37-839Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-iDDpv2/home/.smith/runs/2026-05-28T17-36-55-696Z.trace`.
+
+Decision:
+
+- Keep the prompt change as a small generic agent-quality improvement because focused tests, build, and the representative project task passed.
+- Do not count `005` as recovered. The model claimed it preserved compatibility, but the verifier still failed on missing `Forwarder.cfg` and `Forwarder.clientCredentials` fields after its local package validation passed.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `33G` with `44` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.

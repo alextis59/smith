@@ -72,6 +72,7 @@ describe("prompt and trace", () => {
     expect(prompt).toContain("Prefer patch for all file edits");
     expect(prompt).toContain("Use run for edits only when patch cannot express the change");
     expect(prompt).toContain("cat -vet");
+    expect(prompt).toContain("preserve compatibility shims, aliases, wrappers, or config fields");
   });
 
   it("includes concise memory guidance", () => {
