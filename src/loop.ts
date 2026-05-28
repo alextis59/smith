@@ -431,6 +431,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
 
   if (toolName === "finish") {
     const message = toolTextArgument(parentContext.toolCall.arguments, ["message", "answer", "text", "output"]) ?? "";
+    if (shouldRejectUnsupportedReadOnlyFinish(message, parentContext, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: read-only mode is not active and patch is available. Do not claim a read-only or permission blocker unless a tool output shows a read-only or permission failure. Use patch for a safe edit, or finish with the actual blocker from the tool evidence."
+      );
+    }
     const transcript = appendTerminalTurn(parentContext.transcript, "finish", message);
     const providerMessages = appendProviderTerminalTurn(parentContext.providerMessages, "finish", message);
     parentContext.options.trace?.write("finish", message);
@@ -687,6 +694,25 @@ function appendToolObservation(
   context.options.trace?.write("tool output", output);
   context.options.onTerminalOutput?.(output);
   return { transcript, providerMessages, responsesInputItems, toolOutput: output, totalUsage: context.totalUsage };
+}
+
+function shouldRejectUnsupportedReadOnlyFinish(
+  message: string,
+  context: ToolCallContext,
+  availableToolNames: string[]
+): boolean {
+  if (context.options.runtime.readOnly || !availableToolNames.includes("patch")) return false;
+  if (!/\b(?:read-only|readonly|not writable|permission)\b/i.test(message)) return false;
+  if (!/\b(?:cannot|can't|could not|couldn't|unable|blocked|not able|no permission|permission denied)\b/i.test(message)) {
+    return false;
+  }
+  return !transcriptHasReadOnlyEvidence(context.transcript);
+}
+
+function transcriptHasReadOnlyEvidence(transcript: string): boolean {
+  return /\b(?:Read-only mode is active|patch failed:[\s\S]{0,200}(?:EACCES|EROFS|EPERM|permission denied|read-only file system|not writable)|(?:EACCES|EROFS|EPERM|permission denied|read-only file system))\b/i.test(
+    transcript
+  );
 }
 
 function appendToolReason(

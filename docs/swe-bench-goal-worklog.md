@@ -5424,3 +5424,116 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `25G` with `35` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace/diff evidence is copied into the logs.
+
+## 2026-05-28 Operational Note: Retained Sandbox Cleanup
+
+Current retained sandbox footprint:
+
+- `.smith-bench`: `26G`
+- Retained `run-*` directories: `37`
+
+Reminder for later iterations:
+
+- Recheck `.smith-bench` size before and after long SWE-bench runs.
+- Once a milestone is logged and committed, consider pruning old retained sandboxes whose command, JSON path, trace path, failure evidence, and decision have already been captured in the summary/worklog.
+- Keep recent sandboxes for active hypotheses, current failed-task diagnosis, and any run whose trace may still be needed to distinguish model behavior from harness/runtime behavior.
+- Do not clean retained sandboxes in the middle of diagnosing an unresolved run unless the relevant evidence has first been copied into these logs.
+
+## 2026-05-28 Change: Unsupported Read-only Finish Guard
+
+Context:
+
+- The previous `010` run ended with a read-only/repository blocker claim after failed validation. That claim looked unsupported in the retained evidence inspected at the time.
+- Generic hypothesis: in writable runs where `patch` is available, Smith should not accept a final read-only or permission blocker unless the transcript contains supporting tool evidence. This is a runtime consistency check for ordinary coding tasks, not a benchmark-specific instruction.
+- Important later correction: the latest `010` rerun did produce true read-only evidence from the patch tool, so the guard correctly did not reject that final blocker.
+
+Change:
+
+- `src/loop.ts`:
+  - before accepting `finish`, checks whether the final message claims a read-only/permission inability to edit.
+  - rejects the finish only when runtime read-only mode is inactive, `patch` is available, and the transcript lacks permission/read-only evidence.
+  - recognizes common blocker wording including `cannot`, `can't`, `could not`, `couldn't`, `unable`, `blocked`, `not able`, `no permission`, and `permission denied`.
+  - accepts supported claims when prior transcript evidence contains `EACCES`, `EROFS`, `EPERM`, `permission denied`, or `read-only file system`.
+- `tests/integration.test.ts`:
+  - adds coverage that an unsupported `could not ... read-only` finish is rejected and the model can then patch successfully.
+  - adds coverage that a read-only finish is allowed after a real patch failure on a non-writable file.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed: `31` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `101549ms`.
+- Log: `/tmp/smith/2026-05-28T16-44-10-768Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-iOD4EG/home/.smith/runs/2026-05-28T16-42-29-566Z.trace`.
+- Sandbox: `.smith-bench/run-iOD4EG`.
+- Usage: `61538` total tokens.
+- Final answer said the router utility and README were updated and `bash /task/verify.sh` passed.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `798806ms`.
+- Log: `/tmp/smith/2026-05-28T16-57-34-429Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-OOhC5N/home/.smith/runs/2026-05-28T16-44-16-511Z.trace`.
+- Sandbox: `.smith-bench/run-OOhC5N`.
+- Usage: `1251493` total tokens.
+
+Trace evidence:
+
+- The final finish included `I could not fix the tests because scanner/alpine_test.go is read-only in this workspace (patch failed with EROFS: read-only file system).`
+- Supporting transcript evidence existed before finish:
+
+```text
+patch failed: EROFS: read-only file system, open '/workspace/scanner/alpine_test.go'
+```
+
+- Therefore the new guard correctly did not reject the finish in this run.
+
+Verifier evidence:
+
+- Scanner build failures remained:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+scanner/alpine_test.go:391:14: assignment mismatch: 2 variables but d.parseApkVersion returns 3 values
+```
+
+- `TestIsOvalDefAffected` still failed:
+
+```text
+expected: false
+actual: true
+expected:
+actual: 3.3.2-r0
+```
+
+Decision:
+
+- Keep the unsupported read-only finish guard because it is generic, focused-test covered, representative-project validated, and avoids accepting unsupported finish blockers in writable runs.
+- Do not count `010` as recovered: the latest failure had real read-only evidence and the verifier still failed on scanner compile errors plus `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `27G` with `39` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace/diff evidence is copied into the logs.

@@ -1445,3 +1445,31 @@ Decision:
 - Do not count `010` as recovered: verifier still failed on incomplete Alpine parser/test wiring and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `25G` with `35` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Sandbox Cleanup Reminder
+
+- `.smith-bench` is now `26G` with `37` retained `run-*` directories.
+- Keep enough retained sandboxes to preserve current failure evidence, but periodically prune stale runs after the relevant log paths, trace snippets, commands, and decisions have been recorded here and committed.
+- This is an operational hygiene item only; do not remove retained evidence that is still needed to compare a current hypothesis or explain a committed benchmark decision.
+
+## 2026-05-28 Read-only Finish Guard
+
+Change:
+
+- Added a generic finish guard that rejects unsupported read-only or permission-blocker final answers when the run is writable and `patch` is available.
+- The guard only applies when the final answer claims an inability to edit due to read-only/permission state and the transcript lacks supporting tool evidence such as `EACCES`, `EROFS`, `EPERM`, `permission denied`, or `read-only file system`.
+- This is a generic runtime consistency check; it does not mention SWE-bench, task IDs, task content, selected tests, scoring, parsers, or verifier logic.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `31` tests.
+- Project benchmark `091-command-router-refactor`: passed in `101549ms`, log `/tmp/smith/2026-05-28T16-44-10-768Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-iOD4EG/home/.smith/runs/2026-05-28T16-42-29-566Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `798806ms`, log `/tmp/smith/2026-05-28T16-57-34-429Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-OOhC5N/home/.smith/runs/2026-05-28T16-44-16-511Z.trace`.
+
+Decision:
+
+- Keep the guard because focused tests cover unsupported and supported read-only finish claims, and the representative project task still passes.
+- Do not count `010` as recovered: the latest trace had real `patch failed: EROFS: read-only file system` evidence for `scanner/alpine_test.go`, so the guard correctly allowed the blocker and the verifier still failed.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `27G` with `39` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
