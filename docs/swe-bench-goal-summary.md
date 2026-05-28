@@ -1611,3 +1611,25 @@ Decision:
 - Do not count `010` as recovered. The verifier still failed on missing Alpine helper methods and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `39G` with `56` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Benchmark Smith Headroom Retune
+
+Change:
+
+- Retuned the generic benchmark runner Smith `--max-run-ms` default from `75%` to `85%` of the task `--timeout-ms`.
+- Updated the benchmark documentation and focused test expectation for the new ratio.
+- This is a generic harness headroom change. It does not alter task prompts, selected tests, verifiers, scoring, result parsing, or any SWE-bench-specific instruction.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/benchmark.test.ts`: passed `22` tests.
+- Project benchmark `091-command-router-refactor`: passed in `191440ms`, log `/tmp/smith/2026-05-28T19-56-24-701Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-QGUX8L/home/.smith/runs/2026-05-28T19-53-13-756Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `805870ms`, log `/tmp/smith/2026-05-28T20-09-59-642Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-MabxUC/home/.smith/runs/2026-05-28T19-56-38-008Z.trace`.
+
+Decision:
+
+- Keep the retune for now because focused checks and the representative project benchmark passed, and the target run still left enough outer timeout for result capture and verifier execution.
+- Do not count `005` as recovered. The verifier still failed on compatibility errors around `Forwarder.cfg` and `Forwarder.clientCredentials`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `42G` with `59` retained `run-*` directories. Periodically prune stale retained runs after the commands, logs, trace paths, and needed snippets are recorded, so this folder does not grow into several more GB unnecessarily.

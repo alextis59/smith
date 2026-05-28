@@ -6250,3 +6250,104 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `39G` with `56` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.
+
+## 2026-05-28 Change: Benchmark Smith Headroom Retune
+
+Context:
+
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Unrecovered Codex-passed Smith failures remain `005` and `010`.
+- A current-state diagnostic of `005` before this change failed in `690671ms`, log `/tmp/smith/2026-05-28T19-52-03-713Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-o2Ly9D/home/.smith/runs/2026-05-28T19-40-39-646Z.trace`, sandbox `.smith-bench/run-o2Ly9D`, usage `1769821` total tokens.
+- That diagnostic ended with Smith self-reporting a blocker: partial config-alias and directory-initialization changes were still pending and Smith could not complete them safely before the run limit.
+- Verifier errors still centered on restored tests expecting `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility fields.
+
+Hypothesis:
+
+- The previous generic `75%` Smith deadline may leave too little edit/validation time for larger ordinary tasks while still spending the full outer benchmark timeout.
+- A modest generic retune to `85%` may allow Smith to finish more complete patches while preserving enough timeout for finalization, result capture, verifier execution, and cleanup.
+- This is not a prompt change and does not target SWE-bench task content, task IDs, hidden tests, parsers, or scoring.
+
+Change:
+
+- `src/benchmark/runner.ts`: changed `BENCHMARK_SMITH_MAX_RUN_RATIO` from `0.75` to `0.85`.
+- `tests/benchmark.test.ts`: updated the expected default `--max-run-ms` for `100000ms` benchmark timeouts from `75000` to `85000`.
+- `docs/benchmarks.md`: documented the `85%` default.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/benchmark.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Benchmark test suite passed: `22` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `191440ms`.
+- Log: `/tmp/smith/2026-05-28T19-56-24-701Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-QGUX8L/home/.smith/runs/2026-05-28T19-53-13-756Z.trace`.
+- Sandbox: `.smith-bench/run-QGUX8L`.
+- Usage: `79546` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `805870ms`.
+- Log: `/tmp/smith/2026-05-28T20-09-59-642Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-MabxUC/home/.smith/runs/2026-05-28T19-56-38-008Z.trace`.
+- Sandbox: `.smith-bench/run-MabxUC`.
+- Usage: `2794477` total tokens.
+- Deadline reminders reflected the new `12m45s` Smith budget for a `900000ms` task timeout.
+
+Trace and sandbox evidence:
+
+- Smith changed only `lib/kube/proxy/forwarder.go`:
+
+```text
+lib/kube/proxy/forwarder.go | 44 ++++++++++++++++++++++++++++++++++++++++++--
+```
+
+- Smith reported local validation with:
+
+```text
+go test ./lib/kube/proxy ./lib/service
+```
+
+- The benchmark wrapper still reached result capture and verifier execution before the outer timeout.
+
+Verifier evidence:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:378:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:541:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:574:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+lib/kube/proxy/forwarder_test.go:611:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+lib/kube/proxy/forwarder_test.go:641:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+```
+
+Decision:
+
+- Keep the `85%` retune for now. It is a generic benchmark harness adjustment, focused checks passed, the representative project task passed, and the target rerun still completed verifier/result capture.
+- Do not count `005` as recovered.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `42G` with `59` retained `run-*` directories. Add a recurring maintenance habit: after each committed milestone, preserve the important log and trace paths in this worklog, then prune stale retained run sandboxes so `.smith-bench` does not keep growing by several GB.

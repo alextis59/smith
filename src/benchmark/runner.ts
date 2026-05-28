@@ -881,7 +881,7 @@ function prepareSmithArgsForDocker(home: string, args: string[]): string[] {
   return [...args, "--codex-auth-path", "/home/smith/codex-auth.json"];
 }
 
-const BENCHMARK_SMITH_MAX_RUN_RATIO = 0.75;
+const BENCHMARK_SMITH_MAX_RUN_RATIO = 0.85;
 const BENCHMARK_PROVIDER_TIMEOUT_RATIO = 0.2;
 const BENCHMARK_PROVIDER_TIMEOUT_CAP_MS = 180_000;
 const BENCHMARK_PROVIDER_TIMEOUT_FLOOR_MS = 30_000;
