@@ -5610,3 +5610,104 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `29G` with `40` retained `run-*` directories. Prune stale retained runs after this evidence note is committed and any still-needed trace snippets are preserved here.
+
+## 2026-05-28 Change: Patch Context Mismatch Guidance
+
+Context:
+
+- The current-code `005` rerun showed repeated `hunk context not found` failures against `lib/kube/proxy/forwarder.go`.
+- The existing patch error already included low-level context diagnostics and generic split-patch advice, but the model repeatedly retried large/stale hunks.
+- Generic hypothesis: patch context misses should explicitly tell the model to inspect exact current lines before retrying and to send a smaller hunk anchored to that output.
+
+Change:
+
+- `src/loop.ts`:
+  - `formatPatchFailure` now appends this generic guidance when the patch failure contains `hunk context not found`:
+
+```text
+Patch context did not match the current file. Before retrying, inspect the exact current lines and send a smaller patch anchored to that output.
+```
+
+- `tests/integration.test.ts`:
+  - adds a regression test for a normal patch context mismatch against `note.txt`.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed: `32` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `148043ms`.
+- Log: `/tmp/smith/2026-05-28T17-18-02-813Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-dAaP1s/home/.smith/runs/2026-05-28T17-15-35-031Z.trace`.
+- Sandbox: `.smith-bench/run-dAaP1s`.
+- Usage: `74191` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `633556ms`.
+- Log: `/tmp/smith/2026-05-28T17-28-45-094Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-NUHtkf/home/.smith/runs/2026-05-28T17-18-28-135Z.trace`.
+- Sandbox: `.smith-bench/run-NUHtkf`.
+- Usage: `1352220` total tokens.
+
+Trace evidence:
+
+- The new guidance appeared after hunk-context failures:
+
+```text
+Patch context did not match the current file. Before retrying, inspect the exact current lines and send a smaller patch anchored to that output.
+```
+
+- Compared with the prior current-code `005` run, the target run finished faster (`633556ms` vs `851410ms`) and the verifier no longer reported broad source compile errors like `s.parent.Client undefined` or `cfg.Client undefined`.
+- Local validation output in the trace reported:
+
+```text
+ok  	github.com/gravitational/teleport/lib/kube/proxy
+ok  	github.com/gravitational/teleport/lib/service
+```
+
+Verifier evidence:
+
+- The official verifier still failed after restoring benchmark-controlled tests:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined
+lib/kube/proxy/forwarder_test.go:378:5: f.cfg undefined
+lib/kube/proxy/forwarder_test.go:541:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:574:12: f.clientCredentials undefined
+lib/kube/proxy/forwarder_test.go:611:12: f.clientCredentials undefined
+lib/kube/proxy/forwarder_test.go:641:12: f.clientCredentials undefined
+```
+
+Decision:
+
+- Keep the patch-context guidance because it is a generic tool-output improvement and did not break focused or representative validation.
+- Do not count `005` as recovered.
+- The target evidence is directionally better but insufficient: Smith solved source compile errors against its local edited workspace, then failed the official verifier on compatibility fields expected by restored tests. The final answer overstated validation, so future generic work may need to focus on finish validation claims after protected/restored files or on preserving compatibility fields during refactors, without benchmark-specific prompting.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `31G` with `42` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.

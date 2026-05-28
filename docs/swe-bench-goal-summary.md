@@ -1483,3 +1483,24 @@ Decision:
 - Decision: do not count `005` as recovered. This is now mostly a patch-quality/refactor-completion failure, with a possible generic improvement area around repeated patch context failures and too-large partial refactors.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `29G` with `40` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Patch Context Guidance
+
+Change:
+
+- Added generic patch-tool guidance for `hunk context not found` failures: inspect the exact current lines before retrying, then send a smaller patch anchored to that output.
+- This is generic tool feedback for ordinary patch mismatches; it does not mention SWE-bench, task IDs, selected tests, scoring, parsers, or verifier behavior.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `32` tests.
+- Project benchmark `091-command-router-refactor`: passed in `148043ms`, log `/tmp/smith/2026-05-28T17-18-02-813Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-dAaP1s/home/.smith/runs/2026-05-28T17-15-35-031Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `633556ms`, log `/tmp/smith/2026-05-28T17-28-45-094Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-NUHtkf/home/.smith/runs/2026-05-28T17-18-28-135Z.trace`.
+
+Decision:
+
+- Keep the patch-context guidance because it is generic, focused-test covered, project-task validated, and the `005` trace shows the new guidance after hunk-context failures.
+- Do not count `005` as recovered: the verifier still failed on restored-test-facing `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility errors. The final Smith answer also overstated validation because local `go test ./lib/kube/proxy ./lib/service` passed before verifier restoration exposed the remaining incompatibility.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `31G` with `42` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.

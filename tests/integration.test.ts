@@ -275,6 +275,55 @@ timeout_ms = 5000
     expect(readFileSync(join(cwd, "readonly.txt"), "utf8")).toBe("old\n");
   });
 
+  it("adds generic guidance for patch context mismatches", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-missing",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "reported" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-patch-context-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch note"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("patch failed: hunk context not found");
+    expect(stdout).toContain("Before retrying, inspect the exact current lines");
+    expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("old\n");
+  });
+
   it("records transcript compaction without refreshing the system prompt", async () => {
     const provider = await startFakeProvider([
       { name: "run", arguments: { command: "printf first" } },
