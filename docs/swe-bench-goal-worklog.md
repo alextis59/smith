@@ -6147,3 +6147,106 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `37G` with `54` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.
+
+## 2026-05-28 Change: Locked Path Patch Guidance
+
+Context:
+
+- The previous `010` trace showed repeated patch failures on a validation/test file before the final blocker:
+
+```text
+patch failed: EBUSY: resource busy or locked, unlink '/workspace/scanner/alpine_test.go'
+```
+
+- The existing patch-failure recovery guidance covered `EACCES`, `EROFS`, `EPERM`, `permission denied`, and `read-only file system`, but not `EBUSY` or "resource busy or locked".
+- Generic hypothesis: a locked path is another non-writable target for the current run; Smith should stop retrying the same path and continue through writable source files when the task can still be solved there.
+
+Change:
+
+- `src/loop.ts`:
+  - `formatPatchFailure` now includes `EBUSY` and `resource busy or locked` in the non-writable-path guidance branch.
+  - The emitted guidance remains generic:
+
+```text
+The target path is not writable in this workspace; do not keep retrying the same patch unless permissions change. If the task can be solved by changing other writable files, patch those instead of treating this path as the whole blocker.
+```
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed: `34` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `138203ms`.
+- Log: `/tmp/smith/2026-05-28T19-26-05-555Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-qd4VQW/home/.smith/runs/2026-05-28T19-23-47-591Z.trace`.
+- Sandbox: `.smith-bench/run-qd4VQW`.
+- Usage: `63430` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `754463ms`.
+- Log: `/tmp/smith/2026-05-28T19-38-46-072Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-GV6ruk/home/.smith/runs/2026-05-28T19-26-12-294Z.trace`.
+- Sandbox: `.smith-bench/run-GV6ruk`.
+- Usage: `1229946` total tokens.
+
+Trace and sandbox evidence:
+
+- The latest target run did not hit `EBUSY`, so this change was not directly exercised in that run.
+- Smith changed only `scanner/alpine.go`:
+
+```text
+scanner/alpine.go | 126 ++++++++++++++++++++++++++++++++++++++++++++++--------
+```
+
+- Smith reported local validation as:
+
+```text
+go test ./scanner -run 'TestParseApk|TestScanUpdatablePackages' -count=1
+go test ./scanner ./oval -count=1
+```
+
+- Verifier still failed after restored/selected test execution.
+
+Verifier evidence:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined (type *alpine has no field or method parseApkInstalledList)
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined (type *alpine has no field or method parseApkIndex)
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined (type *alpine has no field or method parseApkUpgradableList)
+```
+
+```text
+TestIsOvalDefAffected
+expected affected: false, actual: true
+expected fixedIn: empty, actual: 3.3.2-r0
+```
+
+Decision:
+
+- Keep the `EBUSY` guidance because it is a narrow generic patch-tool improvement, focused checks passed, and the representative project task passed.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `39G` with `56` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.

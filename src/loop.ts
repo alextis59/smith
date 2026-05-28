@@ -775,7 +775,7 @@ function stripPatchFence(value: string): string {
 
 function formatPatchFailure(error: unknown): string {
   const message = errorMessage(error);
-  const guidance = /\b(?:EACCES|EROFS|EPERM)\b|permission denied|read-only file system/i.test(message)
+  const guidance = /\b(?:EACCES|EBUSY|EROFS|EPERM)\b|permission denied|read-only file system|resource busy or locked/i.test(message)
     ? "The target path is not writable in this workspace; do not keep retrying the same patch unless permissions change. If the task can be solved by changing other writable files, patch those instead of treating this path as the whole blocker."
     : /\bhunk context not found\b/i.test(message)
       ? "Patch context did not match the current file. Before retrying, inspect the exact current lines and send a smaller patch anchored to that output."

@@ -1590,3 +1590,24 @@ Decision:
 - Do not count `010` as recovered. The verifier still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `37G` with `54` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Locked Path Patch Guidance
+
+Change:
+
+- Extended generic patch failure guidance to treat `EBUSY` / `resource busy or locked` like other non-writable target path failures.
+- Smith now gets the same "do not keep retrying this path; patch other writable files when possible" guidance for locked paths.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `34` tests.
+- Project benchmark `091-command-router-refactor`: passed in `138203ms`, log `/tmp/smith/2026-05-28T19-26-05-555Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-qd4VQW/home/.smith/runs/2026-05-28T19-23-47-591Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `754463ms`, log `/tmp/smith/2026-05-28T19-38-46-072Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-GV6ruk/home/.smith/runs/2026-05-28T19-26-12-294Z.trace`.
+
+Decision:
+
+- Keep the change as generic no-regression patch-tool feedback. The latest target rerun did not hit `EBUSY`, but the immediately preceding `010` trace did.
+- Do not count `010` as recovered. The verifier still failed on missing Alpine helper methods and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `39G` with `56` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
