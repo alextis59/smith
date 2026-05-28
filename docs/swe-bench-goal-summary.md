@@ -1395,3 +1395,31 @@ Decision:
 - Do not count `005` as recovered: verifier still fails on incomplete `Forwarder` changes (`cfg` and `clientCredentials` fields missing).
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `20G` with `28` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Patch Validation Feedback
+
+Change:
+
+- Successful non-memory task patches now return an immediate generic validation reminder in the patch tool output.
+- Validation-like commands whose output says no tests ran no longer clear the pending-patch validation state or consume the one post-deadline validation run.
+- This is generic runtime/tool feedback for ordinary coding tasks; it does not mention SWE-bench, task names, languages, selected tests, scoring, parsers, or verifier internals.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `28` tests after rebuilding. A first parallel build/test attempt failed because the CLI integration test used stale built output before `tsc` finished; rerunning after build passed.
+- Project benchmark `091-command-router-refactor`: passed twice; latest passed in `168205ms`, log `/tmp/smith/2026-05-28T15-39-53-824Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-xPtIVT/home/.smith/runs/2026-05-28T15-37-05-848Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `878462ms`, log `/tmp/smith/2026-05-28T15-54-37-777Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-HPHEZB/home/.smith/runs/2026-05-28T15-40-02-260Z.trace`.
+
+Evidence:
+
+- Before the no-op validation fix, `005` ran `go test ./lib/kube/proxy ./lib/service -run TestDoesNotExist -count=0`, reported that no-op check as passing, and still failed the verifier with the same `Forwarder` compile errors.
+- After the no-op validation fix, `005` ran a real `go test ./lib/kube/proxy -count=1`, found nil-pointer regressions in `setupContext`, `newClusterSessionSameCluster`, and `requestCertificate`, and reported the blocker more accurately.
+- The verifier still failed on the same compile shape: `Forwarder` missing `cfg` and `clientCredentials`.
+
+Decision:
+
+- Keep the patch validation feedback change because it is generic, focused-test covered, local-benchmark validated, and improves validation quality.
+- Do not count `005` as recovered.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `24G` with `32` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.

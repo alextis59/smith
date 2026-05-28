@@ -5194,3 +5194,129 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `20G` with `28` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace/diff evidence is copied into the logs.
+
+## 2026-05-28 Change: Patch Validation Feedback
+
+Context:
+
+- The latest `005-gravitational-teleport` runs kept failing after broad partial edits to `lib/kube/proxy/forwarder.go`.
+- The previous run reached verifier but Smith's own final answer showed weak self-validation: it had used a no-op `go test ./lib/kube/proxy ./lib/service -run TestDoesNotExist -count=0`, then reported the remaining task as incomplete.
+- This is a generic coding-agent issue: after a source patch, inspection or no-op test commands should not make the run treat the patch as validated.
+
+Change:
+
+- `src/loop.ts`:
+  - successful non-memory `patch` calls append: `Task patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical. Inspection commands do not validate the patch.`
+  - memory-only patches to `SMITH.md` and `SMITH.TASK.md` do not get the validation reminder.
+  - validation-like commands whose output matches no-op patterns such as `no tests to run`, `no tests found`, `collected 0 items`, or `0 tests run/collected/found` emit a validation warning.
+  - no-op validation commands do not clear the pending-patch validation state and do not consume the one post-deadline validation slot.
+- `tests/integration.test.ts`:
+  - asserts task patches replay the pending-validation reminder.
+  - asserts memory-only patches do not replay the reminder.
+  - adds a deadline regression test where a no-op validation command leaves a real validation run available.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- First parallel build/test attempt:
+  - `npm run build`: passed.
+  - `npm test -- tests/integration.test.ts`: failed once because the CLI integration test used stale built output before the parallel `tsc` completed.
+- After rebuilding first:
+  - `npm test -- tests/integration.test.ts`: passed `27` tests for the first validation-reminder change.
+- After adding no-op validation detection:
+  - `npm run build`: passed.
+  - `npm test -- tests/integration.test.ts`: passed `28` tests.
+
+Representative project validation after validation reminder only:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `124920ms`.
+- Log: `/tmp/smith/2026-05-28T15-20-08-296Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-QXZQOG/home/.smith/runs/2026-05-28T15-18-03-717Z.trace`.
+- Usage: `54388` total tokens.
+
+Target SWE rerun after validation reminder only:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `898435ms`.
+- Log: `/tmp/smith/2026-05-28T15-35-11-835Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-9Xp1AP/home/.smith/runs/2026-05-28T15-20-24-060Z.trace`.
+- Sandbox: `.smith-bench/run-9Xp1AP`.
+- Usage: `1950642` total tokens.
+
+Evidence:
+
+- Smith ran `go test ./lib/kube/proxy ./lib/service -run TestDoesNotExist -count=0`.
+- That command passed but was a no-op check.
+- Final answer said the run was blocked and a fresh pass was still needed.
+- Verifier still failed with the same compile errors in `lib/kube/proxy/forwarder_test.go` for missing `Forwarder.cfg` and `Forwarder.clientCredentials`.
+- Decision from this run: keep the validation reminder as useful but insufficient; add no-op validation detection before committing.
+
+Representative project validation after no-op validation detection:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `168205ms`.
+- Log: `/tmp/smith/2026-05-28T15-39-53-824Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-xPtIVT/home/.smith/runs/2026-05-28T15-37-05-848Z.trace`.
+- Usage: `63248` total tokens.
+
+Target SWE rerun after no-op validation detection:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `878462ms`.
+- Log: `/tmp/smith/2026-05-28T15-54-37-777Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-HPHEZB/home/.smith/runs/2026-05-28T15-40-02-260Z.trace`.
+- Sandbox: `.smith-bench/run-HPHEZB`.
+- Usage: `3633548` total tokens.
+
+Evidence:
+
+- Smith now reported a stronger blocker from `go test ./lib/kube/proxy -count=1`: nil-pointer panics in `setupContext`, `newClusterSessionSameCluster`, and `requestCertificate`.
+- Smith also reported `go test ./lib/service -count=1` passed.
+- Verifier still failed with the same compile errors in `lib/kube/proxy/forwarder_test.go`:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:378:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:541:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:574:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+lib/kube/proxy/forwarder_test.go:611:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+lib/kube/proxy/forwarder_test.go:641:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+```
+
+Decision:
+
+- Keep the patch validation feedback change because it is generic, covered by focused tests, preserves the local benchmark, and improves evidence quality from no-op validation to real package-test failures.
+- Do not count `005` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `24G` with `32` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace/diff evidence is copied into the logs.

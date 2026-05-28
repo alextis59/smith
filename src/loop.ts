@@ -489,6 +489,9 @@ async function runPatchTool(
     const result = applySmithPatch(patch, parentContext.options.cwd);
     changedFiles = result.changedFiles;
     output = `Applied patch to ${result.changedFiles.join(", ")}`;
+    if (!changedFilesAreOnlySmithMemory(result.changedFiles)) {
+      output = `${output}\nTask patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical. Inspection commands do not validate the patch.`;
+    }
   } catch (error) {
     output = formatPatchFailure(error);
   }
@@ -547,8 +550,15 @@ async function runShellCommandTool(
   const requestedTimeoutMs = timeoutFromToolCall(parentContext.toolCall.arguments, parentContext.options.runtime.timeoutMs);
   const timeoutMs = postDeadlineValidationRun ? Math.min(requestedTimeoutMs, POST_DEADLINE_VALIDATION_RUN_TIMEOUT_MS) : requestedTimeoutMs;
   const result = await parentContext.shell.run(command, timeoutMs);
+  const rawTerminalOutput = result.timedOut
+    ? formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput)
+    : formatTerminalOutput(result.output, result.exitCode);
+  const validationCommand = isLikelyValidationCommand(command);
+  const noOpValidation = validationCommand && isNoOpValidationOutput(rawTerminalOutput);
   const terminalOutput = limitToolOutput(
-    result.timedOut ? formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput) : formatTerminalOutput(result.output, result.exitCode),
+    noOpValidation
+      ? `${rawTerminalOutput}\nValidation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.`
+      : rawTerminalOutput,
     parentContext.options.runtime.maxToolOutputChars
   );
   const recordedCommand = transcriptCommand ?? result.command;
@@ -568,8 +578,8 @@ async function runShellCommandTool(
     responsesInputItems,
     toolOutput: terminalOutput,
     totalUsage,
-    ...(postDeadlineValidationRun ? { postDeadlineValidationRunConsumed: true } : {}),
-    ...(isLikelyValidationCommand(command) ? { validationRunExecuted: true } : {})
+    ...(postDeadlineValidationRun && !noOpValidation ? { postDeadlineValidationRunConsumed: true } : {}),
+    ...(validationCommand && !noOpValidation ? { validationRunExecuted: true } : {})
   };
 }
 
@@ -581,6 +591,10 @@ function isLikelyValidationCommand(command: string): boolean {
   return /\b(?:go\s+test|cargo\s+test|pytest|vitest|jest|mocha|rspec|npm\s+(?:run\s+)?test|yarn\s+test|pnpm\s+test|mvn\s+test|gradle\s+test|test|build|compile|lint|typecheck|tsc|check|verify(?:\.sh)?)\b/i.test(
     trimmed
   );
+}
+
+function isNoOpValidationOutput(output: string): boolean {
+  return /\b(?:no tests? to run|no tests? found|collected 0 items|0 tests? (?:run|collected|found))\b/i.test(output);
 }
 
 async function runSubAgentTool(

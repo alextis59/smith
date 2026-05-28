@@ -168,6 +168,8 @@ max_turns = 30
     expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("new\n");
     expect(messages(provider.requests[1].body)[3].content).toBe("patch");
     expect(messages(provider.requests[1].body)[4].content).toContain("Applied patch to note.txt");
+    expect(messages(provider.requests[1].body)[4].content).toContain("Task patch pending validation");
+    expect(messages(provider.requests[1].body)[4].content).toContain("Inspection commands do not validate the patch");
     expect(messages(provider.requests[1].body)[3].content).not.toContain("Begin Patch");
   });
 
@@ -997,6 +999,7 @@ timeout_ms = 5000
     expect(provider.requests).toHaveLength(13);
     const replayedOutput = userMessages(provider.requests[12].body);
     expect(replayedOutput).toContain("Applied patch to SMITH.TASK.md");
+    expect(replayedOutput).not.toContain("Task patch pending validation");
     expect(replayedOutput).toContain("Smith progress: 12 tool calls have completed without a task patch or finish");
   });
 
@@ -1196,6 +1199,73 @@ max_run_ms = 1
     expect(toolNames(provider.requests[1].body)).toEqual(["run", "patch", "finish"]);
     expect(systemMessage(provider.requests[1].body)).toContain("A task patch has not been validated");
     expect(userMessages(provider.requests[2].body)).toContain("Post-deadline run is reserved for validation commands");
+    expect(userMessages(provider.requests[3].body)).toContain("checked");
+    expect(toolNames(provider.requests[3].body)).toEqual(["patch", "finish"]);
+  });
+
+  it("keeps post-deadline validation available after a no-op validation command", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent", timeout_ms: 5000 } },
+      { name: "run", arguments: { command: "npm run verify --silent", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-noop-validation-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({
+        scripts: {
+          test: "printf 'testing: warning: no tests to run\\nPASS\\n'",
+          verify: "printf checked"
+        }
+      }),
+      "utf8"
+    );
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "finish near deadline"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(4);
+    expect(toolNames(provider.requests[1].body)).toEqual(["run", "patch", "finish"]);
+    expect(systemMessage(provider.requests[1].body)).toContain("A task patch has not been validated");
+    expect(userMessages(provider.requests[2].body)).toContain("Validation warning: this command appears to have run no tests");
+    expect(toolNames(provider.requests[2].body)).toEqual(["run", "patch", "finish"]);
     expect(userMessages(provider.requests[3].body)).toContain("checked");
     expect(toolNames(provider.requests[3].body)).toEqual(["patch", "finish"]);
   });
