@@ -6494,3 +6494,68 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `45G` with `62` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.
+
+## 2026-05-28 Current-State Diagnostic: 009 OpenLibrary
+
+Reason for target:
+
+- Higher-priority Codex-passed Smith failures `005` and `010` remain unrecovered after multiple generic runtime/tooling fixes.
+- The user asked not to overfocus Codex-failed tasks, so this is a bounded diagnostic only.
+- `009` previously had a generic-looking failure mode where Smith made source edits and then timed out or reached verifier with remaining failures; current runtime controls might at least clarify whether timeout behavior is still the blocker.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `762254ms`.
+- Log: `/tmp/smith/2026-05-28T21-00-58-295Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`.
+- Trace: `.smith-bench/run-3SFFCD/home/.smith/runs/2026-05-28T20-48-18-069Z.trace`.
+- Sandbox: `.smith-bench/run-3SFFCD`.
+- Usage: `2019048` total tokens.
+
+Trace and sandbox evidence:
+
+- Smith changed source and tests:
+
+```text
+openlibrary/catalog/marc/marc_base.py              | 42 ++++++++++++++++++++++
+openlibrary/catalog/marc/marc_binary.py            | 18 ++--------
+openlibrary/catalog/marc/marc_xml.py               |  4 +--
+openlibrary/catalog/marc/parse.py                  | 21 ++++++-----
+openlibrary/catalog/marc/tests/test_marc.py        | 27 +++++++++++++-
+openlibrary/catalog/marc/tests/test_marc_binary.py | 10 ++++++
+tests/integration/__init__.py                      | 17 +++++++--
+```
+
+- Final Smith validation was narrow:
+
+```text
+pytest -q openlibrary/catalog/marc/tests/test_marc_binary.py::Test_MarcBinary::test_linkage_resolution_and_field_base openlibrary/catalog/marc/tests/test_parse.py::TestParseMARCBinary::test_binary[880_table_of_contents.mrc]
+```
+
+- The benchmark verifier did run, so the current state is not an outer-timeout-only failure for this task.
+
+Verifier evidence:
+
+```text
+openlibrary/catalog/marc/tests/test_parse.py::TestParseMARCXML::test_xml[nybc200247]
+AttributeError: 'lxml.etree._Element' object has no attribute 'get_subfield_values'
+```
+
+```text
+openlibrary/catalog/marc/tests/test_parse.py::TestParseMARCBinary::test_binary[880_arabic_french_many_linkages.mrc]
+AssertionError: Processed binary MARC values do not match expectations
+assert 1 == 2
+```
+
+Decision:
+
+- Do not count `009` as recovered.
+- Do not add any `009`-specific prompt or runtime behavior. The useful finding is that current generic controls can reach verifier, but the remaining failures are task implementation details in a Codex-failed task.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this diagnostic: `45G` with `63` retained `run-*` directories. Prune stale retained runs after this diagnostic is committed and the useful trace/log paths are preserved.

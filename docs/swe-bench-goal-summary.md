@@ -1656,3 +1656,19 @@ Decision:
 - Do not count `010` as recovered. The target rerun still failed on missing Alpine parser compatibility methods and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `45G` with `62` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.
+
+## 2026-05-28 Current-State Diagnostic: 009 OpenLibrary
+
+Evidence:
+
+- Reran `009-internetarchive-openlibrary` once under the current generic runtime after exhausting the higher-priority Codex-passed failures `005` and `010`.
+- Result: failed after verifier in `762254ms`, log `/tmp/smith/2026-05-28T21-00-58-295Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`, trace `.smith-bench/run-3SFFCD/home/.smith/runs/2026-05-28T20-48-18-069Z.trace`.
+- Verifier ran `openlibrary/catalog/marc/tests/test_parse.py`: `57 passed`, `2 failed`.
+- Failures: `TestParseMARCXML::test_xml[nybc200247]` with `AttributeError: 'lxml.etree._Element' object has no attribute 'get_subfield_values'`, and `TestParseMARCBinary::test_binary[880_arabic_french_many_linkages.mrc]` with one title value instead of two.
+
+Decision:
+
+- Do not count `009` as recovered.
+- Do not tune specifically for `009`; Codex `gpt-5.4` high also failed it, and this diagnostic is only evidence that current generic runtime now reaches verifier rather than timing out.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `45G` with `63` retained `run-*` directories. Prune stale retained runs after this diagnostic is committed.
