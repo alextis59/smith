@@ -1473,3 +1473,13 @@ Decision:
 - Do not count `010` as recovered: the latest trace had real `patch failed: EROFS: read-only file system` evidence for `scanner/alpine_test.go`, so the guard correctly allowed the blocker and the verifier still failed.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `27G` with `39` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Current 005 Rerun Evidence
+
+- Reran `005-gravitational-teleport` on the current generic runtime after the failed-validation and read-only-finish guard milestones.
+- Result: failed after verifier in `851410ms`, log `/tmp/smith/2026-05-28T17-13-32-408Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-HzICOJ/home/.smith/runs/2026-05-28T16-59-26-298Z.trace`.
+- Smith reached `finish` with an explicit blocker instead of timing out, but the candidate patch still left incomplete `Forwarder` API/refactor errors such as `imported and not used: "os"`, `s.parent.Client undefined`, `cfg.Client undefined`, and restored-test references to missing `Forwarder` fields.
+- Trace evidence showed the generic feedback worked as designed: patch validation reminders appeared, failed validation did not clear the patch state, and post-deadline inspection commands were rejected in the validation slot.
+- Decision: do not count `005` as recovered. This is now mostly a patch-quality/refactor-completion failure, with a possible generic improvement area around repeated patch context failures and too-large partial refactors.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `29G` with `40` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.

@@ -5537,3 +5537,76 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `27G` with `39` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace/diff evidence is copied into the logs.
+
+## 2026-05-28 Current-code Rerun: 005 Gravitational Teleport
+
+Reason:
+
+- `005` is one of the remaining Codex `gpt-5.4` high passes that Smith has not recovered.
+- It had not been rerun after the failed-validation feedback and unsupported read-only finish guard were both committed.
+- No new Smith change was made for this rerun; this was evidence gathering on the current generic runtime.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `851410ms`.
+- Log: `/tmp/smith/2026-05-28T17-13-32-408Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-HzICOJ/home/.smith/runs/2026-05-28T16-59-26-298Z.trace`.
+- Sandbox: `.smith-bench/run-HzICOJ`.
+- Usage: `2309986` total tokens.
+
+Trace evidence:
+
+- Smith repeatedly attempted large patches to `lib/kube/proxy/forwarder.go`; many failed with hunk-context errors around the same constructor/import areas.
+- The patch tool returned the generic split-patch/context guidance repeatedly:
+
+```text
+No files were changed because Smith patches are atomic. If the patch contains independent edits, split them into smaller patch calls.
+```
+
+- Successful task patches still produced pending-validation reminders.
+- Failed validation produced the expected warning:
+
+```text
+Validation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.
+```
+
+- After deadline finalization, inspection commands were rejected in the validation slot:
+
+```text
+Post-deadline run is reserved for validation commands such as test, build, lint, typecheck, check, or verify. Inspection commands are unavailable after the configured max run time; use patch for a known final edit or finish with the current result.
+```
+
+Final Smith blocker:
+
+- Smith finished with a concrete blocker instead of timing out.
+- The final answer correctly identified the patch as a partial forwarder refactor with stale references and constructor literal mismatches.
+
+Verifier evidence:
+
+```text
+lib/kube/proxy/forwarder.go:29:2: imported and not used: "os"
+lib/kube/proxy/forwarder.go:1234:34: s.parent.Client undefined
+lib/kube/proxy/server.go:135:24: cfg.Client undefined
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined
+lib/kube/proxy/forwarder_test.go:378:5: f.cfg undefined
+lib/kube/proxy/forwarder_test.go:541:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:574:12: f.clientCredentials undefined
+```
+
+Decision:
+
+- Do not count `005` as recovered.
+- Current generic validation/finalization feedback is behaving as intended on this trace, but it is insufficient for this large refactor.
+- The next plausible generic improvement area is not SWE-specific prompting; it is runtime/tool behavior for repeated patch context failures or overly broad partial refactors, for example making repeated patch-context failures more strongly steer the model toward smaller, freshly inspected patches.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `29G` with `40` retained `run-*` directories. Prune stale retained runs after this evidence note is committed and any still-needed trace snippets are preserved here.
