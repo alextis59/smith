@@ -1761,3 +1761,25 @@ Decision:
 - Do not count `010` as recovered. The target trace did not directly exercise the new test-file warning on a successful test patch, and the verifier still failed on Alpine scanner/OVAL test cases.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `51G` with `72` retained `run-*` directories. Prune stale retained runs after useful log and trace evidence has been recorded.
+
+## 2026-05-29 Unwritable Test Patch Guidance
+
+Change:
+
+- Extended generic non-writable patch guidance when the failed target path appears to be a test or spec file.
+- Smith is now told that, if the user did not explicitly ask to update tests, the test should be treated as existing behavior to satisfy through source changes rather than as the blocker.
+- This is generic patch-tool feedback for ordinary coding tasks; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: first concurrent run failed because the CLI test raced with the build and used stale compiled output; rerun after build passed `40` tests.
+- Project benchmark `091-command-router-refactor`: passed in `102555ms`, log `/tmp/smith/2026-05-28T22-35-56-062Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-QQhFhb/home/.smith/runs/2026-05-28T22-34-13-981Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `821279ms`, log `/tmp/smith/2026-05-28T22-49-45-013Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-TZwHwJ/home/.smith/runs/2026-05-28T22-36-04-652Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and project validation passed.
+- Do not count `010` as recovered. The target trace exercised the new guidance and Smith continued source-side repairs, but the verifier still failed on Alpine scanner helper methods and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `52G` with `74` retained `run-*` directories. Prune stale retained runs after useful evidence is recorded.

@@ -860,12 +860,25 @@ function stripPatchFence(value: string): string {
 
 function formatPatchFailure(error: unknown): string {
   const message = errorMessage(error);
-  const guidance = /\b(?:EACCES|EBUSY|EROFS|EPERM)\b|permission denied|read-only file system|resource busy or locked/i.test(message)
-    ? "The target path is not writable in this workspace; do not keep retrying the same patch unless permissions change. If the task can be solved by changing other writable files, patch those instead of treating this path as the whole blocker."
+  const nonWritable = /\b(?:EACCES|EBUSY|EROFS|EPERM)\b|permission denied|read-only file system|resource busy or locked/i.test(message);
+  const guidance = nonWritable
+    ? [
+        "The target path is not writable in this workspace; do not keep retrying the same patch unless permissions change. If the task can be solved by changing other writable files, patch those instead of treating this path as the whole blocker.",
+        patchFailureMentionsLikelyTestPath(message)
+          ? "The unwritable path appears to be a test or spec file. If the user did not explicitly ask to update tests, treat the test as existing behavior to satisfy by changing source files instead of reporting the test file as the blocker."
+          : ""
+      ]
+        .filter(Boolean)
+        .join("\n")
     : /\bhunk context not found\b/i.test(message)
       ? "Patch context did not match the current file. Before retrying, inspect the exact current lines and send a smaller patch anchored to that output."
     : "";
   return ["patch failed: " + message, guidance].filter(Boolean).join("\n");
+}
+
+function patchFailureMentionsLikelyTestPath(message: string): boolean {
+  const matches = message.match(/[A-Za-z0-9._/@:+-]+(?:\\|\/)[A-Za-z0-9._/@:+\\/-]+/g) ?? [];
+  return matches.some(isLikelyTestFilePath);
 }
 
 function timeoutFromToolCall(args: Record<string, unknown>, fallback: number): number {

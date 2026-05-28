@@ -6994,3 +6994,109 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `51G` with `72` retained `run-*` directories. Prune stale retained sandboxes once the useful command, log, trace, and diagnostic snippets are recorded.
+
+## 2026-05-29 Worklog: Unwritable Test Patch Guidance
+
+Hypothesis:
+
+- In the latest `010` target run, Smith ended by treating an unwritable test file as the blocker even though source files remained writable.
+- Generic improvement: when patching a likely test/spec path fails as non-writable, Smith should treat the test as behavior evidence to satisfy through source changes unless the user explicitly requested test edits.
+- This is ordinary coding-task guidance and not SWE-specific; it applies to any workspace where tests or specs are generated, mounted, locked, or otherwise unavailable for edits.
+
+Change:
+
+- `src/loop.ts`: extended `formatPatchFailure()` for `EACCES`, `EBUSY`, `EROFS`, `EPERM`, permission denied, read-only file system, or locked target failures.
+- If the failure message contains a likely test/spec path, the patch output now also says:
+
+```text
+The unwritable path appears to be a test or spec file. If the user did not explicitly ask to update tests, treat the test as existing behavior to satisfy by changing source files instead of reporting the test file as the blocker.
+```
+
+- Added `patchFailureMentionsLikelyTestPath()` and reused the existing likely-test-path detector.
+- `tests/integration.test.ts`: added `adds source-compatibility guidance for unwritable test file patches`.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- First concurrent integration run failed the new CLI child-process test because `npm test` raced with `npm run build` and used stale compiled JS.
+- Reran integration after build completion: passed `40` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `102555ms`.
+- Log: `/tmp/smith/2026-05-28T22-35-56-062Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-QQhFhb/home/.smith/runs/2026-05-28T22-34-13-981Z.trace`.
+- Sandbox: `.smith-bench/run-QQhFhb`.
+- Usage: `49793` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `821279ms`.
+- Log: `/tmp/smith/2026-05-28T22-49-45-013Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-TZwHwJ/home/.smith/runs/2026-05-28T22-36-04-652Z.trace`.
+- Sandbox: `.smith-bench/run-TZwHwJ`.
+- Usage: `1558958` total tokens.
+
+Trace and sandbox evidence:
+
+- The new guidance was exercised:
+
+```text
+patch failed: EROFS: read-only file system, open '/workspace/scanner/alpine_test.go'
+The unwritable path appears to be a test or spec file. If the user did not explicitly ask to update tests, treat the test as existing behavior to satisfy by changing source files instead of reporting the test file as the blocker.
+```
+
+- Smith then continued source-side repair and reached local `go test ./scanner`, but verifier still failed.
+- Retained source diff:
+
+```text
+scanner/alpine.go | 158 +++++++++++++++++++++++++++++++++++++++++++++---------
+```
+
+- Retained index-only/restored-test-facing changes:
+
+```text
+oval/util_test.go      |  42 ++++++
+scanner/alpine_test.go | 357 ++++++++++++++++++++++++++++++++++++++++++++++---
+```
+
+Verifier evidence:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+```
+
+```text
+TestIsOvalDefAffected
+expected: false
+actual: true
+```
+
+Decision:
+
+- Keep the change. It directly changed the target trace behavior in a generic way and did not regress focused or project validation.
+- Do not count `010` as recovered. The remaining failure is task implementation quality around source API compatibility and OVAL matching, not benchmark harness scoring.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `52G` with `74` retained `run-*` directories. Prune stale retained sandboxes once useful command, log, trace, and diagnostic snippets are recorded.

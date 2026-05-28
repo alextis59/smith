@@ -328,6 +328,58 @@ timeout_ms = 5000
     expect(readFileSync(join(cwd, "readonly.txt"), "utf8")).toBe("old\n");
   });
 
+  it("adds source-compatibility guidance for unwritable test file patches", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: tests/readonly.test.js",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "reported" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-patch-readonly-test-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "tests", "readonly.test.js"), "old\n", "utf8");
+    chmodSync(join(cwd, "tests", "readonly.test.js"), 0o444);
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch readonly test"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("patch failed: EACCES");
+    expect(stdout).toContain("The unwritable path appears to be a test or spec file");
+    expect(stdout).toContain("treat the test as existing behavior to satisfy by changing source files");
+    expect(readFileSync(join(cwd, "tests", "readonly.test.js"), "utf8")).toBe("old\n");
+  });
+
   it("adds generic guidance for patch context mismatches", async () => {
     const provider = await startFakeProvider([
       {
