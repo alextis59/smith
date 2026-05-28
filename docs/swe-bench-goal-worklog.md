@@ -6770,3 +6770,122 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `46G` with `67` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.
+
+## 2026-05-28 Worklog: Keep Post-Deadline Validation Slot After Failed Check
+
+Hypothesis:
+
+- Prior `005` evidence showed Smith running into the late-run tool restriction after failed validation, then being unable to safely validate a repaired patch before finishing or blocking.
+- A failed validation should not consume the reserved post-deadline validation opportunity. The opportunity should be consumed only by a real, non-narrow validation command that exits successfully.
+- This is a generic loop rule for ordinary coding tasks; it is not tailored to SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Change:
+
+- `src/loop.ts`: changed `postDeadlineValidationRunConsumed` so failed validation commands do not consume the post-deadline validation run.
+- `tests/integration.test.ts`: added `keeps post-deadline validation available after a failed validation command`, covering a patch, a failing `npm test --silent`, a passing `npm run verify --silent`, and the final tool restriction after the successful validation.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed: `38` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `98191ms`.
+- Log: `/tmp/smith/2026-05-28T21-58-05-131Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-xv76lu/home/.smith/runs/2026-05-28T21-56-27-169Z.trace`.
+- Sandbox: `.smith-bench/run-xv76lu`.
+- Usage: `45012` total tokens.
+
+Before-change target diagnostic:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `904178ms`.
+- Log: `/tmp/smith/2026-05-28T21-54-45-770Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-XJ6VPv/home/.smith/runs/2026-05-28T21-39-48-655Z.trace`.
+- Sandbox: `.smith-bench/run-XJ6VPv`.
+- Usage: `4479167` total tokens.
+
+Failure evidence:
+
+- Final Smith blocker said local validation was still failing and listed panics in `Forwarder.authenticate`, `Forwarder.requestCertificate`, and `Forwarder.newClusterSessionSameCluster`.
+- It then reported a read-only error trying to patch `lib/kube/proxy/forwarder_test.go` and could not safely complete without fresh file context.
+- The verifier still failed restored-test-facing compatibility errors:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+```
+
+After-change target rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `739706ms`.
+- Log: `/tmp/smith/2026-05-28T22-10-31-772Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-wyGo68/home/.smith/runs/2026-05-28T21-58-17-250Z.trace`.
+- Sandbox: `.smith-bench/run-wyGo68`.
+- Usage: `3893480` total tokens.
+
+Trace and sandbox evidence:
+
+- The target trace showed a failed validation did not remove `run`; Smith still had `run, patch, sub_agent, finish` after the failure and used later validation commands.
+- Near deadline, Smith ran:
+
+```text
+go test ./lib/kube/proxy ./lib/service
+```
+
+- Smith finished with a local-validation-passed claim, but the verifier restored or exposed tests that still require compatibility fields.
+- Retained source diff:
+
+```text
+lib/kube/proxy/forwarder.go | 76 +++++++++++++++++++++++++++++++++++++--------
+lib/service/kubernetes.go   |  3 ++
+```
+
+- Retained index-only test edit:
+
+```text
+lib/kube/proxy/forwarder_test.go | 80 ++++++++++------------------------------
+```
+
+Verifier evidence:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:574:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+```
+
+Decision:
+
+- Keep the change. It is a generic validation semantics fix, not benchmark coaching, and the target trace confirms the expected behavior change.
+- Do not count `005` as recovered. The root task failure remains compatibility preservation for restored tests, not a benchmark harness issue.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `49G` with `70` retained `run-*` directories. The folder should be pruned periodically after useful evidence paths and snippets are recorded, to avoid letting retained sandboxes accumulate into several more GB.

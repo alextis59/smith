@@ -1717,3 +1717,25 @@ Decision:
 - Do not count `009` as recovered. The target trace did not directly exercise the new run-edit message; it still failed on MARC parser verifier cases.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `46G` with `67` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.
+
+## 2026-05-28 Keep Validation Slot After Failed Check
+
+Change:
+
+- Smith no longer consumes the single post-deadline validation run when the validation command itself fails.
+- A failed validation still leaves the task patch pending and keeps one real validation opportunity available, so the agent can fix the failure and run a passing check before finish.
+- This is generic runtime behavior for ordinary coding tasks; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `38` tests.
+- Project benchmark `091-command-router-refactor`: passed in `98191ms`, log `/tmp/smith/2026-05-28T21-58-05-131Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-xv76lu/home/.smith/runs/2026-05-28T21-56-27-169Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `739706ms`, log `/tmp/smith/2026-05-28T22-10-31-772Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-wyGo68/home/.smith/runs/2026-05-28T21-58-17-250Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic validation bookkeeping, focused-test covered, build-clean, and project validation passed.
+- Do not count `005` as recovered. The target rerun still failed on restored-test-facing compatibility errors around `Forwarder.cfg` and `Forwarder.clientCredentials`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `49G` with `70` retained `run-*` directories. Periodically prune stale retained runs after useful log and trace evidence has been recorded so the folder does not grow unchecked by several more GB.

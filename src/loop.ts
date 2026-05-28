@@ -640,7 +640,9 @@ async function runShellCommandTool(
     responsesInputItems,
     toolOutput: terminalOutput,
     totalUsage,
-    ...(postDeadlineValidationRun && !noOpValidation && !narrowValidation ? { postDeadlineValidationRunConsumed: true } : {}),
+    ...(postDeadlineValidationRun && !noOpValidation && !failedValidation && !narrowValidation
+      ? { postDeadlineValidationRunConsumed: true }
+      : {}),
     ...(validationCommand && !noOpValidation && !failedValidation && !narrowValidation ? { validationRunExecuted: true } : {}),
     ...(runChangedFiles.length > 0 ? { changedFiles: runChangedFiles } : {})
   };
