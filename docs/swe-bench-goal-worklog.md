@@ -6889,3 +6889,108 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `49G` with `70` retained `run-*` directories. The folder should be pruned periodically after useful evidence paths and snippets are recorded, to avoid letting retained sandboxes accumulate into several more GB.
+
+## 2026-05-28 Worklog: Warn On Test-File Patches
+
+Hypothesis:
+
+- Recent `005` and `010` retained sandboxes both showed test files dirty separately from source changes, while external verification restored or exposed tests that still failed.
+- A generic runtime observation when Smith patches likely test files may reduce over-trusting local validation that includes edited tests.
+- This must remain ordinary coding-task feedback, not benchmark coaching: changing tests can be valid when a user asks for it, but validation should not be treated as proof that unchanged behavior is compatible with the prior tests.
+
+Change:
+
+- `src/loop.ts`: after a successful patch, detect likely test file paths using common test directories and filename patterns.
+- Patch output now appends:
+
+```text
+Test files changed: ...
+Local validation may include the changed tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.
+```
+
+- `tests/integration.test.ts`: added `warns when a patch changes likely test files`.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- First concurrent integration run failed one new test because the CLI test started before `npm run build` refreshed the compiled JS, so the child `bin/smith.js` process used stale output.
+- Reran integration after build completion: passed `39` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `105835ms`.
+- Log: `/tmp/smith/2026-05-28T22-15-14-374Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-zXur6y/home/.smith/runs/2026-05-28T22-13-28-763Z.trace`.
+- Sandbox: `.smith-bench/run-zXur6y`.
+- Usage: `58159` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `909726ms`.
+- Log: `/tmp/smith/2026-05-28T22-30-29-356Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-FzZMi1/home/.smith/runs/2026-05-28T22-15-20-394Z.trace`.
+- Sandbox: `.smith-bench/run-FzZMi1`.
+- Usage: `1060491` total tokens.
+
+Trace and sandbox evidence:
+
+- The new `Test files changed` warning did not appear in the target trace; this rerun did not exercise the new path on a successful test-file patch.
+- Smith finished with an explicit blocker rather than claiming success:
+
+```text
+Blocked: the Alpine scanner patch was applied, but validation failed because `scanner/alpine_test.go` is not writable in this workspace (`EROFS`)
+```
+
+- Retained source diff:
+
+```text
+scanner/alpine.go | 162 ++++++++++++++++++++++++++++++++++++++++++------------
+```
+
+- Retained index-only/restored-test-facing changes:
+
+```text
+oval/util_test.go      |  42 ++++++
+scanner/alpine_test.go | 357 ++++++++++++++++++++++++++++++++++++++++++++++---
+```
+
+Verifier evidence:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+```
+
+```text
+TestIsOvalDefAffected
+expected: false
+actual: true
+```
+
+Decision:
+
+- Keep the change because it is generic and passed focused/project validation.
+- Do not count `010` as recovered. The root failure remains task implementation quality and test compatibility, not benchmark harness scoring.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `51G` with `72` retained `run-*` directories. Prune stale retained sandboxes once the useful command, log, trace, and diagnostic snippets are recorded.

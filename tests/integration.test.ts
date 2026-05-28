@@ -173,6 +173,58 @@ max_turns = 30
     expect(messages(provider.requests[1].body)[3].content).not.toContain("Begin Patch");
   });
 
+  it("warns when a patch changes likely test files", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: tests/note.test.js",
+            "@@",
+            "-console.log('old');",
+            "+console.log('new');",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "patched; validation pending" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-test-file-patch-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "tests", "note.test.js"), "console.log('old');\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch test"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("patched");
+    expect(messages(provider.requests[1].body)[4].content).toContain("Applied patch to tests/note.test.js");
+    expect(messages(provider.requests[1].body)[4].content).toContain("Test files changed: tests/note.test.js");
+    expect(messages(provider.requests[1].body)[4].content).toContain("Local validation may include the changed tests");
+  });
+
   it("applies tab-indented patch tool calls without shell tab completion", async () => {
     const provider = await startFakeProvider([
       {

@@ -1739,3 +1739,25 @@ Decision:
 - Do not count `005` as recovered. The target rerun still failed on restored-test-facing compatibility errors around `Forwarder.cfg` and `Forwarder.clientCredentials`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `49G` with `70` retained `run-*` directories. Periodically prune stale retained runs after useful log and trace evidence has been recorded so the folder does not grow unchecked by several more GB.
+
+## 2026-05-28 Warn On Test-File Patches
+
+Change:
+
+- When a patch changes likely test files, Smith now reports the changed test paths and warns that local validation may include those changed tests.
+- The warning asks Smith to preserve compatibility with existing test behavior when the user did not ask for test updates.
+- This is generic runtime feedback for ordinary coding tasks; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: first concurrent run failed because the CLI test raced with the build and used stale compiled output; rerun after build passed `39` tests.
+- Project benchmark `091-command-router-refactor`: passed in `105835ms`, log `/tmp/smith/2026-05-28T22-15-14-374Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-zXur6y/home/.smith/runs/2026-05-28T22-13-28-763Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed in `909726ms`, log `/tmp/smith/2026-05-28T22-30-29-356Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-FzZMi1/home/.smith/runs/2026-05-28T22-15-20-394Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic validation feedback, focused-test covered, build-clean, and project validation passed.
+- Do not count `010` as recovered. The target trace did not directly exercise the new test-file warning on a successful test patch, and the verifier still failed on Alpine scanner/OVAL test cases.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `51G` with `72` retained `run-*` directories. Prune stale retained runs after useful log and trace evidence has been recorded.

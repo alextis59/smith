@@ -513,6 +513,10 @@ async function runPatchTool(
     output = `Applied patch to ${result.changedFiles.join(", ")}`;
     if (!changedFilesAreOnlySmithMemory(result.changedFiles)) {
       output = `${output}\nTask patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical. Inspection commands do not validate the patch.`;
+      const changedTestFiles = result.changedFiles.filter(isLikelyTestFilePath);
+      if (changedTestFiles.length > 0) {
+        output = `${output}\nTest files changed: ${formatChangedFiles(changedTestFiles)}. Local validation may include the changed tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.`;
+      }
     }
   } catch (error) {
     output = formatPatchFailure(error);
@@ -561,6 +565,14 @@ function formatChangedFiles(changedFiles: string[]): string {
 function isRootSmithMemoryFile(path: string): boolean {
   const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
   return normalized === "SMITH.md" || normalized === "SMITH.TASK.md";
+}
+
+function isLikelyTestFilePath(path: string): boolean {
+  const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
+  return (
+    /(?:^|\/)(?:tests?|spec|__tests__)(?:\/|$)/i.test(normalized) ||
+    /(?:^|\/)[^\/]+(?:\.test|\.spec|_test)\.[^\/]+$/i.test(normalized)
+  );
 }
 
 async function runShellCommandTool(
