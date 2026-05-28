@@ -5320,3 +5320,107 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `24G` with `32` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace/diff evidence is copied into the logs.
+
+## 2026-05-28 Change: Failed Validation Feedback
+
+Context:
+
+- The patch-validation milestone made Smith warn after non-memory patches and no-op validation commands.
+- The latest `005` and `010` evidence still showed Smith ending after failed compile/test validation. A failed validation command is useful evidence, but it does not validate the patch as complete.
+- Generic hypothesis: failed validation output should explicitly tell the model that any pending patch remains incomplete and should not clear the pending-patch validation state.
+
+Change:
+
+- `src/loop.ts`:
+  - detects failed validation commands when a likely validation command times out or exits nonzero.
+  - appends `Validation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.`
+  - only clears pending-patch validation state on non-no-op validation commands that do not fail.
+- `tests/integration.test.ts`:
+  - adds a regression test proving a failed validation command after a task patch replays the failed-command header and the new validation warning.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed: `29` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed first run:
+
+- Failed in `265960ms`.
+- Log: `/tmp/smith/2026-05-28T16-02-52-725Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-haFlSA/home/.smith/runs/2026-05-28T15-58-26-993Z.trace`.
+- Sandbox: `.smith-bench/run-haFlSA`.
+- Usage: `66134` total tokens.
+- Failure shape: Smith implemented `src/router.js` and ran `node test.js`, but missed the README `## Verification` requirement checked by `/task/verify.sh`. This looked like ordinary model variance around partial validation rather than a direct regression from failed-validation feedback.
+
+Observed repeat run:
+
+- Passed in `202558ms`.
+- Log: `/tmp/smith/2026-05-28T16-06-47-365Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-TeiQII/home/.smith/runs/2026-05-28T16-03-25-025Z.trace`.
+- Sandbox: `.smith-bench/run-TeiQII`.
+- Usage: `65178` total tokens.
+- Final answer said the benchmark verifier passed with `bash /task/verify.sh`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `799438ms`.
+- Log: `/tmp/smith/2026-05-28T16-20-23-210Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-VzgCHb/home/.smith/runs/2026-05-28T16-07-04-581Z.trace`.
+- Sandbox: `.smith-bench/run-VzgCHb`.
+- Usage: `999077` total tokens.
+
+Trace evidence:
+
+- The failed-validation warning appeared after `go test ./scanner -run 'TestParseApk|TestParseInstalledPackages' -count=1` failed:
+
+```text
+Validation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.
+```
+
+- Smith continued patch/validate cycles against the visible compile error:
+
+```text
+scanner/alpine_test.go:34:14: assignment mismatch: 2 variables but d.parseApkInfo returns 3 values
+```
+
+- At the deadline, Smith finished with a blocker and incorrectly claimed the repository was read-only, even though this was a normal writable run. This is a separate generic failure mode to investigate later.
+
+Verifier evidence:
+
+- The verifier still failed in `scanner` and `oval`.
+- Scanner compile failures:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined (type *alpine has no field or method parseApkInstalledList)
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined (type *alpine has no field or method parseApkIndex)
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined (type *alpine has no field or method parseApkUpgradableList)
+```
+
+- `TestIsOvalDefAffected` still failed.
+
+Decision:
+
+- Keep the failed-validation feedback change because it is generic, focused-test covered, repeat local-benchmark validated, and improves the evidence shown to the model after failed validation commands.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `25G` with `35` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace/diff evidence is copied into the logs.

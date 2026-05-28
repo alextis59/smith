@@ -555,9 +555,12 @@ async function runShellCommandTool(
     : formatTerminalOutput(result.output, result.exitCode);
   const validationCommand = isLikelyValidationCommand(command);
   const noOpValidation = validationCommand && isNoOpValidationOutput(rawTerminalOutput);
+  const failedValidation = validationCommand && !noOpValidation && (result.timedOut || result.exitCode !== 0);
   const terminalOutput = limitToolOutput(
     noOpValidation
       ? `${rawTerminalOutput}\nValidation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.`
+      : failedValidation
+        ? `${rawTerminalOutput}\nValidation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.`
       : rawTerminalOutput,
     parentContext.options.runtime.maxToolOutputChars
   );
@@ -579,7 +582,7 @@ async function runShellCommandTool(
     toolOutput: terminalOutput,
     totalUsage,
     ...(postDeadlineValidationRun && !noOpValidation ? { postDeadlineValidationRunConsumed: true } : {}),
-    ...(validationCommand && !noOpValidation ? { validationRunExecuted: true } : {})
+    ...(validationCommand && !noOpValidation && !failedValidation ? { validationRunExecuted: true } : {})
   };
 }
 

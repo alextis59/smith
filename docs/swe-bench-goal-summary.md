@@ -1423,3 +1423,25 @@ Decision:
 - Do not count `005` as recovered.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `24G` with `32` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Failed Validation Feedback
+
+Change:
+
+- Validation-like commands that fail now append a generic warning that any pending task patch is not validated as complete.
+- Failed validation commands no longer clear the pending-patch validation state.
+- This is generic runtime/tool feedback for ordinary coding tasks; it is not benchmark-, dataset-, task-, language-, parser-, or verifier-specific.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `29` tests.
+- Project benchmark `091-command-router-refactor`: first run failed because Smith only ran `node test.js` and missed the README verification section; repeat run passed in `202558ms`, log `/tmp/smith/2026-05-28T16-06-47-365Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-TeiQII/home/.smith/runs/2026-05-28T16-03-25-025Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `799438ms`, log `/tmp/smith/2026-05-28T16-20-23-210Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-VzgCHb/home/.smith/runs/2026-05-28T16-07-04-581Z.trace`.
+
+Decision:
+
+- Keep the failed-validation feedback change because focused tests pass, the representative project task passed on repeat, and `010` trace evidence shows the warning attached to real failed `go test` output.
+- Do not count `010` as recovered: verifier still failed on incomplete Alpine parser/test wiring and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `25G` with `35` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
