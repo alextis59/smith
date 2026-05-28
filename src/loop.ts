@@ -557,6 +557,11 @@ function changedTrackedFiles(before: Set<string> | undefined, after: Set<string>
   return [...after].filter((path) => !before.has(path)).sort();
 }
 
+function changedTrackedTestFiles(changes: Set<string> | undefined): string[] {
+  if (!changes) return [];
+  return [...changes].filter(isLikelyTestFilePath).sort();
+}
+
 function formatChangedFiles(changedFiles: string[]): string {
   const visible = changedFiles.slice(0, 8).join(", ");
   return changedFiles.length > 8 ? `${visible}, and ${changedFiles.length - 8} more` : visible;
@@ -614,7 +619,9 @@ async function runShellCommandTool(
   const requestedTimeoutMs = timeoutFromToolCall(parentContext.toolCall.arguments, parentContext.options.runtime.timeoutMs);
   const timeoutMs = postDeadlineValidationRun ? Math.min(requestedTimeoutMs, POST_DEADLINE_VALIDATION_RUN_TIMEOUT_MS) : requestedTimeoutMs;
   const result = await parentContext.shell.run(command, timeoutMs);
-  const runChangedFiles = changedTrackedFiles(trackedChangesBefore, await trackedGitChangeSet(parentContext.options.cwd));
+  const trackedChangesAfter = await trackedGitChangeSet(parentContext.options.cwd);
+  const runChangedFiles = changedTrackedFiles(trackedChangesBefore, trackedChangesAfter);
+  const dirtyTestFiles = changedTrackedTestFiles(trackedChangesAfter);
   const rawTerminalOutput = result.timedOut
     ? formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput)
     : formatTerminalOutput(result.output, result.exitCode);
@@ -630,6 +637,9 @@ async function runShellCommandTool(
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.`;
   } else if (narrowValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command selected a subset of checks. Any pending task patch is only narrowly validated; run a broader package or project test, build, lint, typecheck, check, or verify command before finish when practical.`;
+  }
+  if (validationCommand && !noOpValidation && !failedValidation && dirtyTestFiles.length > 0) {
+    annotatedTerminalOutput = `${annotatedTerminalOutput}\nValidation warning: tracked test files are currently modified: ${formatChangedFiles(dirtyTestFiles)}. Passing results may reflect those edited tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.`;
   }
   if (runChangedFiles.length > 0) {
     annotatedTerminalOutput = `${annotatedTerminalOutput}\nRun command changed tracked files: ${formatChangedFiles(runChangedFiles)}\nTask patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical.`;

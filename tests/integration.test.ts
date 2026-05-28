@@ -1714,6 +1714,68 @@ max_turns = 30
     expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a task patch is still pending validation");
   });
 
+  it("warns when validation runs with modified tracked test files", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-dirty-test-validation-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "tests", "note.test.js"), "console.log('checked');\n", "utf8");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node tests/note.test.js" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+    await execFileAsync("git", ["init"], { cwd });
+    await execFileAsync("git", ["add", "."], { cwd });
+    await execFileAsync("git", ["-c", "user.name=Smith Test", "-c", "user.email=smith@example.test", "commit", "-m", "init"], {
+      cwd
+    });
+    writeFileSync(join(cwd, "tests", "note.test.js"), "console.log('changed test');\n", "utf8");
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[2].body)).toContain("changed test");
+    expect(userMessages(provider.requests[2].body)).toContain("Validation warning: tracked test files are currently modified");
+    expect(userMessages(provider.requests[2].body)).toContain("tests/note.test.js");
+  });
+
   it("allows unvalidated patch finish when the message reports pending validation", async () => {
     const provider = await startFakeProvider([
       {

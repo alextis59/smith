@@ -7100,3 +7100,114 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `52G` with `74` retained `run-*` directories. Prune stale retained sandboxes once useful command, log, trace, and diagnostic snippets are recorded.
+
+## 2026-05-29 Worklog: Dirty Test Validation Warning
+
+Hypothesis:
+
+- A generic Smith failure mode is over-trusting a passing validation run when tracked test files are dirty.
+- This matters for ordinary coding tasks where tests may have been edited by the agent, by a setup command, or by a user before validation.
+- The improvement should be generic runtime feedback, not a SWE-specific prompt or benchmark-specific rule.
+
+Change:
+
+- `src/loop.ts`: added `changedTrackedTestFiles()` and a successful-validation warning when `git status --porcelain=v1 --untracked-files=no` reports modified tracked test/spec paths.
+- The warning text:
+
+```text
+Validation warning: tracked test files are currently modified: <paths>. Passing results may reflect those edited tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.
+```
+
+- `tests/integration.test.ts`: added `warns when validation runs with modified tracked test files`.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed `41` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `109672ms`.
+- Log: `/tmp/smith/2026-05-28T22-54-09-610Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-hWSubn/home/.smith/runs/2026-05-28T22-52-20-373Z.trace`.
+- Sandbox: `.smith-bench/run-hWSubn`.
+- Usage: `78165` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `686296ms`.
+- Log: `/tmp/smith/2026-05-28T23-05-40-888Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-gD5e7B/home/.smith/runs/2026-05-28T22-54-15-316Z.trace`.
+- Sandbox: `.smith-bench/run-gD5e7B`.
+- Usage: `2100049` total tokens.
+
+Trace and sandbox evidence:
+
+- Smith locally claimed success after:
+
+```text
+go test ./scanner -run 'TestParseApk' -count=1
+go test ./scanner ./models ./oval
+```
+
+- The new dirty-test validation warning did not appear in the target trace. Diagnosis: SWE benchmark runs hide `.git` during Smith execution, so the git-based dirty-file detector returns unavailable in that environment.
+- After the run, with `.git` restored, the retained sandbox showed tracked test changes:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+```
+
+- Retained source diff:
+
+```text
+scanner/alpine.go | 170 +++++++++++++++++++++++++++++++++++++++++++++++-------
+```
+
+- Retained index-only/restored-test-facing changes:
+
+```text
+oval/util_test.go      |  42 ++++++
+scanner/alpine_test.go | 357 ++++++++++++++++++++++++++++++++++++++++++++++---
+```
+
+Verifier evidence:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined
+```
+
+```text
+TestIsOvalDefAffected
+expected: false
+actual: true
+```
+
+Decision:
+
+- Keep the change because it improves ordinary git-workspace validation feedback and passed focused/build/project validation.
+- Do not count `010` as recovered. This target remains a task implementation failure around source API compatibility and OVAL matching.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `53G` with `76` retained `run-*` directories. Think about pruning stale retained sandboxes from time to time after useful command, log, trace, and diagnostic snippets are recorded, so `.smith-bench` does not grow unchecked by several more GB.

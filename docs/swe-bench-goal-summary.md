@@ -1783,3 +1783,25 @@ Decision:
 - Do not count `010` as recovered. The target trace exercised the new guidance and Smith continued source-side repairs, but the verifier still failed on Alpine scanner helper methods and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `52G` with `74` retained `run-*` directories. Prune stale retained runs after useful evidence is recorded.
+
+## 2026-05-29 Dirty Test Validation Warning
+
+Change:
+
+- When a validation command passes while tracked test files are already modified, Smith now warns that passing results may reflect edited tests.
+- The warning asks Smith to preserve existing test behavior too when the user did not ask to update tests.
+- This is generic runtime feedback for ordinary git workspaces; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `41` tests.
+- Project benchmark `091-command-router-refactor`: passed in `109672ms`, log `/tmp/smith/2026-05-28T22-54-09-610Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-hWSubn/home/.smith/runs/2026-05-28T22-52-20-373Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `686296ms`, log `/tmp/smith/2026-05-28T23-05-40-888Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-gD5e7B/home/.smith/runs/2026-05-28T22-54-15-316Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and project validation passed.
+- Do not count `010` as recovered. SWE benchmark runs hide `.git` during Smith execution, so this git-based dirty-test warning did not appear in the target trace; the verifier still failed on Alpine scanner API/test compatibility and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `53G` with `76` retained `run-*` directories. Think about pruning stale retained runs from time to time after useful log and trace evidence has been recorded, so `.smith-bench` does not grow unchecked by several more GB.
