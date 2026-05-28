@@ -1373,6 +1373,62 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).toContain("Validation failed: any pending task patch is not validated");
   });
 
+  it("tracks edits made by run commands as pending validation", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "run",
+        arguments: {
+          command: "node -e \"require('fs').writeFileSync('note.txt', 'new\\\\n')\"",
+          timeout_ms: 5000
+        }
+      },
+      { name: "finish", arguments: { message: "done" } },
+      { name: "run", arguments: { command: "npm test", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-run-edit-validation-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "test.js"), "console.log('checked');\n", "utf8");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node test.js" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+    await execFileAsync("git", ["init"], { cwd });
+    await execFileAsync("git", ["add", "."], { cwd });
+    await execFileAsync("git", ["-c", "user.name=Smith Test", "-c", "user.email=smith@example.test", "commit", "-m", "init"], {
+      cwd
+    });
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "edit with run"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("new\n");
+    expect(provider.requests).toHaveLength(4);
+    expect(userMessages(provider.requests[1].body)).toContain("Run command changed tracked files: note.txt");
+    expect(userMessages(provider.requests[1].body)).toContain("Task patch pending validation");
+    expect(userMessages(provider.requests[2].body)).toContain("Finish rejected: a task patch is still pending validation");
+  });
+
   it("warns that selected test validation is narrow", async () => {
     const provider = await startFakeProvider([
       {

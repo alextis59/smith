@@ -1695,3 +1695,25 @@ Decision:
 - Do not count `009` as recovered. The target rerun still failed on two `test_parse.py` cases after broader local validation.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `45G` with `65` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.
+
+## 2026-05-28 Track Run-Command Edits
+
+Change:
+
+- Smith now snapshots tracked Git changes around `run` tool calls.
+- If a shell command changes tracked files, Smith reports the changed paths and treats the run as a pending task patch that still needs validation.
+- This closes a generic loop bookkeeping gap where shell-based edits could bypass the pending-validation state used for `patch` edits.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `37` tests.
+- Project benchmark `091-command-router-refactor`: passed in `135734ms`, log `/tmp/smith/2026-05-28T21-24-44-423Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-fNI9M2/home/.smith/runs/2026-05-28T21-22-28-915Z.trace`.
+- Target SWE rerun `009-internetarchive-openlibrary`: failed after verifier in `654612ms`, log `/tmp/smith/2026-05-28T21-35-49-138Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`, trace `.smith-bench/run-Pp8GO6/home/.smith/runs/2026-05-28T21-24-55-574Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic bookkeeping, focused-test covered, and project validation passed.
+- Do not count `009` as recovered. The target trace did not directly exercise the new run-edit message; it still failed on MARC parser verifier cases.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `46G` with `67` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.

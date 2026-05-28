@@ -6666,3 +6666,107 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `45G` with `65` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.
+
+## 2026-05-28 Change: Track Run-Command Edits
+
+Context:
+
+- Smith strongly prefers `patch` for file edits, but the `run` tool can still modify tracked files.
+- Before this change, only successful `patch` calls set the pending task-patch validation state.
+- Generic hypothesis: shell-based tracked-file edits should participate in the same validation bookkeeping as patch-tool edits. Otherwise a model can use a shell command to change source, then finish without the loop knowing an edit needs validation.
+
+Change:
+
+- `src/loop.ts`:
+  - Snapshots `git status --porcelain=v1 --untracked-files=no` before and after each `run` tool command when the workspace is a Git repository.
+  - If new tracked dirty paths appear after the command, appends:
+
+```text
+Run command changed tracked files: ...
+Task patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical.
+```
+
+  - Returns those paths as `changedFiles`, so normal pending-validation and finish-rejection logic applies.
+- `tests/integration.test.ts`:
+  - Added a regression where a `run` command edits a tracked `note.txt`; Smith reports the changed path and rejects an immediate overconfident finish until validation runs.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed: `37` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `135734ms`.
+- Log: `/tmp/smith/2026-05-28T21-24-44-423Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-fNI9M2/home/.smith/runs/2026-05-28T21-22-28-915Z.trace`.
+- Sandbox: `.smith-bench/run-fNI9M2`.
+- Usage: `119305` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `654612ms`.
+- Log: `/tmp/smith/2026-05-28T21-35-49-138Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`.
+- Trace: `.smith-bench/run-Pp8GO6/home/.smith/runs/2026-05-28T21-24-55-574Z.trace`.
+- Sandbox: `.smith-bench/run-Pp8GO6`.
+- Usage: `1187200` total tokens.
+
+Trace and sandbox evidence:
+
+- The new `Run command changed tracked files` observation did not appear in this target rerun.
+- The existing patch pending-validation path did appear, with three finish rejections.
+- Smith changed two source/support files in the retained diff:
+
+```text
+openlibrary/catalog/marc/marc_base.py | 43 ++++++++++++++++++++++++++++++++++-
+tests/integration/__init__.py         | 17 +++++++++++---
+```
+
+- Retained workspace status also showed verifier/test-data paths marked dirty or restored by setup:
+
+```text
+M  openlibrary/catalog/marc/tests/test_data/bin_expect/880_arabic_french_many_linkages.json
+M  openlibrary/catalog/marc/tests/test_data/xml_expect/nybc200247.json
+M  openlibrary/catalog/marc/tests/test_data/xml_input/nybc200247_marc.xml
+M  openlibrary/catalog/marc/tests/test_parse.py
+```
+
+Verifier evidence:
+
+```text
+openlibrary/catalog/marc/tests/test_parse.py::TestParseMARCXML::test_xml[nybc200247]
+AttributeError: 'lxml.etree._Element' object has no attribute 'get_subfield_values'
+```
+
+```text
+openlibrary/catalog/marc/tests/test_parse.py::TestParseMARCBinary::test_binary[880_arabic_french_many_linkages.mrc]
+AssertionError: Processed binary MARC values do not match expectations
+assert 1 == 2
+```
+
+Decision:
+
+- Keep the run-edit tracking change because it is generic loop bookkeeping, focused-test covered, and did not regress the representative project benchmark.
+- Do not count `009` as recovered.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `46G` with `67` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.

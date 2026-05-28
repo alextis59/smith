@@ -312,8 +312,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           providerMessages = action.providerMessages;
           nextResponsesInputItems = action.responsesInputItems;
           nextPendingOutput = [nextPendingOutput, action.toolOutput].filter(Boolean).join("\n");
-          const madeTaskPatch =
-            toolName === "patch" && action.changedFiles !== undefined && !changedFilesAreOnlySmithMemory(action.changedFiles);
+          const madeTaskPatch = action.changedFiles !== undefined && !changedFilesAreOnlySmithMemory(action.changedFiles);
           if (madeTaskPatch && subAgentTurnLimitFailures < 2) {
             toolAvailabilityState = availabilityAfterTaskPatch(retainPersistentToolAvailability(toolAvailabilityState));
           } else if (action.subAgentTurnLimitFailure) {
@@ -530,6 +529,35 @@ function changedFilesAreOnlySmithMemory(changedFiles: string[]): boolean {
   return changedFiles.length > 0 && changedFiles.every(isRootSmithMemoryFile);
 }
 
+async function trackedGitChangeSet(cwd: string): Promise<Set<string> | undefined> {
+  try {
+    const { stdout } = await execFileAsync("git", ["status", "--porcelain=v1", "--untracked-files=no"], {
+      cwd,
+      timeout: 5_000,
+      maxBuffer: 1_000_000
+    });
+    return new Set(
+      stdout
+        .split("\n")
+        .map((line) => line.slice(3).trim())
+        .filter(Boolean)
+        .map((path) => path.split(" -> ").at(-1) ?? path)
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+function changedTrackedFiles(before: Set<string> | undefined, after: Set<string> | undefined): string[] {
+  if (!before || !after) return [];
+  return [...after].filter((path) => !before.has(path)).sort();
+}
+
+function formatChangedFiles(changedFiles: string[]): string {
+  const visible = changedFiles.slice(0, 8).join(", ");
+  return changedFiles.length > 8 ? `${visible}, and ${changedFiles.length - 8} more` : visible;
+}
+
 function isRootSmithMemoryFile(path: string): boolean {
   const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
   return normalized === "SMITH.md" || normalized === "SMITH.TASK.md";
@@ -570,9 +598,11 @@ async function runShellCommandTool(
     return { transcript, providerMessages, responsesInputItems, toolOutput: blockedOutput, totalUsage };
   }
 
+  const trackedChangesBefore = await trackedGitChangeSet(parentContext.options.cwd);
   const requestedTimeoutMs = timeoutFromToolCall(parentContext.toolCall.arguments, parentContext.options.runtime.timeoutMs);
   const timeoutMs = postDeadlineValidationRun ? Math.min(requestedTimeoutMs, POST_DEADLINE_VALIDATION_RUN_TIMEOUT_MS) : requestedTimeoutMs;
   const result = await parentContext.shell.run(command, timeoutMs);
+  const runChangedFiles = changedTrackedFiles(trackedChangesBefore, await trackedGitChangeSet(parentContext.options.cwd));
   const rawTerminalOutput = result.timedOut
     ? formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput)
     : formatTerminalOutput(result.output, result.exitCode);
@@ -588,6 +618,9 @@ async function runShellCommandTool(
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.`;
   } else if (narrowValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command selected a subset of checks. Any pending task patch is only narrowly validated; run a broader package or project test, build, lint, typecheck, check, or verify command before finish when practical.`;
+  }
+  if (runChangedFiles.length > 0) {
+    annotatedTerminalOutput = `${annotatedTerminalOutput}\nRun command changed tracked files: ${formatChangedFiles(runChangedFiles)}\nTask patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical.`;
   }
   const terminalOutput = limitToolOutput(annotatedTerminalOutput, parentContext.options.runtime.maxToolOutputChars);
   const recordedCommand = transcriptCommand ?? result.command;
@@ -608,7 +641,8 @@ async function runShellCommandTool(
     toolOutput: terminalOutput,
     totalUsage,
     ...(postDeadlineValidationRun && !noOpValidation && !narrowValidation ? { postDeadlineValidationRunConsumed: true } : {}),
-    ...(validationCommand && !noOpValidation && !failedValidation && !narrowValidation ? { validationRunExecuted: true } : {})
+    ...(validationCommand && !noOpValidation && !failedValidation && !narrowValidation ? { validationRunExecuted: true } : {}),
+    ...(runChangedFiles.length > 0 ? { changedFiles: runChangedFiles } : {})
   };
 }
 
