@@ -1373,6 +1373,60 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).toContain("Validation failed: any pending task patch is not validated");
   });
 
+  it("warns that selected test validation is narrow", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test -- --grep selected", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-narrow-validation-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "test.js"), "console.log('checked');\n", "utf8");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node test.js" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[2].body)).toContain("checked");
+    expect(userMessages(provider.requests[2].body)).toContain("Validation warning: this command selected a subset of checks");
+  });
+
   it("rejects unsupported read-only finish claims when patch is available", async () => {
     const provider = await startFakeProvider([
       {

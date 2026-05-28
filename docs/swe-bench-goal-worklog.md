@@ -6038,3 +6038,112 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `35G` with `50` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.
+
+## 2026-05-28 Change: Narrow Validation Feedback
+
+Context:
+
+- Prior `010` evidence showed Smith could treat selected or no-op validation as stronger than it was:
+  - One run passed `go test ./scanner -run 'TestParseApk|Test_debian_parseInstalledPackages'`, but the verifier later failed on restored-test-facing Alpine parser methods and OVAL behavior.
+  - Another run could pass a compile-only command such as `go test ./scanner -run '^$' -vet=off`, which runs no tests and should not validate a task patch.
+- Generic hypothesis: when a validation command explicitly selects a subset of tests, Smith should receive tool feedback that the result is narrow and should still prefer broader validation before finishing when practical.
+
+Change:
+
+- `src/loop.ts`:
+  - adds `isNarrowValidationCommand`.
+  - detects selected validation flags such as `-run`, `--grep`, `--filter`, `-k`, `-m`, `--testNamePattern`, `--testPathPattern`, and `--runTestsByPath`.
+  - appends a warning to successful selected-validation command output:
+
+```text
+Validation warning: this command selected a subset of checks. Any pending task patch is only narrowly validated; run a broader package or project test, build, lint, typecheck, check, or verify command before finish when practical.
+```
+
+  - does not clear pending patch validation or consume the post-deadline validation slot for narrow selected validation.
+  - preserves the existing no-op validation warning for commands that run zero tests.
+- `tests/integration.test.ts`:
+  - adds coverage that `npm test -- --grep selected` emits the narrow-validation warning and forwards it to the next provider request.
+
+Rejected/avoided:
+
+- Did not add SWE-bench-specific instructions, task IDs, parser names, restored-test wording, verifier wording, or score-aware behavior.
+- Avoided treating normal run-mode flags such as `--run` or `--runInBand` as narrow validation because those can mean "run normally" in JS tooling.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed: `34` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `142445ms`.
+- Log: `/tmp/smith/2026-05-28T19-08-14-842Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-cZ94tk/home/.smith/runs/2026-05-28T19-05-52-891Z.trace`.
+- Sandbox: `.smith-bench/run-cZ94tk`.
+- Usage: `58134` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `757793ms`.
+- Log: `/tmp/smith/2026-05-28T19-20-56-956Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-183GvU/home/.smith/runs/2026-05-28T19-08-19-953Z.trace`.
+- Sandbox: `.smith-bench/run-183GvU`.
+- Usage: `1829893` total tokens.
+
+Trace and sandbox evidence:
+
+- Smith changed only source:
+
+```text
+scanner/alpine.go | 146 ++++++++++++++++++++++++++++++++++++++++--------------
+```
+
+- Smith ran a compile-only no-op validation:
+
+```text
+ok  	github.com/future-architect/vuls/scanner	0.340s [no tests to run]
+Validation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.
+```
+
+- Final answer claimed a permission blocker on `scanner/alpine_test.go` being read-only and reported `go test ./scanner -run '^$' -vet=off`; this is a blocker report, not a recovered task.
+
+Verifier evidence:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined (type *alpine has no field or method parseApkInstalledList)
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined (type *alpine has no field or method parseApkIndex)
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined (type *alpine has no field or method parseApkUpgradableList)
+```
+
+```text
+TestIsOvalDefAffected
+expected affected: false, actual: true
+expected fixedIn: empty, actual: 3.3.2-r0
+```
+
+Decision:
+
+- Keep the narrow/no-op validation behavior because it is generic, focused-test covered, and project-task validated.
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `37G` with `54` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace snippets are preserved here.

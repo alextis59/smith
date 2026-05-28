@@ -570,14 +570,17 @@ async function runShellCommandTool(
   const validationCommand = isLikelyValidationCommand(command);
   const noOpValidation = validationCommand && isNoOpValidationOutput(rawTerminalOutput);
   const failedValidation = validationCommand && !noOpValidation && (result.timedOut || result.exitCode !== 0);
-  const terminalOutput = limitToolOutput(
-    noOpValidation
-      ? `${rawTerminalOutput}\nValidation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.`
-      : failedValidation
-        ? `${rawTerminalOutput}\nValidation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.`
-      : rawTerminalOutput,
-    parentContext.options.runtime.maxToolOutputChars
-  );
+  const narrowValidation =
+    validationCommand && !noOpValidation && !failedValidation && isNarrowValidationCommand(command);
+  let annotatedTerminalOutput = rawTerminalOutput;
+  if (noOpValidation) {
+    annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.`;
+  } else if (failedValidation) {
+    annotatedTerminalOutput = `${rawTerminalOutput}\nValidation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.`;
+  } else if (narrowValidation) {
+    annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command selected a subset of checks. Any pending task patch is only narrowly validated; run a broader package or project test, build, lint, typecheck, check, or verify command before finish when practical.`;
+  }
+  const terminalOutput = limitToolOutput(annotatedTerminalOutput, parentContext.options.runtime.maxToolOutputChars);
   const recordedCommand = transcriptCommand ?? result.command;
   const transcript = appendTerminalTurn(parentContext.transcript, recordedCommand, terminalOutput);
   const providerMessages = appendProviderTerminalTurn(parentContext.providerMessages, recordedCommand, terminalOutput);
@@ -595,8 +598,8 @@ async function runShellCommandTool(
     responsesInputItems,
     toolOutput: terminalOutput,
     totalUsage,
-    ...(postDeadlineValidationRun && !noOpValidation ? { postDeadlineValidationRunConsumed: true } : {}),
-    ...(validationCommand && !noOpValidation && !failedValidation ? { validationRunExecuted: true } : {})
+    ...(postDeadlineValidationRun && !noOpValidation && !narrowValidation ? { postDeadlineValidationRunConsumed: true } : {}),
+    ...(validationCommand && !noOpValidation && !failedValidation && !narrowValidation ? { validationRunExecuted: true } : {})
   };
 }
 
@@ -612,6 +615,12 @@ function isLikelyValidationCommand(command: string): boolean {
 
 function isNoOpValidationOutput(output: string): boolean {
   return /\b(?:no tests? to run|no tests? found|collected 0 items|0 tests? (?:run|collected|found))\b/i.test(output);
+}
+
+function isNarrowValidationCommand(command: string): boolean {
+  return /(?:^|\s)(?:-run|-[km]|--(?:grep|fgrep|filter|only|include|exclude|spec|file|files|testNamePattern|testPathPattern|testPathPatterns|runTestsByPath))(?:[=\s]|$)/i.test(
+    command
+  );
 }
 
 async function runSubAgentTool(

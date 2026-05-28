@@ -1568,3 +1568,25 @@ Decision:
 - Do not count `010` as recovered. The latest run did perform targeted scanner validation and reached verifier, but restored tests still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `35G` with `50` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Narrow Validation Feedback
+
+Change:
+
+- Added generic runtime feedback for validation commands that select a subset of tests, such as `-run`, `--grep`, `-k`, or test-name/path filters.
+- A passing selected-test command now warns that the patch is only narrowly validated and does not clear pending patch validation or consume the one post-deadline validation slot.
+- This is generic tool-output behavior for ordinary coding tasks; it does not mention SWE-bench, task IDs, restored tests, scoring, parsers, verifier behavior, or any dataset-specific detail.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `34` tests.
+- Project benchmark `091-command-router-refactor`: passed in `142445ms`, log `/tmp/smith/2026-05-28T19-08-14-842Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-cZ94tk/home/.smith/runs/2026-05-28T19-05-52-891Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `757793ms`, log `/tmp/smith/2026-05-28T19-20-56-956Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-183GvU/home/.smith/runs/2026-05-28T19-08-19-953Z.trace`.
+
+Decision:
+
+- Keep the change because focused tests and the representative project benchmark passed, and the target trace shows the no-op validation warning preserved the need for real validation.
+- Do not count `010` as recovered. The verifier still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `37G` with `54` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
