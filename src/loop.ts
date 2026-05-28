@@ -627,9 +627,21 @@ function isNoOpValidationOutput(output: string): boolean {
 }
 
 function isNarrowValidationCommand(command: string): boolean {
-  return /(?:^|\s)(?:-run|-[km]|--(?:grep|fgrep|filter|only|include|exclude|spec|file|files|testNamePattern|testPathPattern|testPathPatterns|runTestsByPath))(?:[=\s]|$)/i.test(
-    command
-  );
+  if (
+    /(?:^|\s)(?:-run|-[km]|--(?:grep|fgrep|filter|only|include|exclude|spec|file|files|testNamePattern|testPathPattern|testPathPatterns|runTestsByPath))(?:[=\s]|$)/i.test(
+      command
+    )
+  ) {
+    return true;
+  }
+  const tokens = command.match(/"[^"]+"|'[^']+'|\S+/g) ?? [];
+  return tokens.some((rawToken) => {
+    const token = rawToken.replace(/^["']|["']$/g, "");
+    if (token.includes("::")) return true;
+    return /(?:^|\/)(?:test_[^\/]+|[^\/]+(?:\.test|\.spec|_test))\.(?:py|js|jsx|ts|tsx|go|rb|java|rs)$/i.test(
+      token
+    );
+  });
 }
 
 async function runSubAgentTool(

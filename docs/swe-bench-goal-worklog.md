@@ -6559,3 +6559,110 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this diagnostic: `45G` with `63` retained `run-*` directories. Prune stale retained runs after this diagnostic is committed and the useful trace/log paths are preserved.
+
+## 2026-05-28 Change: Explicit Test-File Validation Warning
+
+Context:
+
+- The previous `009` diagnostic finished after a very narrow local validation command:
+
+```text
+pytest -q openlibrary/catalog/marc/tests/test_marc_binary.py::Test_MarcBinary::test_linkage_resolution_and_field_base openlibrary/catalog/marc/tests/test_parse.py::TestParseMARCBinary::test_binary[880_table_of_contents.mrc]
+```
+
+- Existing `isNarrowValidationCommand` covered common selector flags such as `-run`, `--grep`, `-k`, and path-pattern flags, but it did not classify explicit test node IDs or concrete test-file paths as narrow.
+- Generic hypothesis: selected test files and node IDs are ordinary narrow validation. A passing selected-file command should not clear pending patch validation or let Smith finish with an overconfident completion report.
+
+Change:
+
+- `src/loop.ts`:
+  - Tokenizes validation commands after existing selector-flag checks.
+  - Treats tokens containing `::` as narrow test node selectors.
+  - Treats concrete test-file tokens such as `test_*.py`, `*_test.go`, `*.test.ts`, and `*.spec.ts` as narrow validation.
+- `tests/integration.test.ts`:
+  - Added coverage for `npm test -- tests/note.test.js`, verifying that it emits the narrow-validation warning and rejects an immediate overconfident finish.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed: `36` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `153756ms`.
+- Log: `/tmp/smith/2026-05-28T21-06-45-862Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-AEOEqb/home/.smith/runs/2026-05-28T21-04-12-609Z.trace`.
+- Sandbox: `.smith-bench/run-AEOEqb`.
+- Usage: `43735` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `707121ms`.
+- Log: `/tmp/smith/2026-05-28T21-18-37-860Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`.
+- Trace: `.smith-bench/run-pts0tb/home/.smith/runs/2026-05-28T21-06-51-722Z.trace`.
+- Sandbox: `.smith-bench/run-pts0tb`.
+- Usage: `2255053` total tokens.
+
+Trace and sandbox evidence:
+
+- The trace showed many narrow-validation warnings and three finish rejections:
+
+```text
+Validation warning: this command selected a subset of checks
+Finish rejected: a task patch is still pending validation
+```
+
+- Smith eventually ran broader local validation:
+
+```text
+pytest -q openlibrary/catalog/marc/tests
+```
+
+- Smith changed four files:
+
+```text
+openlibrary/catalog/marc/marc_base.py   | 46 +++++++++++++++++++++++++++++++++
+openlibrary/catalog/marc/marc_binary.py |  4 +--
+openlibrary/catalog/marc/marc_xml.py    | 33 +++--------------------
+tests/integration/__init__.py           | 17 +++++++++---
+```
+
+Verifier evidence:
+
+```text
+openlibrary/catalog/marc/tests/test_parse.py::TestParseMARCXML::test_xml[nybc200247]
+AssertionError: Processed MARCXML values do not match expectations ... Key: authors
+```
+
+```text
+openlibrary/catalog/marc/tests/test_parse.py::TestParseMARCBinary::test_binary[880_arabic_french_many_linkages.mrc]
+AssertionError: Processed binary MARC values do not match expectations
+assert 1 == 2
+```
+
+Decision:
+
+- Keep the change. It is generic validation hygiene, has focused coverage, passed build and project validation, and target evidence shows it changed behavior from selected-node completion toward broader local validation.
+- Do not count `009` as recovered.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `45G` with `65` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.

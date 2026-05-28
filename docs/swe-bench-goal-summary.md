@@ -1672,3 +1672,26 @@ Decision:
 - Do not tune specifically for `009`; Codex `gpt-5.4` high also failed it, and this diagnostic is only evidence that current generic runtime now reaches verifier rather than timing out.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `45G` with `63` retained `run-*` directories. Prune stale retained runs after this diagnostic is committed.
+
+## 2026-05-28 Explicit Test-File Validation Warning
+
+Change:
+
+- Extended the generic narrow-validation detector to treat explicit test node selectors and concrete test-file paths as selected checks.
+- Examples include `pytest tests/test_x.py::Test::case` and `npm test -- tests/foo.test.js`.
+- These commands now warn that validation is narrow and do not clear pending patch validation.
+- This is generic validation hygiene for ordinary coding tasks; it does not mention SWE-bench, task IDs, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `36` tests.
+- Project benchmark `091-command-router-refactor`: passed in `153756ms`, log `/tmp/smith/2026-05-28T21-06-45-862Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-AEOEqb/home/.smith/runs/2026-05-28T21-04-12-609Z.trace`.
+- Target SWE rerun `009-internetarchive-openlibrary`: failed after verifier in `707121ms`, log `/tmp/smith/2026-05-28T21-18-37-860Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`, trace `.smith-bench/run-pts0tb/home/.smith/runs/2026-05-28T21-06-51-722Z.trace`.
+
+Decision:
+
+- Keep the change because focused tests and the representative project task passed, and the target trace shows the warning/rejection path exercised.
+- Do not count `009` as recovered. The target rerun still failed on two `test_parse.py` cases after broader local validation.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `45G` with `65` retained `run-*` directories. Prune stale retained runs after this milestone is committed and the useful trace/log paths are preserved.
