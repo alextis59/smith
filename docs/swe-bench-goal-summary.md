@@ -1373,3 +1373,25 @@ Decision:
 - Do not count `005` as recovered: the verifier still failed on compile errors from an incomplete `Forwarder` refactor (`cfg` and `clientCredentials` fields missing).
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `15G` with `22` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.
+
+## 2026-05-28 Benchmark Headroom Retune
+
+Change:
+
+- Retuned benchmark-derived `--max-run-ms` from 65% to 75% of `--timeout-ms`.
+- Raised the benchmark-derived provider request timeout cap from `90000ms` to `180000ms`.
+- The provider timeout still derives from the benchmark timeout, keeps the 20% ratio and `30000ms` floor, and is skipped when the caller explicitly supplies `--provider-timeout-ms`.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/benchmark.test.ts`: passed `22` tests.
+- Project benchmark `091-command-router-refactor`: passed twice after the ratio retune; latest passed in `184995ms`, log `/tmp/smith/2026-05-28T14-16-19-930Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-rDJwpQ/home/.smith/runs/2026-05-28T14-13-15-151Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `724213ms`, log `/tmp/smith/2026-05-28T14-28-31-124Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-T1tCnn/home/.smith/runs/2026-05-28T14-16-41-486Z.trace`.
+
+Decision:
+
+- Keep the retune because the `90000ms` provider cap caused an early provider-timeout failure on `005`, while `180000ms` restored verifier-backed evidence without breaking the representative local benchmark.
+- Do not count `005` as recovered: verifier still fails on incomplete `Forwarder` changes (`cfg` and `clientCredentials` fields missing).
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `20G` with `28` retained `run-*` directories. Prune stale retained runs after recorded evidence has been committed.

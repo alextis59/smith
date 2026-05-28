@@ -229,11 +229,11 @@ total_tokens: 320
       "--model",
       "fake",
       "--max-run-ms",
-      "65000",
+      "75000",
       "--provider-timeout-ms",
       "30000"
     ]);
-    expect(smithArgsWithBenchmarkMaxRun(["--model", "fake"], 900_000)).toContain("90000");
+    expect(smithArgsWithBenchmarkMaxRun(["--model", "fake"], 900_000)).toContain("180000");
     expect(smithArgsWithBenchmarkMaxRun(["--max-run-ms", "123"], 100_000)).toEqual([
       "--max-run-ms",
       "123",

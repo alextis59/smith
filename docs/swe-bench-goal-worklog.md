@@ -5096,3 +5096,101 @@ Decision:
 - Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `15G` with `22` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace/diff evidence is copied into the logs.
+
+## 2026-05-28 Change: Retune Benchmark Headroom
+
+Context:
+
+- The prior milestone set benchmark-derived `--max-run-ms` at 65% of the outer `--timeout-ms` and capped derived provider requests at `90000ms`.
+- Rerun evidence on `005` showed that `90000ms` was too low for a large SWE task: Smith exited before verifier with `smith: provider request timed out after 90000ms`.
+- The 65% Smith run budget also caused Smith to block earlier than desired on `005`; now that provider calls are independently bounded, some wrapper headroom can safely move back to Smith work time.
+
+Change:
+
+- `src/benchmark/runner.ts`:
+  - changed `BENCHMARK_SMITH_MAX_RUN_RATIO` from `0.65` to `0.75`;
+  - changed `BENCHMARK_PROVIDER_TIMEOUT_CAP_MS` from `90000` to `180000`;
+  - kept the generic 20% provider-timeout ratio and `30000ms` floor;
+  - still preserves caller overrides for `--max-run-ms` and `--provider-timeout-ms`.
+- `tests/benchmark.test.ts`: updated expected derived arguments.
+- `docs/benchmarks.md`: updated the documented derived `--max-run-ms` ratio.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/benchmark.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Benchmark tests passed: `22` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed after 75% ratio:
+
+- First validation after ratio retune passed in `196246ms`.
+- Log: `/tmp/smith/2026-05-28T14-05-31-742Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-9Slr9b/home/.smith/runs/2026-05-28T14-02-15-710Z.trace`.
+
+Observed after provider cap retune:
+
+- Passed in `184995ms`.
+- Log: `/tmp/smith/2026-05-28T14-16-19-930Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-rDJwpQ/home/.smith/runs/2026-05-28T14-13-15-151Z.trace`.
+- Usage: `64998` total tokens.
+
+Target SWE rerun after 75% ratio but before provider cap retune:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `418324ms`.
+- stderr: `smith: provider request timed out after 90000ms`.
+- Log: `/tmp/smith/2026-05-28T14-12-36-719Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-rrP2P5/home/.smith/runs/2026-05-28T14-05-45-319Z.trace`.
+
+Target SWE rerun after provider cap retune:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `724213ms`.
+- Log: `/tmp/smith/2026-05-28T14-28-31-124Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-T1tCnn/home/.smith/runs/2026-05-28T14-16-41-486Z.trace`.
+- Sandbox: `.smith-bench/run-T1tCnn`.
+- Usage: `1620715` total tokens.
+
+Verifier evidence:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:378:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:541:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:574:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+lib/kube/proxy/forwarder_test.go:611:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+lib/kube/proxy/forwarder_test.go:641:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+```
+
+Decision:
+
+- Keep the benchmark headroom retune because it is generic and converts the latest `005` run from provider-timeout failure back to verifier-backed failure while preserving local benchmark pass.
+- Do not count `005` as recovered.
+- Current strict targeted evidence remains `6/10`: `001`, `002`, `003`, `004`, `007`, and `008`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `20G` with `28` retained `run-*` directories. Prune stale retained runs after this milestone is committed and any needed trace/diff evidence is copied into the logs.
