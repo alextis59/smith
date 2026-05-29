@@ -610,13 +610,17 @@ function changedFilesAreOnlySmithMemory(changedFiles: string[]): boolean {
   return changedFiles.length > 0 && changedFiles.every(isRootSmithMemoryFile);
 }
 
-async function trackedGitChangeSet(cwd: string): Promise<Set<string> | undefined> {
+async function trackedGitChangeSet(cwd: string, options: { includeUntracked?: boolean } = {}): Promise<Set<string> | undefined> {
   try {
-    const { stdout } = await execFileAsync("git", ["status", "--porcelain=v1", "--untracked-files=no"], {
-      cwd,
-      timeout: 5_000,
-      maxBuffer: 1_000_000
-    });
+    const { stdout } = await execFileAsync(
+      "git",
+      ["status", "--porcelain=v1", options.includeUntracked ? "--untracked-files=all" : "--untracked-files=no"],
+      {
+        cwd,
+        timeout: 5_000,
+        maxBuffer: 1_000_000
+      }
+    );
     return new Set(
       stdout
         .split("\n")
@@ -637,6 +641,10 @@ function changedTrackedFiles(before: Set<string> | undefined, after: Set<string>
 function changedTrackedTestFiles(changes: Set<string> | undefined): string[] {
   if (!changes) return [];
   return [...changes].filter(isLikelyTestFilePath).sort();
+}
+
+function changedSourceFiles(changes: string[]): string[] {
+  return changes.filter((path) => !isLikelyTestFilePath(path) && !isRootSmithMemoryFile(path)).sort();
 }
 
 function formatChangedFiles(changedFiles: string[]): string {
@@ -708,8 +716,9 @@ async function runShellCommandTool(
         : requestedTimeoutMs;
   const result = await parentContext.shell.run(command, timeoutMs);
   const trackedChangesAfter = await trackedGitChangeSet(parentContext.options.cwd);
+  const allChangesAfter = await trackedGitChangeSet(parentContext.options.cwd, { includeUntracked: true });
   const runChangedFiles = changedTrackedFiles(trackedChangesBefore, trackedChangesAfter);
-  const dirtyTestFiles = changedTrackedTestFiles(trackedChangesAfter);
+  const dirtyTestFiles = changedTrackedTestFiles(allChangesAfter);
   const rawTerminalOutput = result.timedOut
     ? formatTimeoutOutput(result.command, result.elapsedMs, result.lastOutput)
     : formatTerminalOutput(result.output, result.exitCode);
@@ -730,6 +739,15 @@ async function runShellCommandTool(
     validationMissesChangedSourceFiles(command, parentContext.pendingValidationFiles);
   const narrowValidation =
     validationCommand && !noOpValidation && !failedValidation && !uncoveredValidation && isNarrowValidationCommand(command);
+  const testModifiedValidation =
+    validationCommand &&
+    parentContext.unvalidatedTaskPatch &&
+    !noOpValidation &&
+    !failedValidation &&
+    !cachedValidation &&
+    !uncoveredValidation &&
+    changedSourceFiles(parentContext.pendingValidationFiles).length > 0 &&
+    dirtyTestFiles.length > 0;
   let annotatedTerminalOutput = rawTerminalOutput;
   if (noOpValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.`;
@@ -743,7 +761,10 @@ async function runShellCommandTool(
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command selected a subset of checks. Any pending task patch is only narrowly validated; run a broader package or project test, build, lint, typecheck, check, or verify command before finish when practical.`;
   }
   if (validationCommand && !noOpValidation && !failedValidation && dirtyTestFiles.length > 0) {
-    annotatedTerminalOutput = `${annotatedTerminalOutput}\nValidation warning: tracked test files are currently modified: ${formatChangedFiles(dirtyTestFiles)}. Passing results may reflect those edited tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.`;
+    annotatedTerminalOutput = `${annotatedTerminalOutput}\nValidation warning: test files are currently modified or untracked: ${formatChangedFiles(dirtyTestFiles)}. Passing results may reflect those edited tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.`;
+  }
+  if (testModifiedValidation) {
+    annotatedTerminalOutput = `${annotatedTerminalOutput}\nValidation warning: a source patch is still pending validation because this passing command ran while test files were modified or newly added. Re-run a relevant validation after restoring unrelated test edits, or finish with an explicit pending-validation note if the edited tests are intentional.`;
   }
   if (runChangedFiles.length > 0) {
     annotatedTerminalOutput = `${annotatedTerminalOutput}\nRun command changed tracked files: ${formatChangedFiles(runChangedFiles)}\nTask patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical.`;
@@ -768,12 +789,24 @@ async function runShellCommandTool(
     totalUsage,
     ...(noOpValidation ? { noOpValidationRun: true } : {}),
     ...(validationCommand && !noOpValidation ? { nonNoOpValidationRun: true } : {}),
-    ...(postDeadlineValidationRun && !noOpValidation && !failedValidation && !cachedValidation && !uncoveredValidation && !narrowValidation
+    ...(postDeadlineValidationRun &&
+    !noOpValidation &&
+    !failedValidation &&
+    !cachedValidation &&
+    !uncoveredValidation &&
+    !narrowValidation &&
+    !testModifiedValidation
       ? { postDeadlineValidationRunConsumed: true }
       : {}),
     ...(postDeadlineInspectionRun && inspectionCommand && !validationCommand ? { postDeadlineInspectionRunConsumed: true } : {}),
     ...(postDeadlineValidationRun && failedValidation ? { postDeadlineValidationFailed: true } : {}),
-    ...(validationCommand && !noOpValidation && !failedValidation && !cachedValidation && !uncoveredValidation && !narrowValidation
+    ...(validationCommand &&
+    !noOpValidation &&
+    !failedValidation &&
+    !cachedValidation &&
+    !uncoveredValidation &&
+    !narrowValidation &&
+    !testModifiedValidation
       ? { validationRunExecuted: true }
       : {}),
     ...(runChangedFiles.length > 0 ? { changedFiles: runChangedFiles } : {})
@@ -855,7 +888,7 @@ function goPackageCoversDir(pkg: string, dir: string): boolean {
 }
 
 function isLikelyInspectionCommand(command: string): boolean {
-  return /^(?:env\s+)?(?:sed|cat|less|more|head|tail|grep|rg|find|ls|pwd|wc|nl)\b/i.test(command.trim());
+  return /^(?:env\s+)?(?:sed|cat|less|more|head|tail|grep|rg|find|ls|pwd|wc|nl|printf|echo)\b/i.test(command.trim());
 }
 
 function isNoOpValidationOutput(output: string): boolean {

@@ -2122,3 +2122,27 @@ Decision:
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Next generic hypothesis: Smith benefits from failed-validation inspection guidance, but still spends too long iterating large hand-written parser patches near the timeout. Any follow-up change must stay generic, likely around validation-loop pacing or source-compatible wrapper preservation, not Vuls-specific parser rules.
 - `.smith-bench` is about `6.8G` with `20` retained `run-*` directories. Continue periodic cleanup after evidence is copied forward.
+
+## 2026-05-29 Validation Integrity For Modified Tests
+
+Change:
+
+- Smith now includes untracked test files when checking whether validation ran against modified tests.
+- A source patch is no longer marked fully validated when the passing validation command ran while test files were modified or newly added.
+- Simple `printf` and `echo` label segments are treated as inspection segments, so commands like `grep ... && printf '--- test harness ---' && sed ...` are not misclassified as validation just because a label contains the word `test`.
+- This is generic validation bookkeeping for normal coding tasks; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `52` tests.
+- Relevant project benchmark `025-command-alias-support`: passed in `231396ms`, log `/tmp/smith/2026-05-29T08-34-36-004Z-smith-025-command-alias-support.json`, trace `.smith-bench/run-L8rIU4/home/.smith/runs/2026-05-29T08-30-44-997Z.trace`.
+- First target diagnostic before the `printf`/`echo` classifier fix: `008-future-architect-vuls` timed out after `906036ms`, log `/tmp/smith/2026-05-29T08-29-01-966Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-LJ1R5s/home/.smith/runs/2026-05-29T08-13-56-645Z.trace`.
+- Target SWE rerun after the classifier fix: `008-future-architect-vuls` passed in `864126ms`, log `/tmp/smith/2026-05-29T08-49-06-027Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-0KN9kr/home/.smith/runs/2026-05-29T08-34-42-829Z.trace`.
+- The external verifier ran selected `TestParse` and reported `{"passed": 1}`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, passed a relevant project benchmark, and produced a clean `008` recovery under the raw-prompt path.
+- Current strict targeted evidence remains `6/10`: baseline full-run passes `002`, `004`, `007` plus recovered `001`, `003`, and `008`. One more Codex-passed Smith failure, likely `005` or `010`, is still needed before a full SWE-bench Pro run is justified.
+- `.smith-bench` is about `7.0G` with `24` retained `run-*` directories. Continue periodic cleanup after evidence is copied forward.

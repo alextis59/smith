@@ -1452,6 +1452,68 @@ max_run_ms = 1
     expect(toolNames(provider.requests[2].body)).toEqual(["patch", "finish"]);
   });
 
+  it("does not classify printf-labeled inspection pipelines as validation", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "run",
+        arguments: {
+          command: "grep -n old tests/note.test.js | head -1 && printf '%s\\n' '--- test harness ---' && sed -n '1p' tests/note.test.js",
+          timeout_ms: 5000
+        }
+      },
+      { name: "finish", arguments: { message: "done" } },
+      { name: "finish", arguments: { message: "Changed note.txt; validation pending after inspection only." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-printf-inspection-pipeline-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "tests", "note.test.js"), "old test\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and inspect"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("validation pending");
+    expect(provider.requests).toHaveLength(4);
+    expect(userMessages(provider.requests[2].body)).toContain("--- test harness ---");
+    expect(userMessages(provider.requests[2].body)).not.toContain("Validation warning");
+    expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a task patch is still pending validation");
+  });
+
   it("allows one bounded validation run when an unvalidated patch reaches the deadline", async () => {
     const provider = await startFakeProvider([
       {
@@ -2186,7 +2248,7 @@ max_turns = 30
     expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a task patch is still pending validation");
   });
 
-  it("warns when validation runs with modified tracked test files", async () => {
+  it("keeps validation pending when source validation runs with modified or untracked test files", async () => {
     const provider = await startFakeProvider([
       {
         name: "patch",
@@ -2197,12 +2259,15 @@ max_turns = 30
             "@@",
             "-old",
             "+new",
+            "*** Add File: tests/new.test.js",
+            "+console.log('new test');",
             "*** End Patch"
           ].join("\n")
         }
       },
       { name: "run", arguments: { command: "npm test", timeout_ms: 5000 } },
-      { name: "finish", arguments: { message: "done" } }
+      { name: "finish", arguments: { message: "done" } },
+      { name: "finish", arguments: { message: "Changed note.txt; validation pending because tests are modified." } }
     ]);
     servers.push(provider.server);
 
@@ -2211,8 +2276,7 @@ max_turns = 30
     mkdirSync(join(cwd, ".smith"), { recursive: true });
     mkdirSync(join(cwd, "tests"), { recursive: true });
     writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
-    writeFileSync(join(cwd, "tests", "note.test.js"), "console.log('checked');\n", "utf8");
-    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node tests/note.test.js" } }), "utf8");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node tests/new.test.js" } }), "utf8");
     writeFileSync(
       join(cwd, ".smith", "config.toml"),
       `default_profile = "fake"
@@ -2234,18 +2298,20 @@ max_turns = 30
     await execFileAsync("git", ["-c", "user.name=Smith Test", "-c", "user.email=smith@example.test", "commit", "-m", "init"], {
       cwd
     });
-    writeFileSync(join(cwd, "tests", "note.test.js"), "console.log('changed test');\n", "utf8");
 
     const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
       env: { ...process.env, HOME: home },
       timeout: 10_000
     });
 
-    expect(stdout).toContain("done");
-    expect(provider.requests).toHaveLength(3);
-    expect(userMessages(provider.requests[2].body)).toContain("changed test");
-    expect(userMessages(provider.requests[2].body)).toContain("Validation warning: tracked test files are currently modified");
-    expect(userMessages(provider.requests[2].body)).toContain("tests/note.test.js");
+    expect(stdout).toContain("validation pending");
+    expect(provider.requests).toHaveLength(4);
+    expect(userMessages(provider.requests[1].body)).toContain("Test files changed: tests/new.test.js");
+    expect(userMessages(provider.requests[2].body)).toContain("new test");
+    expect(userMessages(provider.requests[2].body)).toContain("Validation warning: test files are currently modified or untracked");
+    expect(userMessages(provider.requests[2].body)).toContain("tests/new.test.js");
+    expect(userMessages(provider.requests[2].body)).toContain("a source patch is still pending validation");
+    expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a task patch is still pending validation");
   });
 
   it("keeps validation pending when go test reuses cached results", async () => {

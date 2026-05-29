@@ -8736,3 +8736,109 @@ Decision:
 - The current validation and post-failure inspection improvements appear to help Smith iterate through concrete failures, but the task still times out before a correct patch.
 - Next generic hypothesis: Smith needs better validation-loop pacing after repeated failed validations, or a generic way to preserve compatibility wrappers/signatures during parser/helper refactors. Any improvement must be applicable to normal code tasks and avoid benchmark-specific or Vuls-specific instructions.
 - `.smith-bench` cleanup status after this run: `6.8G` with `20` retained `run-*` directories. Continue pruning stale retained sandboxes after evidence is copied into these logs.
+
+## 2026-05-29 Change: Modified-Test Validation Integrity
+
+Reasoning:
+
+- The latest verifier-reaching `008` failure showed Smith declaring a source patch validated while the retained workspace also had modified/generated test files:
+
+```text
+M  contrib/trivy/parser/v2/parser_test.go
+ M contrib/trivy/pkg/converter.go
+?? contrib/trivy/pkg/converter_test.go
+```
+
+- Existing Smith behavior warned only about tracked modified tests and still cleared `unvalidatedTaskPatch`.
+- That missed untracked newly added tests and let a passing local command mark a source patch fully validated even when the command ran against edited tests.
+- This is a generic validation-integrity problem for ordinary code tasks too: validation evidence is weaker when source changes are tested only in a workspace with changed tests.
+
+Implementation:
+
+- `trackedGitChangeSet()` now accepts `includeUntracked`.
+- Validation-time dirty test detection uses `git status --untracked-files=all`, while run-command changed-file detection still uses tracked files only so generated/untracked outputs do not become accidental source patches.
+- If a source patch is pending and a validation command passes while test files are modified or untracked, Smith now:
+  - warns that test files are modified or untracked;
+  - warns that the source patch remains pending validation;
+  - does not set `validationRunExecuted`;
+  - does not consume the one post-deadline validation slot as cleanly successful.
+- While diagnosing the first target rerun, found a second generic classifier bug: `grep ... && printf '--- test harness ---' && sed ...` was misclassified as validation because `printf` was not considered an inspection segment and the label contained `test`.
+- Added `printf` and `echo` to inspection segment classification.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `52` tests.
+- Added integration coverage:
+  - `does not classify printf-labeled inspection pipelines as validation`
+  - updated dirty-test validation coverage so source validation remains pending when a source patch adds an untracked test file.
+
+Project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/025-command-alias-support --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `231396ms`.
+- Log: `/tmp/smith/2026-05-29T08-34-36-004Z-smith-025-command-alias-support.json`.
+- Trace: `.smith-bench/run-L8rIU4/home/.smith/runs/2026-05-29T08-30-44-997Z.trace`.
+- Sandbox: `.smith-bench/run-L8rIU4`.
+- Verifier command: `bash /task/verify.sh`.
+- Verifier exit code: `0`.
+- Note: this local task intentionally changed `test.js` as part of its solution and still passed the external project verifier, so the guard did not prevent legitimate benchmark completion.
+
+First target diagnostic before the `printf`/`echo` classifier fix:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by outer timeout after `906036ms`.
+- Log: `/tmp/smith/2026-05-29T08-29-01-966Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+- Trace: `.smith-bench/run-LJ1R5s/home/.smith/runs/2026-05-29T08-13-56-645Z.trace`.
+- Sandbox: `.smith-bench/run-LJ1R5s`.
+- Retained workspace status had only `?? SMITH.TASK.md`; no source patch had been applied before timeout.
+- Trace evidence showed the false validation warning on an inspection pipeline with a `printf` label containing `test`, motivating the generic classifier fix.
+
+Target SWE rerun after the classifier fix:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Passed in `864126ms`.
+- Log: `/tmp/smith/2026-05-29T08-49-06-027Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+- Trace: `.smith-bench/run-0KN9kr/home/.smith/runs/2026-05-29T08-34-42-829Z.trace`.
+- Sandbox: `.smith-bench/run-0KN9kr`.
+- Usage: `1782042` total tokens.
+- Smith validated with:
+
+```text
+go test -count=1 ./contrib/trivy/pkg ./contrib/trivy/parser/v2 ./models
+```
+
+- External verifier ran selected `TestParse` and reported:
+
+```text
+{"passed": 1}
+```
+
+Decision:
+
+- Keep the change. It is generic validation bookkeeping and command classification, not prompt coaching or benchmark-specific logic.
+- Count `008` as cleanly recovered under the raw-prompt path, but this does not increase the strict evidence above the previously tracked `6/10` because `008` was already one of the recovered target tasks in the current accounting. It does make that evidence current again after intervening failures.
+- Full run is still not justified. Need one more Codex-passed Smith failure, likely `005` or `010`, to recover before spending a full suite run.
+- `.smith-bench` cleanup status after this run: `7.0G` with `24` retained `run-*` directories. Continue pruning stale retained sandboxes after evidence is copied into these logs; keep `run-0KN9kr` for current successful `008` evidence and any active diagnostic sandboxes.
