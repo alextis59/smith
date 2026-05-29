@@ -2101,6 +2101,67 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).toContain("Validation failed: any pending task patch is not validated");
   });
 
+  it("adds source compatibility guidance for missing declarations in failed validation", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/parser.ts",
+            "@@",
+            "-export const value = 1;",
+            "+export const value = 2;",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "run",
+        arguments: {
+          command: "test -e definitely-missing || (printf 'src/parser.test.ts:10: parser.parseLegacy does not exist\\n' >&2; exit 1)",
+          timeout_ms: 5000
+        }
+      },
+      { name: "finish", arguments: { message: "blocked" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-missing-declaration-validation-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src", "parser.ts"), "export const value = 1;\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("blocked");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[2].body)).toContain("Validation failed: any pending task patch is not validated");
+    expect(userMessages(provider.requests[2].body)).toContain(
+      "Compatibility hint: validation reports missing declarations, fields, methods, or symbols after source changes"
+    );
+  });
+
   it("tracks edits made by run commands as pending validation", async () => {
     const provider = await startFakeProvider([
       {

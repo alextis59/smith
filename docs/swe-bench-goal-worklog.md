@@ -9510,3 +9510,76 @@ Decision:
 - Rejected idea: adding SWE/Vuls/Alpine-specific guidance or prompt text. The user explicitly ruled out benchmark-specific prompt edits as cheating.
 - Next generic direction should focus on source-side capability, not more benchmark-aware prompt wording. The active failure shape is compatibility reconstruction from test/caller errors under time pressure.
 - Cleanup note: `.smith-bench` is now about `19G` with `39` retained `run-*` directories. Add periodic cleanup to the loop checklist: after preserving the current log/trace/sandbox IDs in these notes, prune stale retained sandboxes so `.smith-bench` does not grow to several GB beyond the useful evidence set.
+
+## 2026-05-29 Change: Missing Declaration Validation Hint
+
+Reasoning:
+
+- Several failed target attempts exposed a generic source-compatibility failure shape: validation reports missing functions, fields, methods, or symbols after source edits.
+- Smith already has a patch-time warning for removed declarations, but that does not help when the missing symbol is discovered only from compiler/test output.
+- A generic failed-validation annotation can steer ordinary coding tasks toward caller search and compatibility wrappers without changing prompts or benchmark logic.
+- This change remains outside benchmark-specific prompting. It does not alter task prompts, selected tests, parsers, run scripts, scoring, verifier logic, or benchmark result parsing.
+
+Implementation:
+
+- `src/loop.ts` now detects missing declaration/member/symbol wording in failed validation output when a source patch is pending.
+- It appends:
+
+```text
+Compatibility hint: validation reports missing declarations, fields, methods, or symbols after source changes. Search for the referenced names and existing callers, then add or restore source declarations or compatibility wrappers when appropriate.
+```
+
+- Added integration coverage where a source patch is followed by a failed validation command whose stderr says `parser.parseLegacy does not exist`.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `58` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `134485ms`.
+- Log: `/tmp/smith/2026-05-29T11-37-12-346Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-nprULK/home/.smith/runs/2026-05-29T11-34-58-109Z.trace`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `643176ms`.
+- Error: `smith: shell is closed`.
+- Log: `/tmp/smith/2026-05-29T11-48-01-933Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-pFhVQe/home/.smith/runs/2026-05-29T11-37-19-456Z.trace`.
+- Retained sandbox: `.smith-bench/run-pFhVQe`.
+- Usage: `1176122` total tokens.
+- Retained workspace status was clean; no source patch was left behind.
+- Exact searches found no `Compatibility hint:` and no `Validation failed: any pending task patch` in the trace, confirming the new hint was not exercised.
+- Trace shape: Smith spent the run on extensive inspection, including broad module-cache searches, then attempted another inspection command after the 75% deadline reminder. The wrapper ended with `smith: shell is closed` before any patch or verifier result.
+
+Decision:
+
+- Keep the change because it is generic, covered by focused integration tests, build-clean, and project-validation clean.
+- Do not count `010` as recovered. This target run made no patch, reached no validation, and produced no verifier result.
+- Current strict evidence remains `6/10`: baseline full-run passes `002`, `004`, and `007`, plus targeted recoveries for `001`, `003`, and `008`.
+- Full SWE-bench Pro is still not justified.
+- Rejected idea: using the target-specific Alpine/Vuls details from the trace as prompt text. That would violate the user's benchmark-specific prompt constraint.
+- Next generic direction: reduce unbounded inspection after a clear task and deadline. A general loop-level cap or stronger action reminder after repeated inspections may help ordinary tasks avoid spending the whole run on reconnaissance.
+- Cleanup note: `.smith-bench` is now about `19G` with `41` retained `run-*` directories. Preserve `run-nprULK` and `run-pFhVQe` for this milestone, then prune stale retained sandboxes soon.

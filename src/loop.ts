@@ -813,6 +813,13 @@ async function runShellCommandTool(
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.`;
   } else if (failedValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation failed: any pending task patch is not validated as complete. Inspect referenced files or failure locations before follow-up patches, then fix the failure, run a passing validation command, or finish with the blocker.`;
+    if (
+      parentContext.unvalidatedTaskPatch &&
+      changedSourceFiles(parentContext.pendingValidationFiles).length > 0 &&
+      failedValidationReportsMissingDeclarations(rawTerminalOutput)
+    ) {
+      annotatedTerminalOutput = `${annotatedTerminalOutput}\nCompatibility hint: validation reports missing declarations, fields, methods, or symbols after source changes. Search for the referenced names and existing callers, then add or restore source declarations or compatibility wrappers when appropriate.`;
+    }
   } else if (cachedValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command reused cached test results while a task patch is pending. Rerun validation with caching disabled, for example with an appropriate no-cache or force-recheck option, before treating the patch as validated.`;
   } else if (uncoveredValidation) {
@@ -957,6 +964,12 @@ function isNoOpValidationOutput(output: string): boolean {
 
 function isCachedValidationOutput(command: string, output: string): boolean {
   return /\bgo\s+test\b/i.test(command) && /\bok\s+\S+\s+\(cached\)/i.test(output);
+}
+
+function failedValidationReportsMissingDeclarations(output: string): boolean {
+  return /\b(?:undefined|not defined|is not defined|cannot find name|cannot find symbol|unresolved reference|unresolved symbol|symbol not found|no field or method|no member named|has no member|does not exist|unknown field|undefined:)\b/i.test(
+    output
+  );
 }
 
 function isNarrowValidationCommand(command: string): boolean {

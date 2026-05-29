@@ -2270,3 +2270,25 @@ Decision:
 - Do not count `010` as recovered. The latest target run timed out before verifier completion; the new guard did not appear to fire before timeout.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `19G` with `39` retained `run-*` directories. Add regular cleanup to the operating checklist: preserve current evidence paths, then prune stale retained sandboxes before the folder grows by several more GB.
+
+## 2026-05-29 Missing Declaration Validation Hint
+
+Change:
+
+- Failed validation output now adds a generic compatibility hint when a pending source patch is followed by missing declaration/member/symbol errors.
+- The hint asks Smith to search referenced names and existing callers, then add or restore source declarations or compatibility wrappers when appropriate.
+- This is generic compiler/test failure recovery; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `58` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `134485ms`, log `/tmp/smith/2026-05-29T11-37-12-346Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-nprULK/home/.smith/runs/2026-05-29T11-34-58-109Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed in `643176ms` with `smith: shell is closed`, log `/tmp/smith/2026-05-29T11-48-01-933Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-pFhVQe/home/.smith/runs/2026-05-29T11-37-19-456Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and passed representative project validation.
+- Do not count `010` as recovered. This target run did not patch files or reach validation, so the new hint was not exercised.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `19G` with `41` retained `run-*` directories. Cleanup is now part of the explicit next-step checklist after preserving `run-nprULK` and `run-pFhVQe`.
