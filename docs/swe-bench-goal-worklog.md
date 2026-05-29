@@ -10305,7 +10305,7 @@ Decision:
 User constraint update:
 
 - User asked to leave notes about periodically cleaning `.smith-bench` so it does not grow to several GB.
-- The summary maintenance notes now include a current cleanup reminder. Current measured size after this target sequence: `13G` and `16` retained `run-*` directories.
+- The summary maintenance notes now include a current cleanup reminder. Current measured size after this target sequence: `15G` and `18` retained `run-*` directories.
 - Do not prune yet without preserving current evidence: `run-eCJp3v`, `run-RGo0gx`, `run-suFFM5`, plus earlier active evidence sandboxes referenced above.
 
 Current-code diagnostic before edit:
@@ -10429,3 +10429,83 @@ Decision:
 - Do not count `005` as recovered.
 - Strict targeted evidence remains `6/10`; no full SWE-bench Pro run.
 - Next candidate improvement should be generic validation honesty around dirty test files. Evidence: both `005` runs had staged `forwarder_test.go` edits, while external verification still failed against selected tests; local passing validation with modified tests can mislead Smith.
+
+## 2026-05-29 Worklog: Keep Validation Pending With Unrequested Dirty Tests
+
+Hypothesis:
+
+- Existing dirty-test validation logic only kept source patches pending when changed source files were still in the pending validation set.
+- In `005`, the retained sandbox repeatedly had staged `lib/kube/proxy/forwarder_test.go` edits, and local validation could look successful against that edited state.
+- Generic improvement: if validation passes while test files are dirty and the user did not ask to edit tests, do not clear pending validation even if the pending changed files are only tests.
+
+Implementation:
+
+- Added `unrequestedTestModifiedValidation` in `src/loop.ts`.
+- When it is true:
+  - Smith appends a validation warning explaining that the task patch is still pending because test files are dirty and unrequested.
+  - `validationRunExecuted` is not set, so `unvalidatedTaskPatch` remains true.
+  - post-deadline validation slots are not consumed as successful completion.
+- Added integration coverage for a patch that only adds `tests/new.test.js`, runs `npm test`, then tries to finish as done.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "unrequested test files"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- `npm run build`: passed.
+- Focused `unrequested test files`: passed `1` selected test.
+- Full integration file: passed `67` tests in `25885ms`.
+- Representative `091-command-router-refactor`: passed in `160714ms`.
+- Representative log: `/tmp/smith/2026-05-29T19-03-54-035Z-smith-091-command-router-refactor.json`.
+- Representative trace: `.smith-bench/run-3GjAim/home/.smith/runs/2026-05-29T19-01-13-555Z.trace`.
+
+Target rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed verifier in `869307ms`.
+- Log: `/tmp/smith/2026-05-29T19-18-30-598Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-asx8SW/home/.smith/runs/2026-05-29T19-04-09-552Z.trace`.
+- Retained workspace status:
+
+```text
+ M lib/kube/proxy/forwarder.go
+M  lib/kube/proxy/forwarder_test.go
+ M lib/service/kubernetes.go
+```
+
+- Unstaged source diff:
+
+```text
+ lib/kube/proxy/forwarder.go | 23 ++++++++++++++---------
+ lib/service/kubernetes.go   |  4 ++++
+ 2 files changed, 18 insertions(+), 9 deletions(-)
+```
+
+- Staged test diff:
+
+```text
+ lib/kube/proxy/forwarder_test.go | 80 ++++++++++------------------------------
+ 1 file changed, 20 insertions(+), 60 deletions(-)
+```
+
+- External verifier still failed with the same `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility errors.
+- Trace search for `Validation warning: test files are currently modified`, `a task patch is still pending validation because this passing command ran while test files`, and `Test files changed` returned no matches.
+
+Decision:
+
+- Keep the change because it closes a generic validation-state gap and passed all required local validation.
+- It did not address the observed `005` trace path, likely because the dirty test state existed by finish time without passing through the validation-warning branch.
+- Next candidate improvement: a finish-time dirty-test guard that checks current git state before accepting completion/validation claims when tests are dirty and the user did not request test edits.
+- Do not count `005` as recovered. Strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Cleanup note: `.smith-bench` is now about `15G` with `18` retained `run-*` directories. Preserve `run-asx8SW` and `run-3GjAim` for this milestone; prune stale older run sandboxes before another long sequence.

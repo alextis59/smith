@@ -24,7 +24,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - `.smith-bench` grows quickly because many targeted runs keep full sandboxes, traces, and result artifacts. Periodically check its size with `du -sh .smith-bench` and the retained run count with `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l`.
 - After each useful failure has its command, log path, trace path, sandbox id, and relevant evidence copied into this summary/worklog, prune stale `.smith-bench/run-*` sandboxes that are no longer needed for diagnosis. Keep the raw result JSONs and any sandboxes that still contain unresolved evidence.
 - Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
-- 2026-05-29 note: after the latest targeted runs, `.smith-bench` is about `13G` with `16` retained `run-*` directories. Before starting another long target sequence, review and prune stale retained sandboxes whose evidence has already been copied into these logs.
+- 2026-05-29 note: after the latest targeted runs, `.smith-bench` is about `15G` with `18` retained `run-*` directories. Before starting another long target sequence, review and prune stale retained sandboxes whose evidence has already been copied into these logs.
 
 ## 2026-05-29 Milestone: Require External Blockers For Incomplete Requirement Finishes
 
@@ -58,6 +58,36 @@ Decision:
 - Keep the change because it closes a generic false-finish path and passed focused/full integration plus the representative project benchmark.
 - Do not count `005` as recovered. Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Next direction: investigate a generic way to keep validation honest when test files are modified but the user did not request test edits, without adding SWE-specific or benchmark-specific instructions.
+
+## 2026-05-29 Milestone: Keep Validation Pending With Unrequested Dirty Tests
+
+Problem found:
+
+- `005-gravitational-teleport` repeatedly left `lib/kube/proxy/forwarder_test.go` modified/staged while local validation appeared successful, but the external verifier still failed against selected tests with missing source compatibility fields.
+- Smith already warned about dirty tests in some source-patch paths, but validation could still be treated as complete when the pending patch set was only test files.
+
+Change:
+
+- Passing validation no longer clears a pending task patch when test files are modified or untracked and the user did not explicitly ask to edit tests.
+- Added integration coverage for the only-test-files case.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "unrequested test files"`: passed.
+- `npm test -- tests/integration.test.ts`: passed `67` tests.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `160714ms`, log `/tmp/smith/2026-05-29T19-03-54-035Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-3GjAim/home/.smith/runs/2026-05-29T19-01-13-555Z.trace`.
+
+Target evidence:
+
+- Target `005` still failed verifier in `869307ms`, log `/tmp/smith/2026-05-29T19-18-30-598Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-asx8SW/home/.smith/runs/2026-05-29T19-04-09-552Z.trace`.
+- Retained workspace still had staged `lib/kube/proxy/forwarder_test.go` changes and source changes in `lib/kube/proxy/forwarder.go` / `lib/service/kubernetes.go`.
+- Trace search did not find the new dirty-test validation warning, so this change did not address the observed `005` path. The next generic direction is finish-time dirty-test detection, not more task-specific guidance.
+
+Decision:
+
+- Keep the change as a generic validation-integrity fix covered by tests and local benchmark validation.
+- Do not count `005` as recovered. Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 

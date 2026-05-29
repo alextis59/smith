@@ -871,6 +871,15 @@ async function runShellCommandTool(
     !uncoveredValidation &&
     changedSourceFiles(parentContext.pendingValidationFiles).length > 0 &&
     dirtyTestFiles.length > 0;
+  const unrequestedTestModifiedValidation =
+    validationCommand &&
+    parentContext.unvalidatedTaskPatch &&
+    !noOpValidation &&
+    !failedValidation &&
+    !cachedValidation &&
+    !uncoveredValidation &&
+    dirtyTestFiles.length > 0 &&
+    !promptExplicitlyRequestsTestEdits(parentContext.options.prompt);
   let annotatedTerminalOutput = rawTerminalOutput;
   if (noOpValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.`;
@@ -903,6 +912,9 @@ async function runShellCommandTool(
   if (testModifiedValidation) {
     annotatedTerminalOutput = `${annotatedTerminalOutput}\nValidation warning: a source patch is still pending validation because this passing command ran while test files were modified or newly added. Re-run a relevant validation after restoring unrelated test edits, or finish with an explicit pending-validation note if the edited tests are intentional.`;
   }
+  if (unrequestedTestModifiedValidation && !testModifiedValidation) {
+    annotatedTerminalOutput = `${annotatedTerminalOutput}\nValidation warning: a task patch is still pending validation because this passing command ran while test files were modified or newly added, and the user did not explicitly ask to edit tests. Restore unrelated test edits or preserve compatibility with existing tests before treating validation as complete.`;
+  }
   if (runChangedFiles.length > 0) {
     annotatedTerminalOutput = `${annotatedTerminalOutput}\nRun command changed tracked files: ${formatChangedFiles(runChangedFiles)}\nTask patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical.`;
   }
@@ -932,7 +944,8 @@ async function runShellCommandTool(
     !cachedValidation &&
     !uncoveredValidation &&
     !narrowValidation &&
-    !testModifiedValidation
+    !testModifiedValidation &&
+    !unrequestedTestModifiedValidation
       ? { postDeadlineValidationRunConsumed: true }
       : {}),
     ...(postDeadlineInspectionRun && inspectionCommand && !validationCommand ? { postDeadlineInspectionRunConsumed: true } : {}),
@@ -943,7 +956,8 @@ async function runShellCommandTool(
     !cachedValidation &&
     !uncoveredValidation &&
     !narrowValidation &&
-    !testModifiedValidation
+    !testModifiedValidation &&
+    !unrequestedTestModifiedValidation
       ? { validationRunExecuted: true }
       : {}),
     ...(runChangedFiles.length > 0 ? { changedFiles: runChangedFiles } : {})
