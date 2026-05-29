@@ -2427,3 +2427,29 @@ Decision:
 - Do not count `005` as recovered. Evidence improved from an early unvalidated blocker to a run that kept `run` available, ran `go test ./lib/service ./lib/events/filesessions ./lib/kube/proxy`, made a later source patch, then timed out before a final verifier result.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - `.smith-bench` is now about `28G` with `56` retained `run-*` directories. Cleanup should happen soon: preserve `run-w0btlq` and `run-AtY13d` for this milestone, then prune stale retained sandboxes with explicit approval.
+
+## 2026-05-29 Finish Guard Tightening for Available Validation
+
+Change:
+
+- Finish rejection now catches combined “no inspection/validation tool” claims when `run` is actually available.
+- Finish rejection now treats a prior read-only test/spec patch failure as still relevant even if a later completion claim omits the read-only detail.
+- This is generic finish-integrity behavior for ordinary coding tasks; it does not mention benchmark tasks, selected tests, scoring, result parsing, or target implementation details.
+
+Validation:
+
+- Approved cleanup pruned stale retained sandboxes from `.smith-bench`: `28G` / `56` runs down to `4.9G` / `8` runs before new validation.
+- Diagnostic current-code `010-future-architect-vuls` rerun before edits still failed verifier in `992376ms`, log `/tmp/smith/2026-05-29T17-35-17-175Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-ib0Jjd/home/.smith/runs/2026-05-29T17-18-45-656Z.trace`.
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "combined inspection-validation unavailable"`: passed `1` selected test.
+- `npm test -- tests/integration.test.ts -t "combined inspection-validation unavailable|omit an earlier read-only test"`: passed `2` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `65` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `199723ms`, log `/tmp/smith/2026-05-29T18-03-23-005Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-CCZuQc/home/.smith/runs/2026-05-29T18-00-03-548Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed by outer Docker timeout after `906067ms`, log `/tmp/smith/2026-05-29T18-18-44-474Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-mFbpeO/home/.smith/runs/2026-05-29T18-03-39-197Z.trace`.
+
+Decision:
+
+- Keep the change because it closes generic false-finish gaps with focused regression coverage and representative benchmark validation.
+- Do not count `010` as recovered. The target improved across diagnostics from an unused-import verifier failure to source-only scanner work, but the latest run timed out while repairing scanner parsing/test compatibility and patch-context mismatches.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- `.smith-bench` is now about `9.0G` with `13` retained `run-*` directories after the new runs. Preserve `run-ib0Jjd`, `run-xFserO`, `run-mFbpeO`, and `run-CCZuQc` for this milestone; prune stale runs again before another long sequence.

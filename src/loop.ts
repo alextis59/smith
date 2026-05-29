@@ -1196,8 +1196,6 @@ function shouldRejectCompletedReadOnlyTestPatchFinish(
 ): boolean {
   if (context.options.runtime.readOnly || !availableToolNames.includes("patch")) return false;
   if (!transcriptHasReadOnlyTestPatchFailure(context.transcript)) return false;
-  if (!/\b(?:read-only|readonly|not writable|permission)\b/i.test(message)) return false;
-  if (!/\b(?:test|tests|spec|specs|_test|\.test|\.spec)\b/i.test(message)) return false;
   if (finishAcknowledgesPendingValidation(message)) return false;
   return /\b(?:done|complete[sd]?|implemented|fixed|resolved|passes?|passing|validated|verified|compile[sd]?|builds?|works?)\b/i.test(
     message
@@ -1233,7 +1231,7 @@ function shouldRejectUnsupportedValidationUnavailableFinish(message: string, ava
   if (!/\b(?:not able|unable|cannot|can't|could not|couldn't|wasn'?t able|blocked|impossible)\b/i.test(message)) {
     return false;
   }
-  return /\b(?:only\s+(?:patch\s*(?:\/|,|\s+and\s+)\s*finish|finish\s*(?:\/|,|\s+and\s+)\s*patch)|no\s+(?:run|validation)\s+tool|run\s+(?:is\s+)?unavailable|no further tool)\b/i.test(
+  return /\b(?:only\s+(?:patch\s*(?:\/|,|\s+and\s+)\s*finish|finish\s*(?:\/|,|\s+and\s+)\s*patch)|no\s+(?:(?:inspection\s*\/\s*)?validation|run)\s+tools?|run\s+(?:is\s+)?unavailable|no further tool)\b/i.test(
     message
   ) || /\b(?:validation|test|build|lint|typecheck|check|verify)\s+(?:commands?|tooling)\s+(?:were|are|is|was)?\s*unavailable\b/i.test(message);
 }

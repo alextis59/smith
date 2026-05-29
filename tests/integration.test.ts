@@ -3049,6 +3049,52 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).toContain("checked");
   });
 
+  it("rejects combined inspection-validation unavailable finish claims when run is available", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "finish",
+        arguments: {
+          message:
+            "Blocked: I could not run a post-change validation because no inspection/validation tool is available now."
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "validated" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-inspection-validation-unavailable-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "printf checked" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "run validation"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("validated");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[1].body)).toContain("Finish rejected: run is currently available");
+    expect(userMessages(provider.requests[2].body)).toContain("checked");
+  });
+
   it("rejects actionable inspection blockers when run is available", async () => {
     const provider = await startFakeProvider([
       {
@@ -3182,6 +3228,70 @@ max_turns = 30
     servers.push(provider.server);
 
     const cwd = mkdtempSync(join(tmpdir(), "smith-readonly-test-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "tests", "readonly.test.js"), "old\n", "utf8");
+    chmodSync(join(cwd, "tests", "readonly.test.js"), 0o444);
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch readonly test"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Partial result");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[1].body)).toContain("The unwritable path appears to be a test or spec file");
+    expect(userMessages(provider.requests[2].body)).toContain("Finish rejected: a read-only test/spec patch failed");
+  });
+
+  it("rejects completed finish claims that omit an earlier read-only test patch failure", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: tests/readonly.test.js",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Implemented and verified the source fix with the existing test suite."
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Partial result: the source fix still needs compatibility work against existing tests."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-hidden-readonly-test-finish-"));
     const home = mkdtempSync(join(tmpdir(), "smith-home-"));
     mkdirSync(join(cwd, ".smith"), { recursive: true });
     mkdirSync(join(cwd, "tests"), { recursive: true });

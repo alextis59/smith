@@ -10163,3 +10163,139 @@ Decision:
 - Full SWE-bench Pro is still not justified.
 - Next generic direction: investigate whether finalization guards are over-rejecting honest partial blockers late in the run, because this `005` attempt spent substantial late time cycling through rejected finish reports. Any change must stay generic and must not weaken completed-work honesty.
 - Cleanup note: `.smith-bench` is now about `28G` with `56` retained `run-*` directories. Preserve `run-w0btlq` and `run-AtY13d` for this milestone, then prune stale retained sandboxes with explicit approval before additional expensive target reruns.
+
+## 2026-05-29 Change: Finish Guard Tightening for Available Validation
+
+Pre-change cleanup:
+
+- With explicit approval, pruned stale retained `.smith-bench/run-*` sandboxes while preserving the latest evidence runs:
+
+```sh
+find .smith-bench -maxdepth 1 -type d -name 'run-*' ! -name 'run-w0btlq' ! -name 'run-AtY13d' ! -name 'run-FiFTH4' ! -name 'run-8SAcEl' ! -name 'run-znPOXG' ! -name 'run-MTRPgg' ! -name 'run-vxpbw4' ! -name 'run-sbbHYK' -exec rm -rf {} +
+```
+
+- `.smith-bench` went from about `28G` and `56` retained runs to `4.9G` and `8` retained runs.
+
+Diagnostic current-code target rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed verifier in `992376ms`.
+- Log: `/tmp/smith/2026-05-29T17-35-17-175Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-ib0Jjd/home/.smith/runs/2026-05-29T17-18-45-656Z.trace`.
+- Verifier failures:
+  - `scanner/alpine.go:5:2: "fmt" imported and not used`
+  - `TestIsOvalDefAffected` still expected `affected=false` and empty `fixedIn`, but got `affected=true`, `fixedIn=3.3.2-r0`.
+- Final Smith message claimed no inspection/validation tool was available even though the final system prompt still exposed `run`, `patch`, and `finish`.
+
+Second diagnostic after first guard edit:
+
+- Target `010-future-architect-vuls` failed verifier in `985438ms`.
+- Log: `/tmp/smith/2026-05-29T17-57-13-584Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-xFserO/home/.smith/runs/2026-05-29T17-40-48-910Z.trace`.
+- Improvement:
+  - The unused-import compile failure disappeared.
+  - Smith reached a completed finish with `go test ./scanner` claims.
+- Remaining verifier failures:
+  - restored `scanner/alpine_test.go` expected compatibility methods still missing: `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`.
+  - `TestIsOvalDefAffected` still failed.
+- Retained workspace showed staged test edits:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+```
+
+Reasoning:
+
+- The existing unsupported-validation-unavailable finish guard caught phrases like “no validation tool,” but did not catch “no inspection/validation tool.”
+- The existing read-only-test completion guard only rejected later completion claims if the later message repeated read-only/test wording. A model could omit that wording and still claim completion despite a prior read-only test/spec patch failure.
+- Both are generic integrity gaps: when `run` or `patch` evidence contradicts a finish claim, Smith should continue instead of accepting a misleading final answer.
+
+Implementation:
+
+- `shouldRejectUnsupportedValidationUnavailableFinish` now matches combined inspection/validation phrasing such as:
+
+```text
+no inspection/validation tool is available
+```
+
+- `shouldRejectCompletedReadOnlyTestPatchFinish` now rejects completion/validation claims after a recorded read-only test/spec patch failure even when the later finish message omits the read-only/test wording, unless it honestly acknowledges pending validation/blocker state.
+- Added integration coverage for both cases:
+  - combined inspection/validation unavailable finish claim while `run` is available;
+  - completion claim that omits an earlier read-only test/spec patch failure.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "combined inspection-validation unavailable"
+npm test -- tests/integration.test.ts -t "combined inspection-validation unavailable|omit an earlier read-only test"
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- First selected regression run: passed `1` selected test.
+- Combined selected regression run: passed `2` selected tests.
+- Full focused integration file: passed `65` tests in `25893ms`.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `199723ms`.
+- Log: `/tmp/smith/2026-05-29T18-03-23-005Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-CCZuQc/home/.smith/runs/2026-05-29T18-00-03-548Z.trace`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by outer Docker timeout after `906067ms`.
+- Log: `/tmp/smith/2026-05-29T18-18-44-474Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-mFbpeO/home/.smith/runs/2026-05-29T18-03-39-197Z.trace`.
+- Retained sandbox: `.smith-bench/run-mFbpeO`.
+- Usage: `1587977` total tokens.
+- Retained workspace status:
+
+```text
+ M scanner/alpine.go
+?? SMITH.TASK.md
+```
+
+- Retained source diff stat:
+
+```text
+ scanner/alpine.go | 309 ++++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 278 insertions(+), 31 deletions(-)
+```
+
+- Trace evidence:
+  - Smith applied a source-only patch, kept `run` available, and used validation commands.
+  - It chased compile/test failures such as `undefined: splitVersionRelease`, old-version/new-version expectations in `TestParseApkVersion`, and a read-only `scanner/alpine_test.go` patch failure.
+  - The widened read-only completion guard did not produce a final verifier pass; the run timed out during patch-context recovery after more source-only repair attempts.
+
+Decision:
+
+- Keep the change because it closes generic false-finish paths, is covered by focused regression tests, passed full focused integration, and did not regress the representative project benchmark.
+- Do not count `010` as recovered.
+- Current strict evidence remains `6/10`.
+- Full SWE-bench Pro is still not justified.
+- Next generic direction: investigate whether source validation that passes while test files are staged/modified is being treated too optimistically in some paths; however, avoid adding benchmark-specific Alpine/Vuls guidance.
+- Cleanup note: `.smith-bench` is now about `9.0G` with `13` retained `run-*` directories. Preserve `run-ib0Jjd`, `run-xFserO`, `run-mFbpeO`, and `run-CCZuQc` for this milestone; prune stale retained sandboxes again before another long target sequence.
