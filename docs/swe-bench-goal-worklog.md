@@ -7622,3 +7622,95 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `61G` with `84` retained `run-*` directories. The maintenance notes at the top of both logs now explicitly remind future iterations to prune stale retained sandboxes after evidence is copied forward.
+
+## 2026-05-29 Changed Go Directory Validation Coverage
+
+Hypothesis:
+
+- Both unrecovered Codex-passed failures have shown narrow validation behavior around Go package checks.
+- Generic failure mode: after a patch touches multiple Go source directories, a passing `go test ./one/dir` can clear Smith's pending-validation state even though other changed source directories were not covered.
+- This is an ordinary software-engineering validation issue, not a SWE-bench-specific rule.
+
+Change:
+
+- `src/loop.ts`: track the set of files changed by task patches until a sufficiently broad validation command runs.
+- `src/loop.ts`: for `go test`, parse explicit package arguments and compare them to changed non-test `.go` source directories.
+- `src/loop.ts`: if changed source directories are not covered, annotate the run output with:
+
+```text
+Validation warning: this command did not appear to cover all changed source directories
+```
+
+- `src/loop.ts`: uncovered changed source directories keep `unvalidatedTaskPatch` true and do not consume the post-deadline validation slot.
+- `tests/integration.test.ts`: added coverage for a patch touching `pkg/a/a.go` and `pkg/b/b.go`; `go test ./pkg/a` leaves validation pending and `go test ./...` clears it.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- First concurrent integration run failed because a CLI subprocess saw stale compiled `dist` output while `npm run build` was running.
+- Rerunning after build passed `45` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `142378ms`.
+- Log: `/tmp/smith/2026-05-29T00-36-53-936Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-5K2W7f/home/.smith/runs/2026-05-29T00-34-31-807Z.trace`.
+- Sandbox: `.smith-bench/run-5K2W7f`.
+- Usage: `41746` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `755904ms`.
+- Log: `/tmp/smith/2026-05-29T00-49-34-066Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-BF4umo/home/.smith/runs/2026-05-29T00-37-07-070Z.trace`.
+- Sandbox: `.smith-bench/run-BF4umo`.
+- Usage: `1393066` total tokens.
+
+Trace and sandbox evidence:
+
+- The changed-directory warning did not fire in this target rerun because Smith patched only one source file:
+
+```text
+lib/service/service.go | 5 +++++
+```
+
+- Existing no-op validation protection did fire:
+
+```text
+Validation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.
+```
+
+- Smith finished with an explicit partial blocker instead of claiming the full forwarder refactor was complete:
+
+```text
+Blocker: the broader `Forwarder` refactor from the bug report ... was not completed in this run before the time limit.
+```
+
+- External verifier still failed with restored-test compile errors in `lib/kube/proxy/forwarder_test.go` for missing `Forwarder.cfg` and `Forwarder.clientCredentials`.
+
+Decision:
+
+- Keep the change because it is a generic validation-coverage improvement and did not reduce local project benchmark performance.
+- Do not count `005` as recovered. This run made a smaller partial patch and did not complete the broader forwarder work.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `63G` with `86` retained `run-*` directories. Continue pruning stale retained sandboxes after log/trace evidence is copied forward.

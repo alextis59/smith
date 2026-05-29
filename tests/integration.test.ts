@@ -1796,6 +1796,78 @@ max_turns = 30
     expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a task patch is still pending validation");
   });
 
+  it("keeps validation pending when go test misses changed source directories", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: pkg/a/a.go",
+            "@@",
+            "-package a",
+            "+package a",
+            "+",
+            "+func A() string { return \"a\" }",
+            "*** Update File: pkg/b/b.go",
+            "@@",
+            "-package b",
+            "+package b",
+            "+",
+            "+func B() string { return \"b\" }",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "go test ./pkg/a", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "done" } },
+      { name: "run", arguments: { command: "go test ./...", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-go-validation-coverage-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    const bin = join(cwd, "bin");
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "pkg", "a"), { recursive: true });
+    mkdirSync(join(cwd, "pkg", "b"), { recursive: true });
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(cwd, "pkg", "a", "a.go"), "package a\n", "utf8");
+    writeFileSync(join(cwd, "pkg", "b", "b.go"), "package b\n", "utf8");
+    writeFileSync(join(bin, "go"), "#!/bin/sh\necho 'ok  \texample.test/pkg\t0.001s'\n", "utf8");
+    chmodSync(join(bin, "go"), 0o755);
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(5);
+    expect(userMessages(provider.requests[2].body)).toContain(
+      "Validation warning: this command did not appear to cover all changed source directories"
+    );
+    expect(userMessages(provider.requests[2].body)).toContain("pkg/b");
+    expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a task patch is still pending validation");
+  });
+
   it("warns when validation runs with modified tracked test files", async () => {
     const provider = await startFakeProvider([
       {

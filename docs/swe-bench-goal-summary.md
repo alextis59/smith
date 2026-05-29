@@ -1899,3 +1899,25 @@ Decision:
 - Do not count `010` as recovered. This specific target rerun did not exercise the new rejection; it failed on missing Alpine compatibility methods (`parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`) and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `61G` with `84` retained `run-*` directories. Prune stale retained runs after their evidence is recorded, while preserving result JSONs and sandboxes still referenced by active diagnosis.
+
+## 2026-05-29 Changed Go Directory Validation Coverage
+
+Change:
+
+- Smith now keeps a task patch pending when a `go test` command validates only some changed Go source directories.
+- Example: if patches touched `pkg/a/a.go` and `pkg/b/b.go`, `go test ./pkg/a` warns that `pkg/b` remains uncovered; `go test ./...` clears the pending validation state.
+- This is generic validation bookkeeping for ordinary Go projects; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: first concurrent run hit the known build/test `dist` race, then rerun after build passed `45` tests.
+- Project benchmark `091-command-router-refactor`: passed in `142378ms`, log `/tmp/smith/2026-05-29T00-36-53-936Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-5K2W7f/home/.smith/runs/2026-05-29T00-34-31-807Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `755904ms`, log `/tmp/smith/2026-05-29T00-49-34-066Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-BF4umo/home/.smith/runs/2026-05-29T00-37-07-070Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and project validation passed.
+- Do not count `005` as recovered. This target rerun did not exercise the changed-directory coverage warning because Smith patched only `lib/service/service.go`; the existing no-op validation warning fired for `go test ./lib/service -run TestNonExistent -count=0`, and Smith honestly finished with a partial blocker.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `63G` with `86` retained `run-*` directories. Prune stale retained runs after their evidence is recorded, while preserving result JSONs and sandboxes still referenced by active diagnosis.

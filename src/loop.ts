@@ -170,6 +170,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let subAgentTurnLimitFailures = 0;
   let runDeadlineReminderIndex = 0;
   let unvalidatedTaskPatch = false;
+  let pendingValidationFiles = new Set<string>();
   const runStartedAt = Date.now();
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
   const providerDebugJson =
@@ -309,7 +310,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             fallbackToolCallId: responseToolCallId,
             totalUsage,
             toolAvailabilityState,
-            unvalidatedTaskPatch
+            unvalidatedTaskPatch,
+            pendingValidationFiles: [...pendingValidationFiles]
           });
           totalUsage = action.totalUsage;
           transcript = action.transcript;
@@ -347,8 +349,12 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           }
           if (madeTaskPatch) {
             unvalidatedTaskPatch = true;
+            for (const changedFile of action.changedFiles ?? []) {
+              if (!isRootSmithMemoryFile(changedFile)) pendingValidationFiles.add(changedFile);
+            }
           } else if (action.validationRunExecuted) {
             unvalidatedTaskPatch = false;
+            pendingValidationFiles = new Set();
           }
           toolCallsSincePatchOrFinish = madeTaskPatch || action.finished ? 0 : toolCallsSincePatchOrFinish + 1;
           if (action.finished) {
@@ -421,6 +427,7 @@ type ToolCallContext = {
   totalUsage?: TokenUsageCost;
   toolAvailabilityState: ToolAvailabilityState;
   unvalidatedTaskPatch: boolean;
+  pendingValidationFiles: string[];
 };
 
 async function handleToolCall(context: ToolCallContext): Promise<ToolActionResult> {
@@ -669,8 +676,15 @@ async function runShellCommandTool(
     !noOpValidation &&
     !failedValidation &&
     isCachedValidationOutput(command, rawTerminalOutput);
+  const uncoveredValidation =
+    validationCommand &&
+    parentContext.unvalidatedTaskPatch &&
+    !noOpValidation &&
+    !failedValidation &&
+    !cachedValidation &&
+    validationMissesChangedSourceFiles(command, parentContext.pendingValidationFiles);
   const narrowValidation =
-    validationCommand && !noOpValidation && !failedValidation && isNarrowValidationCommand(command);
+    validationCommand && !noOpValidation && !failedValidation && !uncoveredValidation && isNarrowValidationCommand(command);
   let annotatedTerminalOutput = rawTerminalOutput;
   if (noOpValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.`;
@@ -678,6 +692,8 @@ async function runShellCommandTool(
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.`;
   } else if (cachedValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command reused cached test results while a task patch is pending. Rerun validation with caching disabled, for example with an appropriate no-cache or force-recheck option, before treating the patch as validated.`;
+  } else if (uncoveredValidation) {
+    annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command did not appear to cover all changed source directories: ${formatChangedFiles(uncoveredChangedSourceDirs(command, parentContext.pendingValidationFiles))}. Run validation for the remaining changed directories or a broader package/project check before treating the patch as validated.`;
   } else if (narrowValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command selected a subset of checks. Any pending task patch is only narrowly validated; run a broader package or project test, build, lint, typecheck, check, or verify command before finish when practical.`;
   }
@@ -705,12 +721,12 @@ async function runShellCommandTool(
     responsesInputItems,
     toolOutput: terminalOutput,
     totalUsage,
-    ...(postDeadlineValidationRun && !noOpValidation && !failedValidation && !cachedValidation && !narrowValidation
+    ...(postDeadlineValidationRun && !noOpValidation && !failedValidation && !cachedValidation && !uncoveredValidation && !narrowValidation
       ? { postDeadlineValidationRunConsumed: true }
       : {}),
     ...(postDeadlineInspectionRun && inspectionCommand && !validationCommand ? { postDeadlineInspectionRunConsumed: true } : {}),
     ...(postDeadlineValidationRun && failedValidation ? { postDeadlineValidationFailed: true } : {}),
-    ...(validationCommand && !noOpValidation && !failedValidation && !cachedValidation && !narrowValidation
+    ...(validationCommand && !noOpValidation && !failedValidation && !cachedValidation && !uncoveredValidation && !narrowValidation
       ? { validationRunExecuted: true }
       : {}),
     ...(runChangedFiles.length > 0 ? { changedFiles: runChangedFiles } : {})
@@ -725,6 +741,61 @@ function isLikelyValidationCommand(command: string): boolean {
   return /\b(?:go\s+test|cargo\s+test|pytest|vitest|jest|mocha|rspec|npm\s+(?:run\s+)?test|yarn\s+test|pnpm\s+test|mvn\s+test|gradle\s+test|test|build|compile|lint|typecheck|tsc|check|verify(?:\.sh)?)\b/i.test(
     trimmed
   );
+}
+
+function validationMissesChangedSourceFiles(command: string, changedFiles: string[]): boolean {
+  return uncoveredChangedSourceDirs(command, changedFiles).length > 0;
+}
+
+function uncoveredChangedSourceDirs(command: string, changedFiles: string[]): string[] {
+  const goPackages = goTestPackageArgs(command);
+  if (!goPackages) return [];
+  return [
+    ...new Set(
+      changedFiles
+        .map((path) => path.replace(/\\/g, "/").replace(/^\.\//, ""))
+        .filter((path) => path.endsWith(".go") && !isLikelyTestFilePath(path))
+        .map((path) => path.split("/").slice(0, -1).join("/") || ".")
+        .filter((dir) => !goPackages.some((pkg) => goPackageCoversDir(pkg, dir)))
+    )
+  ].sort();
+}
+
+function goTestPackageArgs(command: string): string[] | undefined {
+  const tokens = command.match(/"[^"]+"|'[^']+'|\S+/g)?.map((token) => token.replace(/^["']|["']$/g, "")) ?? [];
+  const goIndex = tokens.findIndex((token) => token === "go");
+  if (goIndex < 0 || tokens[goIndex + 1] !== "test") return undefined;
+  const packages: string[] = [];
+  for (let i = goIndex + 2; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (!token || /^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) continue;
+    if (token === "--") continue;
+    if (token.startsWith("-")) {
+      if (goTestFlagConsumesValue(token) && !token.includes("=")) i += 1;
+      continue;
+    }
+    if (/^(?:\.|\/|[A-Za-z0-9_.-]+\/)/.test(token)) packages.push(token);
+  }
+  return packages.length > 0 ? packages : undefined;
+}
+
+function goTestFlagConsumesValue(flag: string): boolean {
+  return /^-(?:run|bench|benchtime|count|coverprofile|coverpkg|cpu|list|mod|modfile|o|outputdir|parallel|shuffle|tags|timeout|vet)$/i.test(
+    flag
+  );
+}
+
+function goPackageCoversDir(pkg: string, dir: string): boolean {
+  const normalizedPkg = pkg.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "");
+  const normalizedDir = dir.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "") || ".";
+  if (normalizedPkg === "..." || normalizedPkg === "./...") return true;
+  if (normalizedPkg.endsWith("/...")) {
+    const prefix = normalizedPkg.slice(0, -4) || ".";
+    if (prefix === ".") return true;
+    return normalizedDir === prefix || normalizedDir.startsWith(`${prefix}/`);
+  }
+  if (normalizedPkg === "." || normalizedPkg === "") return normalizedDir === ".";
+  return normalizedDir === normalizedPkg;
 }
 
 function isLikelyInspectionCommand(command: string): boolean {
