@@ -8322,3 +8322,125 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - Cleanup note: after copying the commands, log paths, trace paths, verifier snippets, and conclusions above, prune stale retained `.smith-bench/run-*` directories periodically. Keep only sandboxes still needed for active diagnosis or leaderboard evidence so `.smith-bench` does not grow by several more GB again.
+
+## 2026-05-29 Root Test File Validation Is Narrow
+
+Hypothesis:
+
+- The rejected `90%` deadline experiment exposed a normal task-quality problem in project benchmark `091`: Smith ran `bash /task/verify.sh`, got a silent verifier failure, then substituted `node test.js` and finished even though the verifier also required `node --check src/router.js` and `grep -q "## Verification" README.md`.
+- Existing Smith validation logic already treats explicit test-file commands like `npm test -- tests/note.test.js` as narrow validation, but a direct root test file command such as `node test.js` was not classified as narrow.
+- Generic improvement: classify direct single-file `node test.js` style validation as narrow, so it warns and keeps task patches pending until broader validation or an explicit pending-validation/blocker report.
+
+Implementation:
+
+- Changed `isNarrowValidationCommand` in `src/loop.ts`.
+- Added a direct `node ... test.js` pattern before token scanning.
+- Kept the broader token pattern scoped to existing explicit test-file names so ordinary inspection commands that mention `test.js` are not treated as validation.
+- Added integration coverage: `warns that root test.js validation is narrow`.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `50` tests.
+
+Initial project validation attempts:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+First `091` attempt with the broad `test.js` token matcher:
+
+- Failed by outer timeout after `305244ms`.
+- Log: `/tmp/smith/2026-05-29T06-45-15-617Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-fNTtC4/home/.smith/runs/2026-05-29T06-40-10-624Z.trace`.
+- Sandbox: `.smith-bench/run-fNTtC4`.
+- Diagnosis: the initial implementation treated `test.js` inside a file-inspection command as narrow validation. Refined the classifier to match direct `node test.js` execution instead of broad token mentions.
+
+Second `091` attempt with the refined matcher:
+
+- Failed after `273844ms` with provider request timeout.
+- Log: `/tmp/smith/2026-05-29T06-50-53-656Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-lhnO07/home/.smith/runs/2026-05-29T06-46-20-038Z.trace`.
+- Sandbox: `.smith-bench/run-lhnO07`.
+- Diagnosis: trace did not show a deterministic classifier regression; it spent time in reconnaissance/sub-agent work and then hit `smith: provider request timed out after 60000ms`.
+
+Relevant project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/025-command-alias-support --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `199184ms`.
+- Log: `/tmp/smith/2026-05-29T06-55-00-796Z-smith-025-command-alias-support.json`.
+- Trace: `.smith-bench/run-bWUc6G/home/.smith/runs/2026-05-29T06-51-42-100Z.trace`.
+- Sandbox: `.smith-bench/run-bWUc6G`.
+- Verifier command: `bash /task/verify.sh`.
+- Verifier exit code: `0`.
+- Rationale for using `025`: it is a smaller local task that directly uses `node test.js` and a broader verifier (`node test.js`, `node --check src/index.js`, `node --check src/aliases.js`), making it relevant to the classifier change after `091` produced no clean signal.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by outer timeout after `906138ms`.
+- Benchmark stderr:
+
+```text
+docker timed out after 900000ms
+```
+
+- Log: `/tmp/smith/2026-05-29T07-10-20-610Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+- Trace: `.smith-bench/run-9NsEGY/home/.smith/runs/2026-05-29T06-55-15-430Z.trace`.
+- Sandbox: `.smith-bench/run-9NsEGY`.
+- Usage: `1320642` total tokens.
+
+Trace and sandbox evidence:
+
+- Smith made a source patch to `contrib/trivy/pkg/converter.go`:
+
+```text
+ contrib/trivy/pkg/converter.go | 253 ++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 248 insertions(+), 5 deletions(-)
+```
+
+- It ran focused validation:
+
+```text
+go test ./contrib/trivy/parser/v2 ./contrib/trivy/pkg
+```
+
+- Validation failed with parser fixture diffs showing removed duplicate `CveContent` entries and modified CVSS fields.
+- A later patch attempt tried to edit `contrib/trivy/parser/v2/parser_test.go`, which was read-only. Smith correctly received the existing warning to treat unwritable tests as behavior to satisfy through source changes.
+- A follow-up source patch then introduced duplicate helper declarations:
+
+```text
+contrib/trivy/pkg/converter.go:332:6: mergeTrivyCveContents redeclared in this block
+contrib/trivy/pkg/converter.go:249:6: other declaration of mergeTrivyCveContents
+contrib/trivy/pkg/converter.go:479:6: storePackageFixStatus redeclared in this block
+contrib/trivy/pkg/converter.go:307:6: other declaration of storePackageFixStatus
+```
+
+- The benchmark timed out while the model was still responding after the failed validation.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, and passed a relevant local project benchmark.
+- Do not count `008` as recovered. The current run got to source patch plus failing focused validation, but still did not finish with a passing verifier result.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- Next generic hypothesis: after a failed validation exposes duplicate declarations or fixture diffs, Smith needs better patch discipline for follow-up edits. Avoid benchmark/task-specific fixes; look for general duplicate-definition detection or post-failure inspection behavior that applies to normal coding tasks.
+- `.smith-bench` cleanup status after this run: `5.1G` with `15` retained `run-*` directories. Continue pruning stale retained sandboxes after evidence is copied into these logs.

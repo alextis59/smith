@@ -2003,6 +2003,59 @@ max_turns = 30
     expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a task patch is still pending validation");
   });
 
+  it("warns that root test.js validation is narrow", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "node test.js", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "Changed note.txt; validation pending after only node test.js." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-root-test-file-validation-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "test.js"), "console.log('file checked');\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("validation pending");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[2].body)).toContain("file checked");
+    expect(userMessages(provider.requests[2].body)).toContain("Validation warning: this command selected a subset of checks");
+  });
+
   it("keeps validation pending when go test misses changed source directories", async () => {
     const provider = await startFakeProvider([
       {

@@ -2042,3 +2042,25 @@ Decision:
 - Do not rerun SWE with the `90%` version because the required project-task validation failed.
 - Do not count `008` as recovered. Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `4.9G` after the retained diagnostic runs. Continue pruning stale retained sandboxes after their command, log path, trace path, sandbox path, and conclusions are copied into these logs.
+
+## 2026-05-29 Root Test File Validation Is Narrow
+
+Change:
+
+- Smith now treats direct single-file `node test.js` style validation as narrow validation, matching the existing handling for explicit test file paths like `tests/foo.test.js`.
+- This is a generic validation-quality rule for normal coding tasks; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `50` tests.
+- Hard representative `091-command-router-refactor` was attempted twice with this change but did not produce a clean validation signal: one run timed out after an accidental bad patch deleted `src/router.js`, and one hit a provider request timeout. Because the change specifically concerns `node test.js`, a smaller relevant project task was used instead.
+- Relevant project benchmark `025-command-alias-support`: passed in `199184ms`, log `/tmp/smith/2026-05-29T06-55-00-796Z-smith-025-command-alias-support.json`, trace `.smith-bench/run-bWUc6G/home/.smith/runs/2026-05-29T06-51-42-100Z.trace`.
+- Target SWE rerun `008-future-architect-vuls`: failed by outer timeout after `906138ms`, log `/tmp/smith/2026-05-29T07-10-20-610Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-9NsEGY/home/.smith/runs/2026-05-29T06-55-15-430Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, and passed a relevant local benchmark that uses `node test.js` plus a broader verifier.
+- Do not count `008` as recovered. The run reached a source-patched and validation-failed state, but still timed out before a correct final patch.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `5.1G` with `15` retained `run-*` directories. Continue periodic cleanup after evidence is copied forward.

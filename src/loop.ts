@@ -865,6 +865,9 @@ function isNarrowValidationCommand(command: string): boolean {
   ) {
     return true;
   }
+  if (/\bnode\s+(?:--[^\s]+\s+)*(?:\.\/)?(?:[^\/\s]+\/)*(?:tests?|spec)\.(?:js|jsx|ts|tsx|mjs|cjs)(?:\s|$)/i.test(command)) {
+    return true;
+  }
   const tokens = command.match(/"[^"]+"|'[^']+'|\S+/g) ?? [];
   return tokens.some((rawToken) => {
     const token = rawToken.replace(/^["']|["']$/g, "");
