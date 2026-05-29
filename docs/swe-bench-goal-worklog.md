@@ -9779,3 +9779,95 @@ Decision:
 - Rejected idea: using the Alpine/Vuls implementation details from the trace as Smith prompt text. That remains benchmark-specific and disallowed by the user.
 - Next generic direction: target `010` is still spending too long in broad reconstruction and late patches. The next improvement should be generic deadline-aware patch sizing or earlier source compatibility wrapper preservation, not benchmark-specific guidance.
 - Cleanup note: `.smith-bench` is now about `22G` with `46` retained `run-*` directories. Preserve `run-qZvKGl` and `run-Y8LeVK` for this milestone, then prune stale retained sandboxes before another expensive target sequence.
+
+## 2026-05-29 Change: Declaration Signature Compatibility Note
+
+Reasoning:
+
+- The prior `010` trace showed a generic refactor failure pattern: Smith changed helper return signatures, then existing callers/tests still expected the old signatures.
+- The existing patch-output guard only warned about removed or renamed declarations. Same-name signature changes can be just as compatibility-sensitive.
+- This is a generic caller-compatibility issue for normal code tasks. The change is not prompt text and does not encode benchmark-, dataset-, task-, Vuls-, Alpine-, verifier-, or scoring-specific guidance.
+
+Implementation:
+
+- `src/loop.ts` now computes changed declaration signatures from patch hunks.
+- It compares removed and added declaration lines with the same declaration name for common function forms:
+  - JavaScript/TypeScript `function`
+  - Go `func`, including methods with receivers
+  - Python `def`
+- When the same declaration name is removed and re-added with a different normalized signature, Smith appends:
+
+```text
+Compatibility note: this patch changes declaration signatures: ...
+```
+
+- The note asks Smith to search for existing callers and keep wrappers or adapters where old signatures may still be used.
+- Added integration coverage for a Go function changing from two returns to three returns.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `60` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `208893ms`.
+- Log: `/tmp/smith/2026-05-29T13-24-14-447Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-vxpbw4/home/.smith/runs/2026-05-29T13-20-45-836Z.trace`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout after `905999ms`.
+- Log: `/tmp/smith/2026-05-29T13-39-30-459Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-sbbHYK/home/.smith/runs/2026-05-29T13-24-25-132Z.trace`.
+- Retained sandbox: `.smith-bench/run-sbbHYK`.
+- Usage: `2024633` total tokens.
+- Retained workspace status:
+
+```text
+ M scanner/alpine.go
+```
+
+- Retained source diff stat:
+
+```text
+ scanner/alpine.go | 126 ++++++++++++++++++++++++++++++++++++++++++------------
+ 1 file changed, 99 insertions(+), 27 deletions(-)
+```
+
+- Trace evidence:
+  - The new compatibility note fired for changed `scanInstalledPackages` and `parseApkInfo` signatures.
+  - Smith still changed those signatures and later hit compile errors from old call sites, including `assignment mismatch: 2 variables but o.parseApkInfo returns 3 values`.
+  - Smith later attempted to patch read-only `scanner/alpine_test.go`; the existing read-only test-file guard correctly told it to satisfy existing behavior through source changes.
+  - Smith then tried a source-only compatibility repair, but patch context mismatches and late inspection consumed the remaining window.
+  - The final retained diff still changes public/internal source helper signatures and leaves the task unvalidated.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and passed representative project validation.
+- Do not count `010` as recovered.
+- Current strict evidence remains `6/10`: baseline full-run passes `002`, `004`, and `007`, plus targeted recoveries for `001`, `003`, and `008`.
+- Full SWE-bench Pro is still not justified.
+- Rejected idea: adding benchmark- or target-specific prompt guidance about the Alpine parser, Vuls source packages, or this task's helper names. That would violate the user's instruction to discard benchmark-specific prompt edits.
+- Next generic direction: Smith needs earlier, smaller compatibility-repair patches after validation errors instead of continuing large rewrites under deadline pressure. Investigate a generic post-validation failure nudge that favors minimal source-only caller compatibility fixes after signature mismatch errors.
+- Cleanup note: `.smith-bench` is now about `23G` with `48` retained `run-*` directories. Preserve `run-vxpbw4` and `run-sbbHYK` for this milestone, then prune stale retained sandboxes before another expensive target sequence so the folder does not grow by several more GB.

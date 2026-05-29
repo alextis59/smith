@@ -2336,3 +2336,25 @@ Decision:
 - Do not count `010` as recovered. The run timed out while still trying to repair Alpine source changes after failed validation; no verifier pass.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `22G` with `46` retained `run-*` directories. Cleanup is now urgent before additional target runs.
+
+## 2026-05-29 Declaration Signature Compatibility Note
+
+Change:
+
+- Smith now adds a generic patch-output compatibility note when a patch changes same-name function declaration signatures.
+- The note asks Smith to search existing callers and keep wrappers or adapters when old signatures may still be used.
+- This is a general source-compatibility guard for ordinary refactors; it does not mention SWE-bench, task IDs, benchmark runtimes, selected tests, verifiers, scoring, result parsing, or any task-specific implementation details.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `60` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `208893ms`, log `/tmp/smith/2026-05-29T13-24-14-447Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-vxpbw4/home/.smith/runs/2026-05-29T13-20-45-836Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed by Docker timeout after `905999ms`, log `/tmp/smith/2026-05-29T13-39-30-459Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-sbbHYK/home/.smith/runs/2026-05-29T13-24-25-132Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and passed representative project validation.
+- Do not count `010` as recovered. The new note fired for changed `scanInstalledPackages` and `parseApkInfo` signatures, but Smith still timed out after late compatibility repair attempts, read-only test-file patch attempts, and patch-context failures.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `23G` with `48` retained `run-*` directories. Before more expensive runs, preserve current evidence paths and prune stale retained sandboxes so the folder does not keep growing by several GB.

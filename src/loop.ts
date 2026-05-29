@@ -620,6 +620,10 @@ async function runPatchTool(
       if (removedDeclarations.length > 0) {
         output = `${output}\nCompatibility note: this patch removes or renames declarations: ${removedDeclarations.map((name) => `\`${name}\``).join(", ")}. Search for remaining callers or keep compatibility wrappers when existing callers may still use them before treating validation as complete.`;
       }
+      const changedDeclarationSignatures = changedDeclarationSignatureNamesFromPatch(patch);
+      if (changedDeclarationSignatures.length > 0) {
+        output = `${output}\nCompatibility note: this patch changes declaration signatures: ${changedDeclarationSignatures.map((name) => `\`${name}\``).join(", ")}. Search for existing callers and keep wrappers or adapters when existing callers may use the old signature before treating validation as complete.`;
+      }
       const changedTestFiles = result.changedFiles.filter(isLikelyTestFilePath);
       if (changedTestFiles.length > 0) {
         output = `${output}\nTest files changed: ${formatChangedFiles(changedTestFiles)}. Local validation may include the changed tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.`;
@@ -664,6 +668,30 @@ function removedDeclarationNamesFromPatch(patch: string): string[] {
   return [...removed].filter((name) => !added.has(name)).slice(0, 8);
 }
 
+function changedDeclarationSignatureNamesFromPatch(patch: string): string[] {
+  const removed = new Map<string, Set<string>>();
+  const added = new Map<string, Set<string>>();
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("---") || line.startsWith("+++")) continue;
+    const marker = line[0];
+    if (marker !== "-" && marker !== "+") continue;
+    const signature = declarationSignatureFromLine(line.slice(1));
+    if (!signature) continue;
+    const target = marker === "-" ? removed : added;
+    const signatures = target.get(signature.name) ?? new Set<string>();
+    signatures.add(signature.normalized);
+    target.set(signature.name, signatures);
+  }
+  return [...removed]
+    .filter(([name, removedSignatures]) => {
+      const addedSignatures = added.get(name);
+      if (!addedSignatures) return false;
+      return [...removedSignatures].some((signature) => !addedSignatures.has(signature));
+    })
+    .map(([name]) => name)
+    .slice(0, 8);
+}
+
 function declarationNamesFromLine(line: string): string[] {
   const patterns = [
     /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/,
@@ -675,6 +703,29 @@ function declarationNamesFromLine(line: string): string[] {
     const match = pattern.exec(line);
     return match ? [match[1]] : [];
   });
+}
+
+function declarationSignatureFromLine(line: string): { name: string; normalized: string } | undefined {
+  const patterns = [
+    /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/,
+    /^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\(/,
+    /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(line);
+    if (match) {
+      return { name: match[1], normalized: normalizeDeclarationSignature(line) };
+    }
+  }
+  return undefined;
+}
+
+function normalizeDeclarationSignature(line: string): string {
+  return line
+    .replace(/\s*(?:\{|=>).*$/, "")
+    .replace(/:\s*$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function trackedGitChangeSet(cwd: string, options: { includeUntracked?: boolean } = {}): Promise<Set<string> | undefined> {
