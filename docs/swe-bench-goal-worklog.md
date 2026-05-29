@@ -7406,3 +7406,134 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `57G` with `80` retained `run-*` directories. Add a recurring maintenance habit: after recording useful commands, log paths, trace paths, verifier snippets, and retained sandbox conclusions, prune stale `.smith-bench/run-*` directories so retained benchmark artifacts do not grow by several more GB.
+
+## 2026-05-29 Worklog: Failed Sub-Agent Transcript Tail
+
+Hypothesis:
+
+- The latest `005-gravitational-teleport` traces showed read-only sub-agents gathering useful source evidence, then exhausting `runtime.sub_agent_max_turns` without calling `finish`.
+- The parent received only:
+
+```text
+sub_agent failed: model did not call finish within 12 turns
+```
+
+- Generic improvement: a failed child should return a bounded recent transcript tail to the parent, so useful observations are not lost when the child misses its final `finish`.
+
+Rejected idea:
+
+- I considered changing SWE-bench Pro workspace setup so selected restored tests are visible during Smith editing, matching the verifier environment.
+- Rejected under the user's stricter anti-cheating constraint because that is SWE-bench-specific harness behavior and could expose benchmark-selected tests during editing. Do not pursue it without explicit user approval.
+
+Change:
+
+- `src/loop.ts`: `SmithRunFailure` now includes optional `transcript`.
+- `src/loop.ts`: the max-turn failure at the end of `runSmithTask()` carries the current transcript.
+- `src/loop.ts`: failed sub-agents now return:
+
+```text
+sub_agent failed: <reason>
+Recent failed sub-agent transcript tail:
+...
+```
+
+- `src/loop.ts`: the failed-sub-agent tail is capped to at most `8000` chars before the normal `max_tool_output_chars` cap.
+- `tests/integration.test.ts`: the existing failed-sub-agent usage test now asserts that the parent sees `Recent failed sub-agent transcript tail` and both child outputs.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed `43` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `270729ms`.
+- Log: `/tmp/smith/2026-05-28T23-58-16-966Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-0O810u/home/.smith/runs/2026-05-28T23-53-46-492Z.trace`.
+- Sandbox: `.smith-bench/run-0O810u`.
+- Usage: `95351` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `895299ms`.
+- Log: `/tmp/smith/2026-05-29T00-13-17-512Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-2LKeNT/home/.smith/runs/2026-05-28T23-58-30-324Z.trace`.
+- Sandbox: `.smith-bench/run-2LKeNT`.
+- Usage: `4172835` total tokens.
+
+Trace and sandbox evidence:
+
+- The target trace exercised the new behavior:
+
+```text
+sub_agent failed: model did not call finish within 12 turns
+Recent failed sub-agent transcript tail:
+```
+
+- After receiving the tail, Smith applied a patch to:
+
+```text
+lib/kube/proxy/forwarder.go
+lib/kube/proxy/server.go
+lib/service/kubernetes.go
+lib/service/service.go
+```
+
+- Retained source diff:
+
+```text
+lib/kube/proxy/forwarder.go | 108 +++++++++++++++++++++++++++++++++++---------
+lib/kube/proxy/server.go    |   2 +-
+lib/service/kubernetes.go   |  10 ++--
+lib/service/service.go      |   8 ++--
+```
+
+- Restored selected-test/index diff:
+
+```text
+lib/kube/proxy/forwarder_test.go | 80 ++++++++++------------------------------
+```
+
+- Smith's final claimed validation was:
+
+```text
+go test ./lib/kube/proxy
+```
+
+- The external verifier failed with restored-test compile errors:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:378:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:541:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+```
+
+Decision:
+
+- Keep the change because it is a generic delegation reliability improvement and changed the target behavior from timeout-prone lost child evidence to a completed source patch.
+- Do not count `005` as recovered. The remaining failure is compatibility with verifier-restored tests, and the generic change did not close it.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `59G` with `82` retained `run-*` directories. Continue recording only useful traces/sandboxes and prune stale `.smith-bench/run-*` directories periodically so benchmark artifacts do not grow by several more GB.

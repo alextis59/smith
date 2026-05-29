@@ -69,11 +69,13 @@ export type SmithRunResult = {
 
 export class SmithRunFailure extends Error {
   usage?: TokenUsageCost;
+  transcript?: string;
 
-  constructor(message: string, options: { usage?: TokenUsageCost } = {}) {
+  constructor(message: string, options: { usage?: TokenUsageCost; transcript?: string } = {}) {
     super(message);
     this.name = "SmithRunFailure";
     this.usage = options.usage;
+    this.transcript = options.transcript;
   }
 }
 
@@ -390,7 +392,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
     shell.kill();
   }
 
-  throw new SmithRunFailure(`model did not call finish within ${maxTurns} turns`, { usage: totalUsage });
+  throw new SmithRunFailure(`model did not call finish within ${maxTurns} turns`, { usage: totalUsage, transcript });
 }
 
 type ToolActionResult = {
@@ -810,12 +812,24 @@ async function runSubAgentTool(
     return { transcript, providerMessages, responsesInputItems, toolOutput: output, totalUsage };
   } catch (error) {
     const totalUsage = addUsageCost(context.totalUsage, error instanceof SmithRunFailure ? error.usage : undefined);
-    const output = `sub_agent failed: ${errorMessage(error)}`;
+    const output = failedSubAgentOutput(error, context.options.runtime.maxToolOutputChars);
     return {
       ...appendToolObservation({ ...context, totalUsage }, callId, output),
       ...(isSubAgentTurnLimitFailure(error) ? { subAgentTurnLimitFailure: true } : {})
     };
   }
+}
+
+function failedSubAgentOutput(error: unknown, maxChars: number): string {
+  const message = `sub_agent failed: ${errorMessage(error)}`;
+  if (!(error instanceof SmithRunFailure) || !error.transcript?.trim()) return message;
+  const tail = tailText(error.transcript, maxChars > 0 ? Math.min(maxChars, 8000) : 8000);
+  return limitToolOutput(`${message}\nRecent failed sub-agent transcript tail:\n${tail}`, maxChars);
+}
+
+function tailText(text: string, maxChars: number): string {
+  if (maxChars <= 0 || text.length <= maxChars) return text;
+  return `[showing last ${maxChars} of ${text.length} chars]\n${text.slice(text.length - maxChars)}`;
 }
 
 function appendToolObservation(

@@ -691,6 +691,9 @@ max_turns = 2
       totalTokens: 60
     });
     expect(provider.requests).toHaveLength(4);
+    expect(userMessages(provider.requests[3].body)).toContain("Recent failed sub-agent transcript tail");
+    expect(userMessages(provider.requests[3].body)).toContain("child-output-1");
+    expect(userMessages(provider.requests[3].body)).toContain("child-output-2");
   });
 
   it("hides sub_agent after a child run exhausts its turn budget until a task patch succeeds", async () => {

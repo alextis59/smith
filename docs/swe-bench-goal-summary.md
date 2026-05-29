@@ -1849,3 +1849,25 @@ Decision:
 - Do not count `005` as recovered. The target trace did not exercise the new post-deadline inspection slot; Smith finished after an in-run package validation, and the external verifier failed against restored tests with missing `Forwarder.cfg` and `Forwarder.clientCredentials` fields.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `57G` with `80` retained `run-*` directories. Prune stale retained runs periodically after useful commands, logs, traces, and diagnostic snippets are recorded so the folder does not grow unchecked by several GB.
+
+## 2026-05-29 Failed Sub-Agent Transcript Tail
+
+Change:
+
+- `SmithRunFailure` now carries the partial transcript accumulated before a run fails.
+- When a `sub_agent` child exhausts its turn budget, the parent receives a bounded recent transcript tail instead of only `sub_agent failed: model did not call finish within N turns`.
+- This is generic delegation behavior for ordinary large-codebase work; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `43` tests.
+- Project benchmark `091-command-router-refactor`: passed in `270729ms`, log `/tmp/smith/2026-05-28T23-58-16-966Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-0O810u/home/.smith/runs/2026-05-28T23-53-46-492Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `895299ms`, log `/tmp/smith/2026-05-29T00-13-17-512Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-2LKeNT/home/.smith/runs/2026-05-28T23-58-30-324Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and project validation passed.
+- Do not count `005` as recovered. The target trace used the new failed-sub-agent transcript tail and reached `finish`, but the verifier still failed against restored tests with missing `Forwarder.cfg` and `Forwarder.clientCredentials` fields.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `59G` with `82` retained `run-*` directories. Prune stale retained runs periodically after useful commands, logs, traces, and diagnostic snippets are recorded so the folder does not grow unchecked by several GB.
