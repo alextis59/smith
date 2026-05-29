@@ -41,6 +41,12 @@ Existing code context:
 - The runner already marks `/app` as a safe Git directory before SWE verification.
 - Existing prompt and benchmark instructions already include scoped search, exact literal preservation, patch-first editing, no premature finish, no verifier reading before first run, missing dependency handling, task memory, and sub-agent guidance.
 
+Artifact maintenance note:
+
+- `.smith-bench` can grow by several GB during targeted iteration because `--keep-sandbox` retains whole workspaces plus traces. Check `du -sh .smith-bench` and retained `run-*` count periodically.
+- Once a run's command, result JSON path, trace path, sandbox id, relevant diff snippets, and failure evidence are recorded here, mark it as eligible for pruning unless it is still needed for an active diagnosis.
+- Preserve benchmark result JSON files and any sandboxes cited by current leaderboard evidence, current milestone validation, or unresolved target-task hypotheses.
+
 ## 2026-05-23 Evidence: NodeBB 001 Inconclusive Failure
 
 Recent partial full-run artifacts:
@@ -7537,3 +7543,82 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `59G` with `82` retained `run-*` directories. Continue recording only useful traces/sandboxes and prune stale `.smith-bench/run-*` directories periodically so benchmark artifacts do not grow by several more GB.
+
+## 2026-05-29 Read-Only Test Patch Finish Guard
+
+Hypothesis:
+
+- Latest retained `010-future-architect-vuls` evidence showed a generic runtime failure mode: Smith could attempt or discuss read-only test edits, then finish as if complete instead of continuing source compatibility work or reporting a partial/blocker result.
+- This is not specific to SWE-bench. In ordinary tasks, tests/specs are often expected behavior, and a failed read-only test/spec edit should not be treated as a harmless completion footnote.
+
+Change:
+
+- `src/loop.ts`: added `shouldRejectCompletedReadOnlyTestPatchFinish()`.
+- The guard triggers only when runtime is not intentionally read-only, `patch` is available, transcript evidence already contains Smith's generic unwritable test/spec patch guidance, the finish message mentions the read-only/permission test/spec issue, the finish message also claims completion/success, and the finish message does not clearly report pending validation, partial work, failed tests, or a blocker.
+- `tests/integration.test.ts`: added coverage for a read-only `tests/readonly.test.js` patch failure followed by a success-style finish. Smith rejects it and accepts a later partial/blocker finish.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed `44` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `117036ms`.
+- Log: `/tmp/smith/2026-05-29T00-20-21-467Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-0bsHky/home/.smith/runs/2026-05-29T00-18-24-673Z.trace`.
+- Sandbox: `.smith-bench/run-0bsHky`.
+- Usage: `51226` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `524303ms`.
+- Log: `/tmp/smith/2026-05-29T00-29-10-376Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-sgmMDz/home/.smith/runs/2026-05-29T00-20-26-848Z.trace`.
+- Sandbox: `.smith-bench/run-sgmMDz`.
+- Usage: `1632859` total tokens.
+
+Trace and sandbox evidence:
+
+- The new rejection did not fire in this target rerun; `rg` found no `Finish rejected: a read-only test/spec` and no generic unwritable test/spec patch guidance in the trace.
+- Retained source diff was limited to `scanner/alpine.go`, with `134` insertions and `24` deletions.
+- Verifier still failed because restored tests expected Alpine compatibility methods that the source patch did not provide:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+```
+
+- Verifier also still failed:
+
+```text
+TestIsOvalDefAffected expected false actual true
+```
+
+Decision:
+
+- Keep the change because it is a generic correctness guard for finish-state honesty and did not reduce local project benchmark performance.
+- Do not count `010` as recovered. This run avoided the read-only test-patch path and still failed on source/API compatibility.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `61G` with `84` retained `run-*` directories. The maintenance notes at the top of both logs now explicitly remind future iterations to prune stale retained sandboxes after evidence is copied forward.

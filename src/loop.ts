@@ -457,6 +457,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: read-only mode is not active and patch is available. Do not claim a read-only or permission blocker unless a tool output shows a read-only or permission failure. Use patch for a safe edit, or finish with the actual blocker from the tool evidence."
       );
     }
+    if (shouldRejectCompletedReadOnlyTestPatchFinish(message, parentContext, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: a read-only test/spec patch failed, but the finish message still presents the task as complete. Treat read-only tests/specs as existing behavior to satisfy through source changes unless the user explicitly asked to edit them. Continue source compatibility work, or finish with a clear blocker/partial result if the requested work cannot be completed."
+      );
+    }
     if (shouldRejectUnsupportedValidationUnavailableFinish(message, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -868,6 +875,25 @@ function transcriptHasReadOnlyEvidence(transcript: string): boolean {
   return /\b(?:Read-only mode is active|patch failed:[\s\S]{0,200}(?:EACCES|EROFS|EPERM|permission denied|read-only file system|not writable)|(?:EACCES|EROFS|EPERM|permission denied|read-only file system))\b/i.test(
     transcript
   );
+}
+
+function shouldRejectCompletedReadOnlyTestPatchFinish(
+  message: string,
+  context: ToolCallContext,
+  availableToolNames: string[]
+): boolean {
+  if (context.options.runtime.readOnly || !availableToolNames.includes("patch")) return false;
+  if (!transcriptHasReadOnlyTestPatchFailure(context.transcript)) return false;
+  if (!/\b(?:read-only|readonly|not writable|permission)\b/i.test(message)) return false;
+  if (!/\b(?:test|tests|spec|specs|_test|\.test|\.spec)\b/i.test(message)) return false;
+  if (finishAcknowledgesPendingValidation(message)) return false;
+  return /\b(?:done|complete[sd]?|implemented|fixed|resolved|passes?|passing|validated|verified|compile[sd]?|builds?|works?)\b/i.test(
+    message
+  );
+}
+
+function transcriptHasReadOnlyTestPatchFailure(transcript: string): boolean {
+  return /The unwritable path appears to be a test or spec file/i.test(transcript);
 }
 
 function shouldRejectUnsupportedValidationUnavailableFinish(message: string, availableToolNames: string[]): boolean {

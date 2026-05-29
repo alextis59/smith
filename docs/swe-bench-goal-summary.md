@@ -19,6 +19,12 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - User reinforcement on 2026-05-24: benchmark-shaped prompt edits are cheating even when they look like general benchmark guidance. Future changes must be ordinary Smith improvements that would be appropriate for user tasks outside SWE-bench Pro.
 - User reinforcement on 2026-05-24: anything done specifically for the SWE benchmark, including prompt edits or runtime instructions tuned to benchmark shape, must be discarded. Valid work must be generic Smith behavior that would be appropriate for ordinary user tasks.
 
+## Maintenance Notes
+
+- `.smith-bench` grows quickly because many targeted runs keep full sandboxes, traces, and result artifacts. Periodically check its size with `du -sh .smith-bench` and the retained run count with `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l`.
+- After each useful failure has its command, log path, trace path, sandbox id, and relevant evidence copied into this summary/worklog, prune stale `.smith-bench/run-*` sandboxes that are no longer needed for diagnosis. Keep the raw result JSONs and any sandboxes that still contain unresolved evidence.
+- Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
+
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 
 Problem found:
@@ -1871,3 +1877,25 @@ Decision:
 - Do not count `005` as recovered. The target trace used the new failed-sub-agent transcript tail and reached `finish`, but the verifier still failed against restored tests with missing `Forwarder.cfg` and `Forwarder.clientCredentials` fields.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `59G` with `82` retained `run-*` directories. Prune stale retained runs periodically after useful commands, logs, traces, and diagnostic snippets are recorded so the folder does not grow unchecked by several GB.
+
+## 2026-05-29 Read-Only Test Patch Finish Guard
+
+Change:
+
+- If a patch has already failed because a likely test/spec file is read-only, Smith now rejects a later `finish` message that still presents the task as complete while citing that read-only test/spec failure.
+- The rejection keeps the behavior generic: read-only tests/specs should normally be treated as existing behavior to satisfy through source changes, or reported as a clear blocker/partial result when the requested work truly cannot be completed.
+- This does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `44` tests.
+- Project benchmark `091-command-router-refactor`: passed in `117036ms`, log `/tmp/smith/2026-05-29T00-20-21-467Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-0bsHky/home/.smith/runs/2026-05-29T00-18-24-673Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `524303ms`, log `/tmp/smith/2026-05-29T00-29-10-376Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-sgmMDz/home/.smith/runs/2026-05-29T00-20-26-848Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic finish-state safety, focused-test covered, build-clean, and project validation passed.
+- Do not count `010` as recovered. This specific target rerun did not exercise the new rejection; it failed on missing Alpine compatibility methods (`parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`) and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `61G` with `84` retained `run-*` directories. Prune stale retained runs after their evidence is recorded, while preserving result JSONs and sandboxes still referenced by active diagnosis.

@@ -2134,6 +2134,71 @@ max_turns = 30
     expect(userMessages(provider.requests[1].body)).not.toContain("Finish rejected: read-only mode is not active");
   });
 
+  it("rejects completed finish claims after read-only test patch failures", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: tests/readonly.test.js",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message:
+            "Implemented the source fix. Note: I could not update tests/readonly.test.js because it is read-only, but the relevant tests pass."
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Partial result: tests/readonly.test.js is read-only, so the requested test update is blocked."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-readonly-test-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "tests", "readonly.test.js"), "old\n", "utf8");
+    chmodSync(join(cwd, "tests", "readonly.test.js"), 0o444);
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch readonly test"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Partial result");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[1].body)).toContain("The unwritable path appears to be a test or spec file");
+    expect(userMessages(provider.requests[2].body)).toContain("Finish rejected: a read-only test/spec patch failed");
+  });
+
   it("remote prints only first finish message to stdout and supports resume", async () => {
     const provider = await startFakeProvider([
       { name: "finish", arguments: { message: "need info" } },
