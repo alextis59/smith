@@ -1966,3 +1966,26 @@ Decision:
 - The target rerun did not clearly exercise the new post-deadline inspection slot; many patch context failures happened before deadline.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `68G` with `92` retained `run-*` directories. Add a recurring habit to prune stale retained sandboxes from time to time after logs, traces, commands, and diagnostic snippets have been recorded, so `.smith-bench` does not silently grow by several more GB. Preserve any sandbox still referenced by active diagnosis.
+
+## 2026-05-29 Explicit Requirements Checklist Reminder
+
+Change:
+
+- Smith now adds a generic initial checklist reminder when the user prompt contains an explicit requirements, acceptance criteria, todo, or checklist section.
+- The reminder tells Smith to track each requested item and only finish as complete when each item is implemented, validated, or explicitly reported incomplete/blocked.
+- This is generic task-following behavior for normal user requests; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `49` tests after rerunning separately from build to avoid the known `dist` race.
+- Project benchmark `091-command-router-refactor`: passed in `118481ms`, log `/tmp/smith/2026-05-29T01-52-58-993Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-r2QRN4/home/.smith/runs/2026-05-29T01-51-00-768Z.trace`.
+- First target `010-future-architect-vuls` attempt failed before result collection with `smith: ENOSPC: no space left on device, write`.
+- After approved cleanup of stale retained `.smith-bench/run-*` sandboxes, target `010-future-architect-vuls` failed after verifier in `426690ms`, log `/tmp/smith/2026-05-29T05-28-49-728Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-se1orY/home/.smith/runs/2026-05-29T05-21-44-107Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and project validation passed.
+- Do not count `010` as recovered. The rerun finished with an honest blocker and no source patch; the verifier still failed on missing Alpine parser methods and `TestIsOvalDefAffected`.
+- Evidence improved from a false completion claim to an explicit incomplete-requirements report, but strict score evidence remains `6/10`; full suite is still not justified.
+- Cleanup action: removed stale retained `.smith-bench/run-*` sandboxes after `ENOSPC`, preserving the currently referenced diagnostic runs. `.smith-bench` is now `3.4G` with `5` retained `run-*` directories. Continue pruning stale retained runs periodically after logs and diagnostic snippets are recorded.

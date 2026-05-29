@@ -1449,7 +1449,7 @@ function errorMessage(error: unknown): string {
 }
 
 function initialTranscript(cwd: string, prompt: string): string {
-  return `${appendChatIn(prompt)}\n${memoryFilePresence(cwd)}`;
+  return [appendChatIn(prompt), memoryFilePresence(cwd), taskChecklistReminder(prompt)].filter(Boolean).join("\n");
 }
 
 function memoryFilePresence(cwd: string): string {
@@ -1462,6 +1462,20 @@ function memoryFilePresence(cwd: string): string {
     projectMemory ? "Local SMITH.md exists; read it with cat SMITH.md before broad inspection." : "No local SMITH.md found.",
     taskMemory ? "Local SMITH.TASK.md exists; read it with cat SMITH.TASK.md before broad inspection." : "No local SMITH.TASK.md found."
   ].join("\n");
+}
+
+function taskChecklistReminder(prompt: string): string | undefined {
+  if (!promptHasExplicitRequirements(prompt)) return undefined;
+  return [
+    "smith$ # task checklist",
+    "The user prompt contains explicit requirements or checklist items. Track them as concrete todo items, and before finish verify each requested item is implemented, validated, or explicitly reported as incomplete or blocked."
+  ].join("\n");
+}
+
+function promptHasExplicitRequirements(prompt: string): boolean {
+  return /(?:^|\n)\s{0,3}(?:#{1,6}\s*)?(?:requirements?|acceptance criteria|todo|checklist)\s*:?\s*(?:\n|$)/i.test(
+    prompt
+  );
 }
 
 function progressReminderOutput(

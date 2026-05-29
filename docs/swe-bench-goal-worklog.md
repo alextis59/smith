@@ -7901,3 +7901,129 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `68G` with `92` retained `run-*` directories. Leave a standing operational note to clean stale retained sandboxes from time to time after the relevant `/tmp/smith` JSON, trace path, sandbox path, command, failure snippets, and diagnostic conclusions have been copied into these logs. Keep sandboxes that are still part of active diagnosis; otherwise prune before the directory grows by several additional GB.
+
+## 2026-05-29 Explicit Requirements Checklist Reminder
+
+Hypothesis:
+
+- The latest useful `010-future-architect-vuls` trace showed a generic missed-requirements failure mode: the user prompt had an explicit Requirements section that mentioned OVAL logic, apk list parsing, apk index parsing, upgradable parsing, and source-package associations, but Smith completed after changing only scanner-side parsing.
+- A generic initial reminder for prompts with explicit requirements may make Smith track each requested item and avoid claiming completion when only one slice is done.
+- This is not benchmark-specific. It applies to any user task with explicit requirements, acceptance criteria, todo, or checklist sections.
+
+Change:
+
+- `src/loop.ts`: `initialTranscript` now appends a task checklist observation when the initial prompt contains a heading such as `Requirements`, `Acceptance Criteria`, `Todo`, or `Checklist`.
+- `src/loop.ts`: the reminder says to track requested items as concrete todo items and verify each is implemented, validated, or explicitly incomplete/blocked before finish.
+- `tests/integration.test.ts`: added coverage that a prompt with `## Requirements` sends the generic checklist reminder to the provider.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- First concurrent `npm test -- tests/integration.test.ts` run failed the new reminder assertion because the CLI used prior `dist` output while `npm run build` was still running. This matches the known build/test race.
+- Rerun after build passed `49` integration tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `118481ms`.
+- Log: `/tmp/smith/2026-05-29T01-52-58-993Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-r2QRN4/home/.smith/runs/2026-05-29T01-51-00-768Z.trace`.
+- Sandbox: `.smith-bench/run-r2QRN4`.
+- Usage: `45580` total tokens.
+
+Target SWE rerun, first attempt:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed before benchmark result collection with:
+
+```text
+smith: ENOSPC: no space left on device, write
+```
+
+Cleanup:
+
+- Sandbox commands could not start because `/tmp` had no space for sandbox mount markers.
+- Approved destructive cleanup command removed stale retained `.smith-bench/run-*` sandboxes while preserving currently referenced diagnostic runs:
+
+```sh
+find .smith-bench -maxdepth 1 -type d -name 'run-*' ! -name 'run-sgmMDz' ! -name 'run-tI3CJl' ! -name 'run-PD1E92' ! -name 'run-r2QRN4' -print0 | xargs -0 rm -rf
+```
+
+- After cleanup: filesystem had `68G` free, `.smith-bench` was `3.3G`, and retained run dirs were `run-PD1E92`, `run-r2QRN4`, `run-sgmMDz`, `run-tI3CJl`.
+
+Target SWE rerun, clean attempt:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `426690ms`.
+- Log: `/tmp/smith/2026-05-29T05-28-49-728Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-se1orY/home/.smith/runs/2026-05-29T05-21-44-107Z.trace`.
+- Sandbox: `.smith-bench/run-se1orY`.
+- Usage: `531433` total tokens.
+
+Trace and sandbox evidence:
+
+- The initial provider input included:
+
+```text
+# task checklist
+The user prompt contains explicit requirements or checklist items. Track them as concrete todo items, and before finish verify each requested item is implemented, validated, or explicitly reported as incomplete or blocked.
+```
+
+- No source patch landed. Retained workspace status only showed restored selected tests staged in the index:
+
+```text
+M  oval/util_test.go
+M  scanner/alpine_test.go
+```
+
+- After sustained inspection, Smith had only `patch` and `finish` available:
+
+```text
+Sustained inspection has continued without a task patch or finish, so inspection tools are temporarily unavailable until a task patch is applied or the run finishes. Continue with available tools: patch, finish.
+```
+
+- Smith finished with an honest blocker instead of a false completion claim:
+
+```text
+Blocked: I identified the required Alpine scanner and OVAL paths, but I can’t safely complete the implementation with the current remaining tools because I no longer have an edit-capable inspection path to verify the exact apk output formats before patching. The required items that still need implementation are: parsing Alpine installed packages from apk list with arch/source association, parsing upgradable packages from apk list --upgradable, building source-package mappings, and adding tests for those parsers and source-package matching.
+```
+
+- External verifier still failed with the same broad categories:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+TestIsOvalDefAffected expected false, actual true
+```
+
+Decision:
+
+- Keep the change because it is a generic requirement-tracking improvement and it moved the target behavior from unsupported completion to an explicit incomplete-requirements blocker.
+- Do not count `010` as recovered. There was no source patch and verifier failed.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- Next generic hypothesis: the sustained-inspection pause may be too aggressive for complex explicit-requirement tasks before the first source patch. Consider a generic, bounded way to require a concrete patch plan or task-memory checklist before disabling inspection, without adding benchmark-specific instructions or allowing unbounded search.
+- `.smith-bench` cleanup status after clean rerun: `3.4G` with `5` retained `run-*` directories. Continue pruning stale retained sandboxes once their evidence is copied into these logs.

@@ -73,6 +73,43 @@ max_turns = 30
     expect(existsSync(join(cwd, "SMITH.TASK.md"))).toBe(false);
   });
 
+  it("adds a generic checklist reminder for prompts with explicit requirements", async () => {
+    const provider = await startFakeProvider([{ name: "finish", arguments: { message: "done" } }]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-checklist-reminder-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const prompt = ["Update the parser.", "", "## Requirements", "", "- Preserve existing behavior.", "- Add validation."].join(
+      "\n"
+    );
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, prompt], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(userMessages(provider.requests[0].body)).toContain("Track them as concrete todo items");
+    expect(userMessages(provider.requests[0].body)).toContain("explicit requirements or checklist items");
+  });
+
   it("attempts a startup rg bootstrap and warns the main agent when rg remains unavailable", async () => {
     const provider = await startFakeProvider([
       { name: "finish", arguments: { message: "rg remains unavailable" } },
