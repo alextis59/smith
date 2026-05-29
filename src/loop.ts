@@ -499,6 +499,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: a read-only test/spec patch failed, but the finish message still presents the task as complete. Treat read-only tests/specs as existing behavior to satisfy through source changes unless the user explicitly asked to edit them. Continue source compatibility work, or finish with a clear blocker/partial result if the requested work cannot be completed."
       );
     }
+    if (shouldRejectReadOnlyTestPatchBlockerFinish(message, parentContext, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: a read-only test/spec patch failed, but the user did not explicitly ask to edit tests. Treat read-only tests/specs as existing behavior to satisfy through source changes, or finish with the actual non-test blocker."
+      );
+    }
     if (shouldRejectUnsupportedValidationUnavailableFinish(message, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -1105,6 +1112,25 @@ function shouldRejectCompletedReadOnlyTestPatchFinish(
   if (finishAcknowledgesPendingValidation(message)) return false;
   return /\b(?:done|complete[sd]?|implemented|fixed|resolved|passes?|passing|validated|verified|compile[sd]?|builds?|works?)\b/i.test(
     message
+  );
+}
+
+function shouldRejectReadOnlyTestPatchBlockerFinish(
+  message: string,
+  context: ToolCallContext,
+  availableToolNames: string[]
+): boolean {
+  if (context.options.runtime.readOnly || !availableToolNames.includes("patch")) return false;
+  if (!transcriptHasReadOnlyTestPatchFailure(context.transcript)) return false;
+  if (promptExplicitlyRequestsTestEdits(context.options.prompt)) return false;
+  if (!/\b(?:read-only|readonly|not writable|permission denied|permission|EROFS)\b/i.test(message)) return false;
+  if (!/\b(?:test|tests|spec|specs|_test|\.test|\.spec)\b/i.test(message)) return false;
+  return /\b(?:cannot|can't|could not|couldn't|unable|blocked|not able|no permission|permission denied)\b/i.test(message);
+}
+
+function promptExplicitlyRequestsTestEdits(prompt: string): boolean {
+  return /\b(?:add|write|create|update|modify|edit|change|fix|patch)\b[\s\S]{0,80}\b(?:tests?|specs?|test coverage|coverage)\b/i.test(
+    prompt
   );
 }
 

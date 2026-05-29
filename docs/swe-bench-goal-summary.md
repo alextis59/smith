@@ -2248,3 +2248,25 @@ Decision:
 - Do not count `010` as recovered. The guard avoided the previous `Done` + incomplete finish shape, but Smith still ended with a partial/read-only-test blocker and the verifier still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, plus `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `18G` with `37` retained `run-*` directories. Prune stale retained sandboxes soon after preserving the latest evidence.
+
+## 2026-05-29 Read-Only Test Blocker Guard
+
+Change:
+
+- Smith now rejects finish messages that present a read-only test/spec patch failure as the blocker when the original user prompt did not ask to edit tests.
+- This is a generic source-compatibility behavior: existing tests/specs should usually be treated as behavior to satisfy through source changes, not as an accepted blocker merely because they are read-only.
+- The change does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `57` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `91272ms`, log `/tmp/smith/2026-05-29T11-16-26-926Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-bangHI/home/.smith/runs/2026-05-29T11-14-55-952Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed by Docker timeout after `905943ms`, log `/tmp/smith/2026-05-29T11-31-38-750Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-BELb6l/home/.smith/runs/2026-05-29T11-16-33-552Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and passed representative project validation.
+- Do not count `010` as recovered. The latest target run timed out before verifier completion; the new guard did not appear to fire before timeout.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `19G` with `39` retained `run-*` directories. Add regular cleanup to the operating checklist: preserve current evidence paths, then prune stale retained sandboxes before the folder grows by several more GB.

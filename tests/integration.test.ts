@@ -2848,6 +2848,71 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).toContain("Finish rejected: a read-only test/spec patch failed");
   });
 
+  it("rejects read-only test blockers when the user did not ask to edit tests", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: tests/readonly.test.js",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Partial blocker: tests/readonly.test.js is read-only, so validation coverage is blocked."
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Partial blocker: source compatibility still needs work."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-readonly-test-blocker-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "tests", "readonly.test.js"), "old\n", "utf8");
+    chmodSync(join(cwd, "tests", "readonly.test.js"), 0o444);
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "fix source compatibility"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("source compatibility still needs work");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[2].body)).toContain(
+      "Finish rejected: a read-only test/spec patch failed, but the user did not explicitly ask to edit tests"
+    );
+  });
+
   it("remote prints only first finish message to stdout and supports resume", async () => {
     const provider = await startFakeProvider([
       { name: "finish", arguments: { message: "need info" } },

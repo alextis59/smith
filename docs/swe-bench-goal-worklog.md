@@ -9417,3 +9417,96 @@ Decision:
 - Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - The next useful generic direction is likely not more finish wording. The failure is source-side: Smith needs to infer compatibility wrappers from undefined method errors or same-package tests without needing to edit tests. Avoid Vuls-specific prompt or runtime rules.
 - Cleanup note: `.smith-bench` is now about `18G` with `37` retained `run-*` directories. Preserve `run-kAfizk` and `run-YZjHnm` for this milestone, then prune stale retained sandboxes soon.
+
+## 2026-05-29 Change: Read-Only Test Blocker Guard
+
+Reasoning:
+
+- The previous `010` run ended with Smith treating an attempted read-only test edit as the blocker, despite the task requiring source compatibility work.
+- That is a generic loop problem: unless the user asked to edit tests/specs, a read-only test/spec patch failure is evidence about required behavior, not a sufficient final blocker by itself.
+- This change remains outside benchmark-specific prompting. It does not alter task prompts, selected tests, parsers, run scripts, scoring, verifier logic, or benchmark result parsing.
+
+Implementation:
+
+- `src/loop.ts` now rejects a finish when:
+  - the runtime is writable and `patch` is available;
+  - the transcript contains Smith's existing read-only test/spec patch failure observation;
+  - the original prompt did not explicitly ask to add, update, edit, patch, or create tests/specs;
+  - the finish says a test/spec is read-only or permission-blocked.
+- Added integration coverage where Smith tries to patch a read-only test, then tries to finish with that read-only test as the blocker, and is forced to continue to a non-test blocker.
+- Preserved the existing behavior that allows test-edit blocker reporting when the user did explicitly ask to patch a read-only test.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `57` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `91272ms`.
+- Log: `/tmp/smith/2026-05-29T11-16-26-926Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-bangHI/home/.smith/runs/2026-05-29T11-14-55-952Z.trace`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout after `905943ms`.
+- Log: `/tmp/smith/2026-05-29T11-31-38-750Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-BELb6l/home/.smith/runs/2026-05-29T11-16-33-552Z.trace`.
+- Retained sandbox: `.smith-bench/run-BELb6l`.
+- Usage: `1141653` total tokens.
+- Retained workspace status:
+
+```text
+ M scanner/alpine.go
+?? SMITH.TASK.md
+```
+
+- Retained source diff stat:
+
+```text
+ scanner/alpine.go | 151 ++++++++++++++++++++++++++++++++++++++++++++----------
+ 1 file changed, 124 insertions(+), 27 deletions(-)
+```
+
+- The new read-only-test blocker guard did not appear to fire before timeout.
+- Late trace evidence showed Smith was still repairing source parser behavior rather than finishing:
+
+```text
+--- FAIL: TestParseApkInfo (0.00s)
+    alpine_test.go:36: [0] expected map[busybox:{busybox 1.26.2-r7 ...} musl:{musl 1.1.16-r14 ...}], actual map[]
+FAIL
+FAIL github.com/future-architect/vuls/scanner 0.380s
+FAIL
+exit_status: 1
+Validation failed: any pending task patch is not validated as complete. Inspect referenced files or failure locations before follow-up patches, then fix the failure, run a passing validation command, or finish with the blocker.
+```
+
+Decision:
+
+- Keep the guard because it is a generic final-answer quality improvement, covered by tests, build-clean, and project-validation clean.
+- Do not count `010` as recovered. This run timed out before a verifier result and did not demonstrate recovery.
+- Current strict evidence remains `6/10`: baseline full-run passes `002`, `004`, and `007`, plus targeted recoveries for `001`, `003`, and `008`.
+- Full SWE-bench Pro is still not justified.
+- Rejected idea: adding SWE/Vuls/Alpine-specific guidance or prompt text. The user explicitly ruled out benchmark-specific prompt edits as cheating.
+- Next generic direction should focus on source-side capability, not more benchmark-aware prompt wording. The active failure shape is compatibility reconstruction from test/caller errors under time pressure.
+- Cleanup note: `.smith-bench` is now about `19G` with `39` retained `run-*` directories. Add periodic cleanup to the loop checklist: after preserving the current log/trace/sandbox IDs in these notes, prune stale retained sandboxes so `.smith-bench` does not grow to several GB beyond the useful evidence set.
