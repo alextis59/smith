@@ -8444,3 +8444,116 @@ Decision:
 - Full suite is still not justified.
 - Next generic hypothesis: after a failed validation exposes duplicate declarations or fixture diffs, Smith needs better patch discipline for follow-up edits. Avoid benchmark/task-specific fixes; look for general duplicate-definition detection or post-failure inspection behavior that applies to normal coding tasks.
 - `.smith-bench` cleanup status after this run: `5.1G` with `15` retained `run-*` directories. Continue pruning stale retained sandboxes after evidence is copied into these logs.
+
+## 2026-05-29 Failed Validation Follow-Up Inspection Nudge
+
+Hypothesis:
+
+- The previous `008` run applied a follow-up patch after failed validation and introduced duplicate helper declarations.
+- Generic improvement: after a validation command fails, make the tool observation explicitly tell Smith to inspect referenced files or failure locations before applying follow-up patches.
+- This is a normal coding-task behavior improvement for failed tests/builds. It does not alter benchmark prompts, task prompts, selected tests, run scripts, scoring, verifier logic, result parsing, or task-specific behavior.
+
+Implementation:
+
+- Updated the failed-validation annotation in `src/loop.ts` from:
+
+```text
+Validation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.
+```
+
+- To:
+
+```text
+Validation failed: any pending task patch is not validated as complete. Inspect referenced files or failure locations before follow-up patches, then fix the failure, run a passing validation command, or finish with the blocker.
+```
+
+- Added an assertion to the existing integration test `keeps post-deadline validation available after a failed validation command`.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `50` tests.
+
+Project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/025-command-alias-support --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `124187ms`.
+- Log: `/tmp/smith/2026-05-29T07-15-24-973Z-smith-025-command-alias-support.json`.
+- Trace: `.smith-bench/run-yorD88/home/.smith/runs/2026-05-29T07-13-21-010Z.trace`.
+- Sandbox: `.smith-bench/run-yorD88`.
+- Verifier command: `bash /task/verify.sh`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by outer timeout after `907939ms`.
+- Benchmark stderr:
+
+```text
+docker timed out after 900000ms
+```
+
+- Log: `/tmp/smith/2026-05-29T07-30-39-873Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+- Trace: `.smith-bench/run-t6gtq8/home/.smith/runs/2026-05-29T07-15-32-909Z.trace`.
+- Sandbox: `.smith-bench/run-t6gtq8`.
+- Usage: `1489150` total tokens.
+
+Trace and sandbox evidence:
+
+- Smith made a source patch to `contrib/trivy/pkg/converter.go`:
+
+```text
+ contrib/trivy/pkg/converter.go | 119 +++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 116 insertions(+), 3 deletions(-)
+```
+
+- The attempted validation command was:
+
+```text
+go test ./contrib/trivy/parser/v2 ./contrib/trivy/pkg
+```
+
+- Validation failed with syntax errors in `contrib/trivy/pkg/converter.go`:
+
+```text
+contrib/trivy/pkg/converter.go:240:6: syntax error: unexpected name upsertCveContent, expected (
+contrib/trivy/pkg/converter.go:277:6: syntax error: unexpected name sameCveContentBase, expected (
+contrib/trivy/pkg/converter.go:296:6: syntax error: unexpected name mergeSeverityStrings, expected (
+contrib/trivy/pkg/converter.go:325:6: syntax error: unexpected name severityRank, expected (
+contrib/trivy/pkg/converter.go:340:6: syntax error: unexpected name appendUniquePackageFixStatus, expected (
+```
+
+- The new failed-validation wording appeared in the trace:
+
+```text
+Validation failed: any pending task patch is not validated as complete. Inspect referenced files or failure locations before follow-up patches, then fix the failure, run a passing validation command, or finish with the blocker.
+```
+
+- The benchmark timed out while waiting for the next model response, so there is no evidence yet that the nudge improved follow-up patch behavior on `008`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, and project validation passed.
+- Do not count `008` as recovered. The run did not finish and did not reach a passing verifier.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- Next generic hypothesis: if the model spends the entire remaining deadline thinking after a failed validation, a runtime policy may need to reserve more time after failed validation or force a concise inspect/patch/finalize loop. This must remain generic and avoid benchmark-specific instructions.
+- `.smith-bench` cleanup status after this run: `5.3G` with `17` retained `run-*` directories. Continue pruning stale retained sandboxes after evidence is copied into these logs.

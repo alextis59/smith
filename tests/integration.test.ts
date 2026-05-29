@@ -1695,6 +1695,7 @@ max_run_ms = 1
     expect(provider.requests).toHaveLength(4);
     expect(toolNames(provider.requests[1].body)).toEqual(["run", "patch", "finish"]);
     expect(userMessages(provider.requests[2].body)).toContain("Validation failed: any pending task patch is not validated");
+    expect(userMessages(provider.requests[2].body)).toContain("Inspect referenced files or failure locations");
     expect(toolNames(provider.requests[2].body)).toEqual(["run", "patch", "finish"]);
     expect(userMessages(provider.requests[3].body)).toContain("checked");
     expect(toolNames(provider.requests[3].body)).toEqual(["patch", "finish"]);

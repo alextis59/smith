@@ -2064,3 +2064,24 @@ Decision:
 - Do not count `008` as recovered. The run reached a source-patched and validation-failed state, but still timed out before a correct final patch.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `5.1G` with `15` retained `run-*` directories. Continue periodic cleanup after evidence is copied forward.
+
+## 2026-05-29 Failed Validation Follow-Up Inspection Nudge
+
+Change:
+
+- Failed validation output now explicitly tells Smith to inspect referenced files or failure locations before follow-up patches.
+- This is generic recovery guidance for normal coding tasks after failed tests/builds; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `50` tests.
+- Relevant project benchmark `025-command-alias-support`: passed in `124187ms`, log `/tmp/smith/2026-05-29T07-15-24-973Z-smith-025-command-alias-support.json`, trace `.smith-bench/run-yorD88/home/.smith/runs/2026-05-29T07-13-21-010Z.trace`.
+- Target SWE rerun `008-future-architect-vuls`: failed by outer timeout after `907939ms`, log `/tmp/smith/2026-05-29T07-30-39-873Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-t6gtq8/home/.smith/runs/2026-05-29T07-15-32-909Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, and project validation passed.
+- Do not count `008` as recovered. The run surfaced the new failed-validation wording after a source patch, but timed out before acting on it.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `5.3G` with `17` retained `run-*` directories. Continue periodic cleanup after evidence is copied forward.

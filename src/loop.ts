@@ -734,7 +734,7 @@ async function runShellCommandTool(
   if (noOpValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.`;
   } else if (failedValidation) {
-    annotatedTerminalOutput = `${rawTerminalOutput}\nValidation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.`;
+    annotatedTerminalOutput = `${rawTerminalOutput}\nValidation failed: any pending task patch is not validated as complete. Inspect referenced files or failure locations before follow-up patches, then fix the failure, run a passing validation command, or finish with the blocker.`;
   } else if (cachedValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command reused cached test results while a task patch is pending. Rerun validation with caching disabled, for example with an appropriate no-cache or force-recheck option, before treating the patch as validated.`;
   } else if (uncoveredValidation) {
