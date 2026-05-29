@@ -29,6 +29,14 @@ describe("PTY shell runner", () => {
       expect(failed.output).not.toContain("SMITH_EXIT_STATUS");
       expect(failed.output).not.toContain("printf");
 
+      const exited = await runner.run("printf before-exit; exit 7", 2000);
+      expect(exited.exitCode).toBe(7);
+      expect(exited.output).toContain("before-exit");
+
+      const afterExit = await runner.run("echo still-open", 2000);
+      expect(afterExit.exitCode).toBe(0);
+      expect(afterExit.output).toContain("still-open");
+
       const heredocFailed = await runner.run("cat > sample.txt <<'EOF'\nhello\nEOF\nfalse", 2000);
       expect(heredocFailed.exitCode).toBe(1);
       expect(heredocFailed.output).not.toContain("SMITH_EXIT_STATUS");

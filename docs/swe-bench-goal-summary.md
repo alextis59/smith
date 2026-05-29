@@ -2292,3 +2292,25 @@ Decision:
 - Do not count `010` as recovered. This target run did not patch files or reach validation, so the new hint was not exercised.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `19G` with `41` retained `run-*` directories. Cleanup is now part of the explicit next-step checklist after preserving `run-nprULK` and `run-pFhVQe`.
+
+## 2026-05-29 PTY Exit Isolation
+
+Change:
+
+- Smith's PTY shell runner now wraps commands containing a standalone `exit` in a subshell so the command's exit status is preserved without closing Smith's persistent interactive shell.
+- This is a generic runtime reliability fix for ordinary shell commands; it does not alter benchmark prompts, selected tests, verifiers, scoring, parsers, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/pty.test.ts tests/integration.test.ts`: passed `60` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `123087ms`, log `/tmp/smith/2026-05-29T11-52-33-933Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-ykT9b9/home/.smith/runs/2026-05-29T11-50-31-328Z.trace`.
+- First target retry `010-future-architect-vuls`: failed early in `159294ms` with `smith: provider request failed: fetch failed`, log `/tmp/smith/2026-05-29T11-55-19-201Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-pP67Sj/home/.smith/runs/2026-05-29T11-52-40-863Z.trace`. This was treated as infrastructure noise, not target evidence.
+- Second target retry `010-future-architect-vuls`: reached verifier and failed in `956356ms`, log `/tmp/smith/2026-05-29T12-51-37-081Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-b4JRst/home/.smith/runs/2026-05-29T12-35-41-495Z.trace`.
+
+Decision:
+
+- Keep the change because it fixes a real generic runtime failure (`exit` closing the persistent shell), is focused-test covered, build-clean, and passed representative project validation.
+- Do not count `010` as recovered. The target no longer failed with `shell is closed`, but verifier still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, plus `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `20G` with `44` retained `run-*` directories. Cleanup should happen before more multi-run sweeps after preserving `run-ykT9b9`, `run-pP67Sj`, and `run-b4JRst`.

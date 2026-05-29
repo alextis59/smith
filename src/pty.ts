@@ -89,7 +89,7 @@ export class PtyShellRunner implements ShellRunner {
     await sleep(25);
     this.buffer = "";
     const started = Date.now();
-    const sent = wrapMultilineCommand(cleaned);
+    const sent = wrapInteractiveShellCommand(cleaned);
     this.terminal.write(`${sent}\r`);
     const wait = await this.waitForPromptOrChatOut(timeoutMs);
     if (wait === "timeout" && !this.closed) {
@@ -242,6 +242,15 @@ function isPtyModule(value: unknown): value is PtyModule {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function wrapInteractiveShellCommand(command: string): string {
+  if (mayCloseInteractiveShell(command)) return command.includes("\n") ? `(\n${command}\n)` : `(${command})`;
+  return wrapMultilineCommand(command);
+}
+
+function mayCloseInteractiveShell(command: string): boolean {
+  return /(?:^|[;&|()\n]\s*)exit(?:\s|$|[;&|)\n])/i.test(command);
 }
 
 function wrapMultilineCommand(command: string): string {

@@ -9583,3 +9583,110 @@ Decision:
 - Rejected idea: using the target-specific Alpine/Vuls details from the trace as prompt text. That would violate the user's benchmark-specific prompt constraint.
 - Next generic direction: reduce unbounded inspection after a clear task and deadline. A general loop-level cap or stronger action reminder after repeated inspections may help ordinary tasks avoid spending the whole run on reconnaissance.
 - Cleanup note: `.smith-bench` is now about `19G` with `41` retained `run-*` directories. Preserve `run-nprULK` and `run-pFhVQe` for this milestone, then prune stale retained sandboxes soon.
+
+## 2026-05-29 Change: PTY Exit Isolation
+
+Reasoning:
+
+- The previous `010` run failed with `smith: shell is closed`.
+- Trace evidence showed the final executed command included `exit $st`; in the PTY runner, a user command containing `exit` can terminate the persistent interactive shell, causing later Smith work to fail as infrastructure rather than task behavior.
+- Ordinary users can legitimately run shell snippets that use `exit` to preserve a status. Smith should capture that status without losing the whole runner.
+- This change is generic runtime reliability. It does not alter prompts, selected tests, parsers, run scripts, scoring, verifier logic, or benchmark result parsing.
+
+Implementation:
+
+- `src/pty.ts` now detects standalone `exit` in commands sent to the PTY runner.
+- Commands that may close the interactive shell are wrapped in a subshell:
+  - one-line example: `exit 7` becomes `(exit 7)`;
+  - multiline commands become a parenthesized multiline subshell.
+- This preserves the command's exit status while keeping the parent PTY shell alive.
+- Added `tests/pty.test.ts` coverage that runs `printf before-exit; exit 7`, checks exit status `7`, then runs `echo still-open` successfully in the same runner.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/pty.test.ts tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/pty.test.ts tests/integration.test.ts`: passed `60` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `123087ms`.
+- Log: `/tmp/smith/2026-05-29T11-52-33-933Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-ykT9b9/home/.smith/runs/2026-05-29T11-50-31-328Z.trace`.
+- Verifier exit code: `0`.
+
+Target SWE rerun, first attempt:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `159294ms`.
+- Error: `smith: provider request failed: fetch failed`.
+- Log: `/tmp/smith/2026-05-29T11-55-19-201Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-pP67Sj/home/.smith/runs/2026-05-29T11-52-40-863Z.trace`.
+- Retained workspace status was clean.
+- Decision: treat this as provider/infrastructure noise and retry once; it does not prove target behavior.
+
+Target SWE rerun, second attempt:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Reached verifier and failed in `956356ms`.
+- Log: `/tmp/smith/2026-05-29T12-51-37-081Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-b4JRst/home/.smith/runs/2026-05-29T12-35-41-495Z.trace`.
+- Retained sandbox: `.smith-bench/run-b4JRst`.
+- Usage: `1304014` total tokens.
+- Retained workspace status:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+?? scanner/alpine_source_test.go
+```
+
+- Retained source diff stat:
+
+```text
+ scanner/alpine.go | 146 ++++++++++++++++++++++++++++++++++++++++++------------
+ 1 file changed, 115 insertions(+), 31 deletions(-)
+```
+
+- The previous `shell is closed` infrastructure failure did not recur; the run reached verifier output.
+- Verifier failures:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+TestIsOvalDefAffected: expected affected false, actual true; expected fixedIn empty, actual 3.3.2-r0
+```
+
+Decision:
+
+- Keep the PTY fix because it converts a generic shell-runner infrastructure failure into ordinary task/verifier evidence, is covered by focused tests, and passed the representative local benchmark.
+- Do not count `010` as recovered.
+- Current strict evidence remains `6/10`: baseline full-run passes `002`, `004`, and `007`, plus targeted recoveries for `001`, `003`, and `008`.
+- Full SWE-bench Pro is still not justified.
+- Rejected idea: using the target-specific Alpine/Vuls implementation details from the trace as Smith prompt text. That remains benchmark-specific and disallowed by the user.
+- Next generic direction: Smith needs stronger completion gating when it edits or adds test files and then claims success under deadline finalization; in this run it reported `go test ./scanner` success despite verifier showing source compatibility wrappers were still missing.
+- Cleanup note: `.smith-bench` is now about `20G` with `44` retained `run-*` directories. Preserve `run-ykT9b9`, `run-pP67Sj`, and `run-b4JRst` for this milestone, then prune stale retained sandboxes before another expensive sequence.
