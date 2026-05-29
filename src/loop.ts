@@ -520,6 +520,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: a previous validation command appeared to run no tests, but the finish message presents it as successful validation. Run a validation command that executes checks, or report validation as pending/not performed."
       );
     }
+    if (shouldRejectContradictoryCompletionFinish(message, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: the message claims the task is done while also reporting incomplete or blocked requested work. Continue with available tools, or finish with a clear partial/blocker report that does not present the task as complete."
+      );
+    }
     if (shouldRejectIncompleteRequirementsFinish(message, parentContext, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -1134,6 +1141,18 @@ function shouldRejectNoOpValidationClaimFinish(message: string, context: ToolCal
   ) || /\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b[\s\S]{0,120}\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b/i.test(
     message
   );
+}
+
+function shouldRejectContradictoryCompletionFinish(message: string, availableToolNames: string[]): boolean {
+  if (!availableToolNames.some((toolName) => toolName === "run" || toolName === "patch")) return false;
+  if (!finishClaimsComplete(message)) return false;
+  return finishReportsIncompleteRequirements(message);
+}
+
+function finishClaimsComplete(message: string): boolean {
+  return /^\s*(?:done|complete[sd]?|fixed|resolved)\b/i.test(message) || /\b(?:fully|all)\s+(?:done|complete[sd]?|implemented|fixed|resolved|validated)\b/i.test(
+    message
+  ) || /\b(?:implemented|fixed|resolved)\s+and\s+(?:validated|verified|tested)\b/i.test(message);
 }
 
 function finishAcknowledgesValidationNotPerformed(message: string): boolean {

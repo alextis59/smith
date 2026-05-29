@@ -9316,3 +9316,104 @@ Decision:
 - Rejected idea: escalating this into Vuls/Alpine-specific instructions or benchmark prompt text. The user has explicitly ruled that out.
 - Next generic hypothesis: the issue is not only declaration removal; Smith also needs a general way to avoid claiming completion after narrow validation when the task involved adding compatibility entry points or when current evidence lacks broad caller search. This must be handled without benchmark-specific wording.
 - Cleanup note: `.smith-bench` is now about `18G` with `35` retained `run-*` directories. Preserve `run-b8b02j` and `run-IA4eIM` for this milestone, then prune stale retained sandboxes soon.
+
+## 2026-05-29 Change: Contradictory Finish Guard
+
+Reasoning:
+
+- The previous `010` run ended with a finish message that opened with `Done.` while also reporting an incomplete/blocked checklist item.
+- That is a generic completion-quality problem: a final answer should not simultaneously claim completion and report incomplete requested work.
+- This change is not benchmark-specific and does not alter prompts, task text, selected tests, verifiers, scoring, or parsers.
+
+Implementation:
+
+- `src/loop.ts` now rejects a finish when:
+  - `run` or `patch` is still available;
+  - the message claims completion, for example starts with `Done`, `Complete`, `Fixed`, or `Resolved`, or says all/fully done or implemented and validated;
+  - the same message reports incomplete or blocked requested work.
+- Added integration coverage where Smith first reports `Done` with an unchecked checklist item, then succeeds with a clear partial blocker report.
+- Updated the existing incomplete-finish integration test because the new contradiction guard intentionally fires earlier for "Completed one item" plus remaining unchecked checklist items.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- First integration run failed only because the older incomplete-finish test expected the previous rejection text. Updated the expectation to the new, more specific contradictory-completion rejection.
+- `npm test -- tests/integration.test.ts`: passed `56` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `191158ms`.
+- Log: `/tmp/smith/2026-05-29T10-54-31-275Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-kAfizk/home/.smith/runs/2026-05-29T10-51-20-603Z.trace`.
+- Verifier command: `bash /task/verify.sh`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `981846ms`.
+- Log: `/tmp/smith/2026-05-29T11-11-00-546Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-YZjHnm/home/.smith/runs/2026-05-29T10-54-39-537Z.trace`.
+- Usage: `923842` total tokens.
+- Retained workspace status:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+```
+
+- Retained source diff stat:
+
+```text
+ scanner/alpine.go | 126 +++++++++++++++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 110 insertions(+), 16 deletions(-)
+```
+
+- The contradictory-finish guard did not fire in the final accepted finish, because Smith no longer claimed `Done`; it reported `Implemented and blocked items`.
+- The trace did show an earlier generic finish rejection for incomplete requirements before Smith attempted a read-only test patch:
+
+```text
+Finish rejected: the prompt has explicit requirements, and the finish message says requested items remain incomplete without a concrete blocker.
+```
+
+- Smith attempted to edit `scanner/alpine_test.go`, hit EROFS, received the generic read-only test guidance, then ended with a read-only-test blocker.
+- External verifier still failed source compatibility and behavior:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+```
+
+and:
+
+```text
+TestIsOvalDefAffected: expected affected false, actual true; expected fixedIn empty, actual 3.3.2-r0
+```
+
+Decision:
+
+- Keep the guard because it is a generic final-answer consistency improvement, covered by tests, build-clean, and project-validation clean.
+- Do not count `010` as recovered.
+- Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- The next useful generic direction is likely not more finish wording. The failure is source-side: Smith needs to infer compatibility wrappers from undefined method errors or same-package tests without needing to edit tests. Avoid Vuls-specific prompt or runtime rules.
+- Cleanup note: `.smith-bench` is now about `18G` with `37` retained `run-*` directories. Preserve `run-kAfizk` and `run-YZjHnm` for this milestone, then prune stale retained sandboxes soon.

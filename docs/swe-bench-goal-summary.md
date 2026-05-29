@@ -2227,3 +2227,24 @@ Decision:
 - Do not count `010` as recovered. The new warning was not exercised in this target run because Smith did not remove old declarations in the patch; it failed to add expected wrapper methods. Verifier still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `18G` with `35` retained `run-*` directories. Cleanup is urgent after the current evidence paths are preserved.
+
+## 2026-05-29 Contradictory Finish Guard
+
+Change:
+
+- Smith now rejects finish messages that claim the task is done while also reporting incomplete or blocked requested work.
+- This is generic completion-quality behavior for ordinary tasks, not benchmark-specific prompting.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `56` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `191158ms`, log `/tmp/smith/2026-05-29T10-54-31-275Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-kAfizk/home/.smith/runs/2026-05-29T10-51-20-603Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `981846ms`, log `/tmp/smith/2026-05-29T11-11-00-546Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-YZjHnm/home/.smith/runs/2026-05-29T10-54-39-537Z.trace`.
+
+Decision:
+
+- Keep the guard because it is generic, focused-test covered, and project validation passed.
+- Do not count `010` as recovered. The guard avoided the previous `Done` + incomplete finish shape, but Smith still ended with a partial/read-only-test blocker and the verifier still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, plus `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `18G` with `37` retained `run-*` directories. Prune stale retained sandboxes soon after preserving the latest evidence.

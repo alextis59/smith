@@ -159,7 +159,51 @@ max_turns = 30
     expect(stdout).toContain("Cannot continue");
     expect(provider.requests).toHaveLength(2);
     expect(userMessages(provider.requests[1].body)).toContain(
-      "Finish rejected: the prompt has explicit requirements, and the finish message says requested items remain incomplete"
+      "Finish rejected: the message claims the task is done while also reporting incomplete or blocked requested work"
+    );
+  });
+
+  it("rejects finish reports that claim completion while reporting incomplete work", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "finish",
+        arguments: {
+          message: ["Done.", "", "Checklist:", "- [x] Update parser.", "- [ ] Preserve compatibility wrappers."].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "Partial blocker: compatibility wrappers are still incomplete." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-contradictory-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "update parser"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Partial blocker");
+    expect(provider.requests).toHaveLength(2);
+    expect(userMessages(provider.requests[1].body)).toContain(
+      "Finish rejected: the message claims the task is done while also reporting incomplete or blocked requested work"
     );
   });
 
