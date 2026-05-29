@@ -2011,3 +2011,17 @@ Decision:
 - Do not count `010` as recovered. The verifier still failed on missing Alpine parser method wrappers and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup status: `.smith-bench` is `4.8G` with `7` retained `run-*` directories after this run.
+
+## 2026-05-29 Fresh 008 Diagnostic
+
+Evidence:
+
+- Current Smith rerun of `008-future-architect-vuls`: failed by outer timeout after `906886ms`, log `/tmp/smith/2026-05-29T06-06-53-481Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-IAADH4/home/.smith/runs/2026-05-29T05-51-48-218Z.trace`.
+- Smith applied a late source patch to `models/cvecontents.go` but did not reach validation or finish before the benchmark timeout.
+- Retained diff: `models/cvecontents.go | 134 +++++++++++++++++++++++++++++++++++++++++++++++++-`.
+
+Decision:
+
+- Do not count `008` as recovered.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Next generic hypothesis: the deadline/progress policy still lets complex investigations defer the first patch until too late for validation. Any change must stay generic and avoid benchmark-specific timing or task instructions.

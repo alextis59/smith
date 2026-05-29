@@ -8127,3 +8127,76 @@ Decision:
 - Full suite is still not justified.
 - Next generic hypothesis: local validation can pass while restored/existing tests require compatibility wrapper methods that the agent did not discover. Avoid adding benchmark-specific names; consider only broad source-compatibility improvements that apply to ordinary refactors and parser helper renames.
 - `.smith-bench` cleanup status after this run: `4.8G` with `7` retained `run-*` directories.
+
+## 2026-05-29 Fresh 008 Diagnostic
+
+Reason for switching target:
+
+- `010` has had several current targeted reruns and remains unrecovered.
+- `008-future-architect-vuls` is Codex-passed in the target leaderboard but Smith-failed in the baseline; there were no retained `008` sandboxes after cleanup.
+- User explicitly asked not to overfocus on tasks Codex `gpt-5.4` high failed; `008` is therefore a better next diagnostic target than `003`, `006`, or `009`.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by outer timeout after `906886ms`.
+- No Smith stdout; benchmark stderr was:
+
+```text
+docker timed out after 900000ms
+```
+
+- Log: `/tmp/smith/2026-05-29T06-06-53-481Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+- Trace: `.smith-bench/run-IAADH4/home/.smith/runs/2026-05-29T05-51-48-218Z.trace`.
+- Sandbox: `.smith-bench/run-IAADH4`.
+- Usage: `1362874` total tokens.
+
+Trace and sandbox evidence:
+
+- Smith was investigating Trivy/Vuls CVE content consolidation and delegated useful reconnaissance.
+- The 75% and 90% deadline reminders fired before any task patch:
+
+```text
+Smith deadline: elapsed 10m 14s of 12m 45s max run time (75% threshold)
+Smith deadline: elapsed 11m 35s of 12m 45s max run time (90% threshold)
+```
+
+- At the 36-call progress pause, tools were restricted to `patch` and `finish`:
+
+```text
+Smith progress: 36 tool calls have completed without a task patch or finish; turn 36 of 240; available tools: patch, finish.
+```
+
+- Smith then applied a late source patch:
+
+```text
+Applied patch to models/cvecontents.go
+Task patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical.
+```
+
+- The benchmark timed out before Smith reached validation or finish.
+- Retained source diff:
+
+```text
+ models/cvecontents.go | 134 +++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 132 insertions(+), 2 deletions(-)
+```
+
+- Retained workspace status:
+
+```text
+ M models/cvecontents.go
+?? SMITH.TASK.md
+```
+
+Decision:
+
+- Do not count `008` as recovered.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- Next generic hypothesis: the pacing policy now permits more exploration, but for deadline-bound complex tasks it can still defer the first task patch until too close to the outer timeout for validation. A future change should be generic, probably deadline-aware, and should push toward a first safe patch or explicit blocker earlier without adding benchmark-specific timing or task instructions.
