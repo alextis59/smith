@@ -8027,3 +8027,103 @@ Decision:
 - Full suite is still not justified.
 - Next generic hypothesis: the sustained-inspection pause may be too aggressive for complex explicit-requirement tasks before the first source patch. Consider a generic, bounded way to require a concrete patch plan or task-memory checklist before disabling inspection, without adding benchmark-specific instructions or allowing unbounded search.
 - `.smith-bench` cleanup status after clean rerun: `3.4G` with `5` retained `run-*` directories. Continue pruning stale retained sandboxes once their evidence is copied into these logs.
+
+## 2026-05-29 Longer No-Patch Inspection Window
+
+Hypothesis:
+
+- The clean `010-future-architect-vuls` run with the explicit requirements reminder ended at turn 25 with only `patch` and `finish` available after sustained inspection:
+
+```text
+Sustained inspection has continued without a task patch or finish, so inspection tools are temporarily unavailable until a task patch is applied or the run finishes. Continue with available tools: patch, finish.
+```
+
+- Smith then returned an honest blocker because it no longer had an inspection path to verify exact apk formats before patching.
+- Generic failure mode: the no-patch inspection pause at `24` tool calls can be too aggressive for complex tasks before the first safe source patch, especially when explicit requirements require cross-file design and exact format inspection.
+
+Change:
+
+- `src/loop.ts`: increased `INSPECTION_PAUSE_TOOL_INTERVAL` from `PROGRESS_REMINDER_TOOL_INTERVAL * 2` to `PROGRESS_REMINDER_TOOL_INTERVAL * 3`.
+- `tests/integration.test.ts`: updated the pause test to expect inspection tools to be disabled after `36` no-patch tool calls instead of `24`.
+- The progress reminder interval remains `12`; the change only delays hard inspection disabling.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed `49` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `197518ms`.
+- Log: `/tmp/smith/2026-05-29T05-35-45-158Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-xX1O8q/home/.smith/runs/2026-05-29T05-32-28-228Z.trace`.
+- Sandbox: `.smith-bench/run-xX1O8q`.
+- Usage: `78506` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `841956ms`.
+- Log: `/tmp/smith/2026-05-29T05-49-53-464Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-NtUGCH/home/.smith/runs/2026-05-29T05-35-52-272Z.trace`.
+- Sandbox: `.smith-bench/run-NtUGCH`.
+- Usage: `1670122` total tokens.
+
+Trace and sandbox evidence:
+
+- Unlike the previous `010` run, Smith landed a source patch:
+
+```text
+ scanner/alpine.go | 157 ++++++++++++++++++++++++++++++++++++++++++++----------
+ 1 file changed, 129 insertions(+), 28 deletions(-)
+```
+
+- Retained workspace status after verifier restoration:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+```
+
+- Smith ran a broader validation command and claimed success:
+
+```text
+go test ./scanner ./oval ./models
+```
+
+- External verifier still failed with missing parser entry points and OVAL behavior:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+TestIsOvalDefAffected expected false, actual true
+```
+
+Decision:
+
+- Keep the change because it is generic and produced a source-patched attempt where the previous run stopped at a blocker.
+- Do not count `010` as recovered. The patch did not preserve/add compatibility wrappers expected by restored scanner tests and did not satisfy OVAL behavior.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- Next generic hypothesis: local validation can pass while restored/existing tests require compatibility wrapper methods that the agent did not discover. Avoid adding benchmark-specific names; consider only broad source-compatibility improvements that apply to ordinary refactors and parser helper renames.
+- `.smith-bench` cleanup status after this run: `4.8G` with `7` retained `run-*` directories.

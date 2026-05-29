@@ -1989,3 +1989,25 @@ Decision:
 - Do not count `010` as recovered. The rerun finished with an honest blocker and no source patch; the verifier still failed on missing Alpine parser methods and `TestIsOvalDefAffected`.
 - Evidence improved from a false completion claim to an explicit incomplete-requirements report, but strict score evidence remains `6/10`; full suite is still not justified.
 - Cleanup action: removed stale retained `.smith-bench/run-*` sandboxes after `ENOSPC`, preserving the currently referenced diagnostic runs. `.smith-bench` is now `3.4G` with `5` retained `run-*` directories. Continue pruning stale retained runs periodically after logs and diagnostic snippets are recorded.
+
+## 2026-05-29 Longer No-Patch Inspection Window
+
+Change:
+
+- Smith now waits for a third no-patch progress interval before temporarily disabling inspection tools: `36` tool calls instead of `24`.
+- The 12-call progress reminders remain unchanged.
+- This is generic pacing for complex tasks that need broader initial investigation before a safe first patch; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `49` tests.
+- Project benchmark `091-command-router-refactor`: passed in `197518ms`, log `/tmp/smith/2026-05-29T05-35-45-158Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-xX1O8q/home/.smith/runs/2026-05-29T05-32-28-228Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `841956ms`, log `/tmp/smith/2026-05-29T05-49-53-464Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-NtUGCH/home/.smith/runs/2026-05-29T05-35-52-272Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, project validation passed, and it changed `010` from an early blocker to a source-patched attempt.
+- Do not count `010` as recovered. The verifier still failed on missing Alpine parser method wrappers and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup status: `.smith-bench` is `4.8G` with `7` retained `run-*` directories after this run.

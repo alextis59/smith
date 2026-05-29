@@ -1155,7 +1155,7 @@ timeout_ms = 5000
 
   it("temporarily disables inspection tools after repeated no-patch progress reminders", async () => {
     const provider = await startFakeProvider([
-      ...Array.from({ length: 24 }, (_, index) => ({
+      ...Array.from({ length: 36 }, (_, index) => ({
         name: "run" as const,
         arguments: { command: `printf output-${index}` }
       })),
@@ -1179,7 +1179,7 @@ model = "fake-model"
 [runtime]
 danger_review = "off"
 timeout_ms = 5000
-max_turns = 30
+max_turns = 45
 `,
       "utf8"
     );
@@ -1190,13 +1190,13 @@ max_turns = 30
     });
 
     expect(stdout).toContain("done");
-    expect(provider.requests).toHaveLength(26);
-    expect(toolNames(provider.requests[24].body)).toEqual(["patch", "finish"]);
-    expect(systemMessage(provider.requests[24].body)).toContain(
+    expect(provider.requests).toHaveLength(38);
+    expect(toolNames(provider.requests[36].body)).toEqual(["patch", "finish"]);
+    expect(systemMessage(provider.requests[36].body)).toContain(
       "Sustained inspection has continued without a task patch or finish"
     );
-    expect(userMessages(provider.requests[24].body)).toContain("Smith progress: 24 tool calls have completed");
-    expect(userMessages(provider.requests[25].body)).toContain("Unknown or unavailable tool 'run'");
+    expect(userMessages(provider.requests[36].body)).toContain("Smith progress: 36 tool calls have completed");
+    expect(userMessages(provider.requests[37].body)).toContain("Unknown or unavailable tool 'run'");
   });
 
   it("does not reset progress reminders for memory-only patches", async () => {
