@@ -10683,3 +10683,82 @@ Decision:
 - It did not recover `010`.
 - Strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Cleanup note: `.smith-bench` is now about `20G` with `23` retained `run-*` directories. Preserve `run-1zl86m`, `run-6goAJU`, and `run-SEpBif` for this milestone; prune stale older run sandboxes before another long sequence.
+
+## 2026-05-29 Worklog: Pause Run After Repeated Unsafe Edit Rejections
+
+Diagnostic:
+
+- The previous heredoc guard prevented the specific PTY corruption in `010`, but trace `.smith-bench/run-6goAJU/home/.smith/runs/2026-05-29T20-05-29-607Z.trace` showed repeated `Run command rejected: heredoc-style file rewrites` messages before Smith eventually used safer edits.
+- Hypothesis: a generic loop-control response should stop offering `run` for more inspection/edit attempts after repeated unsafe run-edit rejections, nudging the agent into `patch` without adding task-specific or benchmark-specific prompting.
+
+Implementation:
+
+- Added `RUN_EDIT_REJECTION_PAUSE_THRESHOLD = 2` in `src/loop.ts`.
+- Added `unsafeRunEditRejected` to `ToolActionResult`.
+- When `runShellCommandTool()` rejects a likely heredoc file rewrite, it now returns `unsafeRunEditRejected: true`.
+- `runSmithTask()` tracks `unsafeRunEditRejectionsSincePatch`; after two unsafe rejections with no non-memory task patch, `pauseInspectionAfterRepeatedRunEditRejections()` removes `run` and `sub_agent` through the existing inspection-disabled availability state.
+- A successful non-memory task patch resets the rejection counter.
+
+Focused regression:
+
+- Added `pauses run after repeated rejected file rewrites` to `tests/integration.test.ts`.
+- Fake provider sequence:
+  - rejected `cat > note.txt <<'EOF'`;
+  - rejected `cat > ./note.txt <<'EOF'`;
+  - next request exposes only `patch` and `finish`;
+  - patch succeeds and final finish reports validation pending.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "heredoc file rewrites|repeated rejected file rewrites"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Initial focused test run failed before rebuild because the CLI used stale compiled output; after `npm run build`, the focused tests passed.
+- `npm run build`: passed.
+- Focused test selector: passed `2` selected tests.
+- Full integration file: passed `70` tests in `26909ms`.
+- Representative `091-command-router-refactor`: passed in `149330ms`.
+- Representative log: `/tmp/smith/2026-05-29T20-31-15-266Z-smith-091-command-router-refactor.json`.
+- Representative trace: `.smith-bench/run-Gn7PlH/home/.smith/runs/2026-05-29T20-28-46-172Z.trace`.
+
+Target rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout after `906907ms`.
+- Log: `/tmp/smith/2026-05-29T20-46-30-571Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-jZiXQQ/home/.smith/runs/2026-05-29T20-31-25-205Z.trace`.
+- Retained workspace status:
+
+```text
+ M scanner/alpine.go
+```
+
+- Retained source diff:
+
+```text
+ scanner/alpine.go | 127 ++++++++++++++++++++++++++++++++++++++++++------------
+ 1 file changed, 99 insertions(+), 28 deletions(-)
+```
+
+- Trace/sandbox evidence:
+  - No `Run command rejected: heredoc-style` or repeated-unsafe-run pause messages appeared in this target rerun.
+  - `scanner/alpine.go` had no shell-completion pollution.
+  - The run failed repeated targeted validation with `TestParseApkInfo` and `TestParseApkVersion` returning empty maps, then timed out before producing a valid verifier result.
+
+Decision:
+
+- Keep the change because it is a generic loop-control fix covered by focused/full integration tests and representative project validation.
+- Do not count `010` as recovered; the new path was not exercised in this target rerun.
+- Strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Cleanup note: `.smith-bench` is now about `21G` with `25` retained `run-*` directories. Preserve `run-Gn7PlH` and `run-jZiXQQ` for this milestone along with unresolved recent evidence runs, then prune stale older sandboxes before another expensive sequence.

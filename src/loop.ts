@@ -33,6 +33,7 @@ const RIPGREP_CHECK_TIMEOUT_MS = 5_000;
 const RIPGREP_BOOTSTRAP_MAX_TURNS = 6;
 const PROGRESS_REMINDER_TOOL_INTERVAL = 12;
 const INSPECTION_PAUSE_TOOL_INTERVAL = PROGRESS_REMINDER_TOOL_INTERVAL * 3;
+const RUN_EDIT_REJECTION_PAUSE_THRESHOLD = 2;
 const RUN_DEADLINE_REMINDER_THRESHOLDS = [0.75, 0.9] as const;
 const POST_DEADLINE_VALIDATION_RUN_TIMEOUT_MS = 60_000;
 const POST_DEADLINE_INSPECTION_RUN_TIMEOUT_MS = 15_000;
@@ -167,6 +168,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let codexTurnState: string | undefined;
   let toolCallsSincePatchOrFinish = 0;
   let toolAvailabilityState: ToolAvailabilityState = {};
+  let unsafeRunEditRejectionsSincePatch = 0;
   let subAgentTurnLimitFailures = 0;
   let runDeadlineReminderIndex = 0;
   let unvalidatedTaskPatch = false;
@@ -327,6 +329,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           nextPendingOutput = [nextPendingOutput, action.toolOutput].filter(Boolean).join("\n");
           const madeTaskPatch = action.changedFiles !== undefined && !changedFilesAreOnlySmithMemory(action.changedFiles);
           if (madeTaskPatch && subAgentTurnLimitFailures < 2) {
+            unsafeRunEditRejectionsSincePatch = 0;
             toolAvailabilityState = availabilityAfterTaskPatch(retainPersistentToolAvailability(toolAvailabilityState));
           } else if (action.subAgentTurnLimitFailure) {
             subAgentTurnLimitFailures += 1;
@@ -338,6 +341,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
                   : "A previous sub_agent child run did not finish within its turn budget, so sub_agent is temporarily unavailable until a task patch succeeds."
             };
           } else if (madeTaskPatch) {
+            unsafeRunEditRejectionsSincePatch = 0;
             toolAvailabilityState = availabilityAfterTaskPatch({ ...toolAvailabilityState, inspectionDisabledReason: undefined });
           } else if (action.postDeadlineValidationRunConsumed) {
             toolAvailabilityState = {
@@ -359,6 +363,11 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
               postDeadlineInspectionRunReason:
                 "A post-deadline patch failed because its context did not match, so run is available for one short inspection command to inspect exact current lines before patching or finalizing."
             };
+          } else if (action.unsafeRunEditRejected) {
+            unsafeRunEditRejectionsSincePatch += 1;
+            if (unsafeRunEditRejectionsSincePatch >= RUN_EDIT_REJECTION_PAUSE_THRESHOLD) {
+              toolAvailabilityState = pauseInspectionAfterRepeatedRunEditRejections(options, toolAvailabilityState);
+            }
           }
           if (madeTaskPatch) {
             unvalidatedTaskPatch = true;
@@ -443,6 +452,7 @@ type ToolActionResult = {
   postDeadlineInspectionRunConsumed?: boolean;
   postDeadlineValidationFailed?: boolean;
   patchContextFailed?: boolean;
+  unsafeRunEditRejected?: boolean;
   noOpValidationRun?: boolean;
   nonNoOpValidationRun?: boolean;
   validationRunExecuted?: boolean;
@@ -821,11 +831,14 @@ async function runShellCommandTool(
     );
   }
   if (isLikelyHeredocFileWrite(command)) {
-    return appendToolObservation(
-      parentContext,
-      callId,
-      "Run command rejected: heredoc-style file rewrites through the interactive shell can corrupt source text, especially indentation and tab-heavy code. Use the patch tool for file edits, or use run only for generated artifacts after verifying the command changed the intended file."
-    );
+    return {
+      ...appendToolObservation(
+        parentContext,
+        callId,
+        "Run command rejected: heredoc-style file rewrites through the interactive shell can corrupt source text, especially indentation and tab-heavy code. Use the patch tool for file edits, or use run only for generated artifacts after verifying the command changed the intended file."
+      ),
+      unsafeRunEditRejected: true
+    };
   }
   const review = await reviewDangerousCommand({
     command,
@@ -1571,6 +1584,20 @@ function pauseInspectionAfterSustainedNoPatch(
     ...availability,
     inspectionDisabledReason:
       "Sustained inspection has continued without a task patch or finish, so inspection tools are temporarily unavailable until a task patch is applied or the run finishes."
+  };
+}
+
+function pauseInspectionAfterRepeatedRunEditRejections(
+  options: SmithRunOptions,
+  availability: ToolAvailabilityState
+): ToolAvailabilityState {
+  if (availability.inspectionDisabledReason || availability.deadlineFinalizationReason) return availability;
+  const patchAvailable = availableSmithTools(options, availability).some((tool) => tool.name === "patch");
+  if (!patchAvailable) return availability;
+  return {
+    ...availability,
+    inspectionDisabledReason:
+      "Repeated run commands attempted unsafe file rewrites and were rejected, so run is temporarily unavailable until a task patch is applied or the run finishes. Use patch for source edits."
   };
 }
 

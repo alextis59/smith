@@ -24,7 +24,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - `.smith-bench` grows quickly because many targeted runs keep full sandboxes, traces, and result artifacts. Periodically check its size with `du -sh .smith-bench` and the retained run count with `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l`.
 - After each useful failure has its command, log path, trace path, sandbox id, and relevant evidence copied into this summary/worklog, prune stale `.smith-bench/run-*` sandboxes that are no longer needed for diagnosis. Keep the raw result JSONs and any sandboxes that still contain unresolved evidence.
 - Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
-- 2026-05-29 note: after the latest targeted runs, `.smith-bench` is about `20G` with `23` retained `run-*` directories. Before starting another long target sequence, review and prune stale retained sandboxes whose evidence has already been copied into these logs.
+- 2026-05-29 note: after the latest targeted runs, `.smith-bench` is about `21G` with `25` retained `run-*` directories. Before starting another long target sequence, review and prune stale retained sandboxes whose evidence has already been copied into these logs.
 
 ## 2026-05-29 Milestone: Require External Blockers For Incomplete Requirement Finishes
 
@@ -148,6 +148,40 @@ Decision:
 
 - Keep the change as a generic source-edit safety improvement.
 - Do not count `010` as recovered. Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
+
+## 2026-05-29 Milestone: Pause Run After Repeated Unsafe Edit Rejections
+
+Problem found:
+
+- The heredoc-rewrite guard prevented PTY source corruption, but the prior `010` trace showed Smith could spend multiple turns retrying rejected run-based file rewrites before switching tools.
+- This is a generic loop-control issue: when a file-edit method is repeatedly rejected as unsafe, Smith should stop offering that same method until a proper task patch is applied.
+
+Change:
+
+- Track repeated unsafe run-edit rejections in `src/loop.ts`.
+- After two such rejections without a task patch, temporarily remove `run` and `sub_agent` through the existing inspection-pause availability path, leaving `patch` and `finish` available.
+- Reset the rejection counter once a non-memory task patch succeeds.
+- Added integration coverage that confirms repeated rejected run rewrites cause the next model turn to expose only `patch` and `finish`.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "heredoc file rewrites|repeated rejected file rewrites"`: passed `2` selected tests after rebuild.
+- `npm test -- tests/integration.test.ts`: passed `70` tests.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `149330ms`, log `/tmp/smith/2026-05-29T20-31-15-266Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-Gn7PlH/home/.smith/runs/2026-05-29T20-28-46-172Z.trace`.
+
+Target evidence:
+
+- Target `010` failed by Docker timeout after `906907ms`, log `/tmp/smith/2026-05-29T20-46-30-571Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-jZiXQQ/home/.smith/runs/2026-05-29T20-31-25-205Z.trace`.
+- Retained workspace had only `scanner/alpine.go` modified, with `127` changed lines and no shell-completion pollution.
+- Trace search found no `Run command rejected: heredoc-style` or repeated-unsafe-run pause messages in this rerun; Smith used patch-style edits instead, so the new path was validated by tests but not exercised by this target run.
+- The target still failed on `TestParseApkInfo` / `TestParseApkVersion` returning empty maps, then timed out. No score evidence changed.
+
+Decision:
+
+- Keep the change because it is a generic loop-control fix with focused regression coverage, full integration coverage, build validation, and representative project benchmark validation.
+- Do not count `010` as recovered. Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Cleanup note: `.smith-bench` is now about `21G` with `25` retained `run-*` directories. Preserve `run-Gn7PlH` and `run-jZiXQQ` for this milestone, plus unresolved recent evidence runs, then prune stale older sandboxes before more expensive reruns.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 

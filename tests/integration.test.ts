@@ -431,6 +431,78 @@ max_turns = 30
     expect(userMessages(provider.requests[1].body)).toContain("Run command rejected: heredoc-style file rewrites");
   });
 
+  it("pauses run after repeated rejected file rewrites", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "run",
+        arguments: {
+          command: "cat > note.txt <<'EOF'\nnew\nEOF",
+          timeout_ms: 5000
+        }
+      },
+      {
+        name: "run",
+        arguments: {
+          command: "cat > ./note.txt <<'EOF'\nnew\nEOF",
+          timeout_ms: 5000
+        }
+      },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Changed note.txt; validation pending."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-repeated-run-edit-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "change note"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("validation pending");
+    expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("new\n");
+    expect(provider.requests).toHaveLength(4);
+    expect(userMessages(provider.requests[2].body)).toContain("Run command rejected: heredoc-style file rewrites");
+    expect(toolNames(provider.requests[2].body)).toEqual(["patch", "finish"]);
+    expect(systemMessage(provider.requests[2].body)).toContain("Repeated run commands attempted unsafe file rewrites");
+  });
+
   it("warns when a patch changes likely test files", async () => {
     const provider = await startFakeProvider([
       {
