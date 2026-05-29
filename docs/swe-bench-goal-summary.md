@@ -2025,3 +2025,20 @@ Decision:
 - Do not count `008` as recovered.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Next generic hypothesis: the deadline/progress policy still lets complex investigations defer the first patch until too late for validation. Any change must stay generic and avoid benchmark-specific timing or task instructions.
+
+## 2026-05-29 Rejected Deadline Finalization Experiment
+
+Evidence:
+
+- Tried a generic runtime-only idea: start deadline finalization before `max_run_ms` instead of waiting for the configured max run time to fully elapse. This did not add benchmark-specific prompt text or task-specific logic.
+- At a `95%` finalization threshold, focused validation passed: `npm run build`, `npm test -- tests/integration.test.ts`, and project benchmark `091-command-router-refactor` passed in `202900ms`, log `/tmp/smith/2026-05-29T06-14-19-231Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-9QHBZh/home/.smith/runs/2026-05-29T06-10-56-609Z.trace`.
+- Target `008-future-architect-vuls` still failed by outer timeout after `906075ms`, log `/tmp/smith/2026-05-29T06-29-36-384Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-RtuHl0/home/.smith/runs/2026-05-29T06-14-30-998Z.trace`.
+- Trace evidence showed `95%` finalization was too late to affect the decisive model response: Smith reached the 90% reminder at `12m 1s of 12m 45s`, had only `patch` and `finish` available, then the model response ran into the outer timeout before another Smith turn could apply finalization.
+- Tightening the same idea to `90%` failed the representative project benchmark `091-command-router-refactor`: verifier exit code `1`, log `/tmp/smith/2026-05-29T06-36-02-524Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-J8U99Q/home/.smith/runs/2026-05-29T06-31-14-760Z.trace`.
+
+Decision:
+
+- Reverted the deadline-finalization code experiment and kept no source changes from it.
+- Do not rerun SWE with the `90%` version because the required project-task validation failed.
+- Do not count `008` as recovered. Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `4.9G` after the retained diagnostic runs. Continue pruning stale retained sandboxes after their command, log path, trace path, sandbox path, and conclusions are copied into these logs.

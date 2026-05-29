@@ -8200,3 +8200,125 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - Next generic hypothesis: the pacing policy now permits more exploration, but for deadline-bound complex tasks it can still defer the first task patch until too close to the outer timeout for validation. A future change should be generic, probably deadline-aware, and should push toward a first safe patch or explicit blocker earlier without adding benchmark-specific timing or task instructions.
+
+## 2026-05-29 Rejected Deadline Finalization Experiment
+
+Hypothesis:
+
+- The fresh `008` timeout suggested Smith could still defer the first source patch until too late for validation.
+- Generic idea considered: start the existing deadline finalization mode before the configured `max_run_ms` is fully exhausted, preserving the same bounded validation path after late patches.
+- This was runtime tool-availability logic only. It did not alter SWE prompts, task prompts, selected tests, run scripts, scoring, verifier logic, result parsing, or task-specific behavior.
+
+First implementation attempt:
+
+- Added `RUN_DEADLINE_FINALIZATION_THRESHOLD = 0.95`.
+- Changed `enforceRunDeadlineFinalization` so finalization could start when elapsed time reached `95%` of configured `max_run_ms`.
+- Changed late-patch validation wording from “after the configured max run time elapsed” to “after deadline finalization started” so the message remained true when finalization began before the hard max.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `49` tests.
+- Project benchmark `091-command-router-refactor`: passed in `202900ms`.
+- Project log: `/tmp/smith/2026-05-29T06-14-19-231Z-smith-091-command-router-refactor.json`.
+- Project trace: `.smith-bench/run-9QHBZh/home/.smith/runs/2026-05-29T06-10-56-609Z.trace`.
+- Project sandbox: `.smith-bench/run-9QHBZh`.
+
+Target rerun with `95%` threshold:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by outer timeout after `906075ms`.
+- Benchmark stderr:
+
+```text
+docker timed out after 900000ms
+```
+
+- Log: `/tmp/smith/2026-05-29T06-29-36-384Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+- Trace: `.smith-bench/run-RtuHl0/home/.smith/runs/2026-05-29T06-14-30-998Z.trace`.
+- Sandbox: `.smith-bench/run-RtuHl0`.
+- Usage: `1470482` total tokens.
+- `.smith-bench` size after this run: `4.9G`.
+
+Trace evidence:
+
+- Smith hit the 36-call no-patch pause and the final deadline reminder before any task patch:
+
+```text
+Smith progress: 36 tool calls have completed without a task patch or finish; turn 36 of 240; available tools: patch, finish.
+Smith deadline: elapsed 12m 1s of 12m 45s max run time (90% threshold); available tools: patch, finish.
+```
+
+- The `95%` finalization threshold did not get a chance to affect behavior because the model response after the 90% reminder was still in progress when the outer timeout killed the run.
+- This means the 95% version was too late for the observed failure mode.
+
+Second implementation attempt:
+
+- Tightened `RUN_DEADLINE_FINALIZATION_THRESHOLD` to `0.9`, aligning finalization with the final deadline reminder.
+- Rationale: if finalization needs to affect the model response that follows the 90% reminder, it must be active before that request is sent.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `49` tests.
+- Project benchmark `091-command-router-refactor`: failed after verifier in `288113ms`.
+- Project log: `/tmp/smith/2026-05-29T06-36-02-524Z-smith-091-command-router-refactor.json`.
+- Project trace: `.smith-bench/run-J8U99Q/home/.smith/runs/2026-05-29T06-31-14-760Z.trace`.
+- Project sandbox: `.smith-bench/run-J8U99Q`.
+- Verifier command: `bash /task/verify.sh`.
+- Verifier exit code: `1`.
+
+Project failure evidence:
+
+- Smith implemented `src/router.js`, then ran the benchmark verifier:
+
+```text
+bash /task/verify.sh
+Validation failed: any pending task patch is not validated as complete. Fix the failure, run a passing validation command, or finish with the blocker.
+```
+
+- It then ran only `node test.js`, patched `README.md`, reran `node test.js`, and finished.
+- Retained verifier script showed the missing requirement:
+
+```sh
+set -euo pipefail
+node test.js
+node --check src/router.js
+grep -q "## Verification" README.md
+```
+
+- Retained README did not include `## Verification`, so the project benchmark failure was legitimate.
+
+Decision:
+
+- Reverted the deadline-finalization source change entirely.
+- Rejected this experiment for now because:
+  - `95%` did not affect the observed `008` failure mode.
+  - `90%` failed the required representative project validation.
+  - Carrying a global runtime-pressure change after a local benchmark regression would be unjustified.
+- No source change remains from this experiment.
+- Do not count `008` as recovered.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- Cleanup note: after copying the commands, log paths, trace paths, verifier snippets, and conclusions above, prune stale retained `.smith-bench/run-*` directories periodically. Keep only sandboxes still needed for active diagnosis or leaderboard evidence so `.smith-bench` does not grow by several more GB again.
