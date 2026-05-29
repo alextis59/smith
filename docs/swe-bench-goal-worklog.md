@@ -9130,3 +9130,189 @@ Decision:
 - Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Avoid spending more consecutive cycles on `005`; rotate to `010` or another Codex-passed failure for the next improvement, per the user's instruction not to overfocus flawed or stubborn tasks.
 - Cleanup note: `.smith-bench` is now about `15G` with `32` retained `run-*` directories. Preserve `run-P3xsPQ` and `run-E5vKcp` for this milestone, then prune older stale retained sandboxes soon.
+
+## 2026-05-29 Diagnostic: Fresh 010 After Generic Recovery Guards
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `992975ms`.
+- Log: `/tmp/smith/2026-05-29T10-27-47-067Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-7Dgc6b/home/.smith/runs/2026-05-29T10-11-14-913Z.trace`.
+- Sandbox: `.smith-bench/run-7Dgc6b`.
+- Usage: `2363132` total tokens.
+- Retained workspace status:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+```
+
+- Retained source diff stat:
+
+```text
+ scanner/alpine.go | 154 +++++++++++++++++++++++++++++++++++++++++-------------
+ 1 file changed, 118 insertions(+), 36 deletions(-)
+```
+
+Trace and verifier evidence:
+
+- Smith patched only `scanner/alpine.go` as a source change; test files shown in status are selected/restored benchmark tests.
+- Smith repeatedly hit and fixed local scanner compile/behavior failures, including:
+
+```text
+scanner/alpine.go:135:9: not enough return values
+	have (models.Packages, error)
+	want (models.Packages, models.SrcPackages, error)
+```
+
+and:
+
+```text
+--- FAIL: TestParseApkInfo
+expected map[...] actual map[]
+--- FAIL: TestParseApkVersion
+expected map[...] actual map[]
+```
+
+- Smith eventually reported success after:
+
+```text
+go test -count=1 ./scanner ./oval ./models
+```
+
+- External verifier failed restored tests because old helper method names were not preserved:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+```
+
+- External verifier also failed:
+
+```text
+=== RUN   TestIsOvalDefAffected
+    util_test.go:2499: [85] affected
+        expected: false
+          actual: true
+    util_test.go:2508: [85] fixedIn
+        expected:
+          actual: 3.3.2-r0
+```
+
+Decision:
+
+- Do not count `010` as recovered.
+- Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- The failure mode is now clear and generic: during helper/parser refactors, Smith can satisfy newly inspected local commands while failing to preserve existing private helper methods that tests and same-package callers still depend on.
+- Next generic improvement should focus on source-compatibility preservation after renames/refactors, for example a runtime warning after failed validation with undefined method/function errors, or a finish guard when recent validation output names undefined symbols and the final report claims success. It must remain generally applicable and must not mention Vuls, Alpine, task IDs, selected tests, or benchmark-specific behavior.
+- Cleanup note: `.smith-bench` is now about `16G` with `33` retained `run-*` directories. Preserve `run-7Dgc6b` for this diagnostic, then prune stale retained sandboxes soon.
+
+## 2026-05-29 Change: Declaration-Removal Compatibility Warning
+
+Reasoning:
+
+- The fresh `010` diagnostic suggested a generic refactor risk: Smith can replace helper/parser entry points and validate only the new path, while existing tests or same-package callers still depend on old declarations.
+- A low-risk generic signal is to make patch output call out removed or renamed declarations, so Smith searches for remaining callers or keeps compatibility wrappers before treating the patch as validated.
+- This does not mention Vuls, Alpine, SWE-bench, task IDs, selected tests, verifiers, scoring, or benchmark timing.
+
+Implementation:
+
+- `src/loop.ts` inspects the applied Smith patch text after successful non-memory patches.
+- If removed declaration lines are detected and not re-added with the same name, patch output includes:
+
+```text
+Compatibility note: this patch removes or renames declarations: ...
+```
+
+- Initial declaration detection covers common function/class forms:
+  - JavaScript/TypeScript `function name(...)`
+  - Go `func name(...)` and `func (receiver) name(...)`
+  - Python `def name(...)`
+  - `class Name`
+- Added integration coverage for a Go helper rename from `parseLegacyLine` to `parseLine`; Smith receives a compatibility note for the removed old name only.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `55` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `162417ms`.
+- Log: `/tmp/smith/2026-05-29T10-32-38-483Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-b8b02j/home/.smith/runs/2026-05-29T10-29-56-539Z.trace`.
+- Verifier command: `bash /task/verify.sh`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `931599ms`.
+- Log: `/tmp/smith/2026-05-29T10-48-15-618Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-IA4eIM/home/.smith/runs/2026-05-29T10-32-44-817Z.trace`.
+- Usage: `1369277` total tokens.
+- Retained workspace status:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+```
+
+- Retained source diff stat:
+
+```text
+ scanner/alpine.go | 127 +++++++++++++++++++++++++++++++++++++++++++-----------
+ 1 file changed, 101 insertions(+), 26 deletions(-)
+```
+
+- The compatibility note did not appear in the trace. The patch did not remove old helper declarations; it failed to add wrapper methods that restored tests expected.
+- External verifier still failed:
+
+```text
+scanner/alpine_test.go:65:62: (newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+scanner/alpine_test.go:284:62: (newAlpine(config.ServerInfo{})).parseApkIndex undefined
+scanner/alpine_test.go:350:49: (newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+```
+
+- External verifier also still failed `TestIsOvalDefAffected`:
+
+```text
+expected affected false, actual true
+expected fixedIn empty, actual 3.3.2-r0
+```
+
+Decision:
+
+- Keep the change because it is a generic refactor safety signal, covered by tests, build-clean, and passed representative project validation.
+- Do not count `010` as recovered.
+- Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Rejected idea: escalating this into Vuls/Alpine-specific instructions or benchmark prompt text. The user has explicitly ruled that out.
+- Next generic hypothesis: the issue is not only declaration removal; Smith also needs a general way to avoid claiming completion after narrow validation when the task involved adding compatibility entry points or when current evidence lacks broad caller search. This must be handled without benchmark-specific wording.
+- Cleanup note: `.smith-bench` is now about `18G` with `35` retained `run-*` directories. Preserve `run-b8b02j` and `run-IA4eIM` for this milestone, then prune stale retained sandboxes soon.

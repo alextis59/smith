@@ -595,6 +595,10 @@ async function runPatchTool(
     output = `Applied patch to ${result.changedFiles.join(", ")}`;
     if (!changedFilesAreOnlySmithMemory(result.changedFiles)) {
       output = `${output}\nTask patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical. Inspection commands do not validate the patch.`;
+      const removedDeclarations = removedDeclarationNamesFromPatch(patch);
+      if (removedDeclarations.length > 0) {
+        output = `${output}\nCompatibility note: this patch removes or renames declarations: ${removedDeclarations.map((name) => `\`${name}\``).join(", ")}. Search for remaining callers or keep compatibility wrappers when existing callers may still use them before treating validation as complete.`;
+      }
       const changedTestFiles = result.changedFiles.filter(isLikelyTestFilePath);
       if (changedTestFiles.length > 0) {
         output = `${output}\nTest files changed: ${formatChangedFiles(changedTestFiles)}. Local validation may include the changed tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.`;
@@ -622,6 +626,34 @@ async function runPatchTool(
 
 function changedFilesAreOnlySmithMemory(changedFiles: string[]): boolean {
   return changedFiles.length > 0 && changedFiles.every(isRootSmithMemoryFile);
+}
+
+function removedDeclarationNamesFromPatch(patch: string): string[] {
+  const removed = new Set<string>();
+  const added = new Set<string>();
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("---") || line.startsWith("+++")) continue;
+    const marker = line[0];
+    if (marker !== "-" && marker !== "+") continue;
+    for (const name of declarationNamesFromLine(line.slice(1))) {
+      if (marker === "-") removed.add(name);
+      else added.add(name);
+    }
+  }
+  return [...removed].filter((name) => !added.has(name)).slice(0, 8);
+}
+
+function declarationNamesFromLine(line: string): string[] {
+  const patterns = [
+    /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/,
+    /^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\(/,
+    /^\s*def\s+([A-Za-z_]\w*)\s*\(/,
+    /^\s*class\s+([A-Za-z_]\w*)\b/
+  ];
+  return patterns.flatMap((pattern) => {
+    const match = pattern.exec(line);
+    return match ? [match[1]] : [];
+  });
 }
 
 async function trackedGitChangeSet(cwd: string, options: { includeUntracked?: boolean } = {}): Promise<Set<string> | undefined> {

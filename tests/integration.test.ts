@@ -315,6 +315,58 @@ max_turns = 30
     expect(messages(provider.requests[1].body)[4].content).toContain("Local validation may include the changed tests");
   });
 
+  it("warns when a patch removes declarations that may need compatibility wrappers", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: parser.go",
+            "@@",
+            "-func parseLegacyLine(input string) string {",
+            "+func parseLine(input string) string {",
+            " \treturn input",
+            " }",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "patched; validation pending" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-compat-declaration-patch-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "parser.go"), "func parseLegacyLine(input string) string {\n\treturn input\n}\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "rename parser"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("patched");
+    expect(messages(provider.requests[1].body)[4].content).toContain("Compatibility note");
+    expect(messages(provider.requests[1].body)[4].content).toContain("`parseLegacyLine`");
+    expect(messages(provider.requests[1].body)[4].content).not.toContain("`parseLine`");
+  });
+
   it("applies tab-indented patch tool calls without shell tab completion", async () => {
     const provider = await startFakeProvider([
       {

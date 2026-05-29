@@ -2191,3 +2191,39 @@ Decision:
 - The patch hunk-preview path was not exercised in the final `005` rerun, but remains a generic patch-tool improvement covered by unit tests.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified. Rotate to `010` or a different Codex-passed failure before spending another full run.
 - `.smith-bench` is about `15G` with `32` retained `run-*` directories. Cleanup should happen soon after preserving the current evidence paths.
+
+## 2026-05-29 Fresh 010 Diagnostic After Generic Recovery Guards
+
+Evidence:
+
+- Current Smith rerun of `010-future-architect-vuls`: failed after verifier in `992975ms`, log `/tmp/smith/2026-05-29T10-27-47-067Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-7Dgc6b/home/.smith/runs/2026-05-29T10-11-14-913Z.trace`.
+- Smith patched `scanner/alpine.go` and locally validated `go test -count=1 ./scanner ./oval ./models`, then finished claiming success.
+- External verifier failed because restored tests still call `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`; `TestIsOvalDefAffected` also regressed.
+
+Decision:
+
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Next generic hypothesis: Smith needs stronger source-compatibility preservation during helper/parser refactors, especially when existing tests or callers may still use old private methods. Any change must be generic and not Vuls-specific.
+- `.smith-bench` is about `16G` with `33` retained `run-*` directories. Cleanup remains urgent after preserving current evidence paths.
+
+## 2026-05-29 Generic Declaration-Removal Compatibility Warning
+
+Change:
+
+- Patch output now warns when a patch removes or renames function/class declarations, asking Smith to search for remaining callers or keep compatibility wrappers before treating validation as complete.
+- This is a generic refactor safety signal for ordinary coding tasks, not benchmark-specific logic.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `55` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `162417ms`, log `/tmp/smith/2026-05-29T10-32-38-483Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-b8b02j/home/.smith/runs/2026-05-29T10-29-56-539Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed after verifier in `931599ms`, log `/tmp/smith/2026-05-29T10-48-15-618Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-IA4eIM/home/.smith/runs/2026-05-29T10-32-44-817Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, covered by integration tests, and passed local validation.
+- Do not count `010` as recovered. The new warning was not exercised in this target run because Smith did not remove old declarations in the patch; it failed to add expected wrapper methods. Verifier still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `18G` with `35` retained `run-*` directories. Cleanup is urgent after the current evidence paths are preserved.
