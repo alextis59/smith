@@ -8842,3 +8842,138 @@ Decision:
 - Count `008` as cleanly recovered under the raw-prompt path, but this does not increase the strict evidence above the previously tracked `6/10` because `008` was already one of the recovered target tasks in the current accounting. It does make that evidence current again after intervening failures.
 - Full run is still not justified. Need one more Codex-passed Smith failure, likely `005` or `010`, to recover before spending a full suite run.
 - `.smith-bench` cleanup status after this run: `7.0G` with `24` retained `run-*` directories. Continue pruning stale retained sandboxes after evidence is copied into these logs; keep `run-0KN9kr` for current successful `008` evidence and any active diagnostic sandboxes.
+
+## 2026-05-29 Change: Generic Incomplete-Finish Guard
+
+Boundary reminder:
+
+- User reinforced that prompt edits, runtime instructions, or behavior written specifically for SWE-bench Pro are cheating for this goal.
+- This change is not a prompt edit and does not contain SWE-bench, task, verifier, selected-test, scoring, or dataset-specific logic.
+- It applies to normal user tasks with explicit requirements, acceptance criteria, todos, or checklists.
+
+Reasoning:
+
+- Fresh current `005-gravitational-teleport` diagnostic on committed `e0f1266` failed after verifier in `746440ms`.
+- Log: `/tmp/smith/2026-05-29T09-03-08-679Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-VvXoIb/home/.smith/runs/2026-05-29T08-50-49-345Z.trace`.
+- Smith patched only `lib/service/kubernetes.go`, then finished while listing many requested items as incomplete and effectively inviting continuation.
+- The verifier failed because restored tests still expected source compatibility in `lib/kube/proxy`, for example:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:574:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+```
+
+- This exposed a generic completion-quality issue: when the user's prompt has explicit requirements, Smith should not present an incomplete checklist as a normal finish unless it can state a concrete blocker that prevents continued work.
+
+Implementation:
+
+- Added `shouldRejectIncompleteRequirementsFinish()` in `src/loop.ts`.
+- The guard only runs when:
+  - the original prompt appears to have explicit requirements;
+  - tool availability still includes `run` or `patch`;
+  - the finish report says items remain incomplete, e.g. unchecked Markdown checklist items or wording such as remaining requirements/incomplete/not implemented/still missing;
+  - the finish report does not state a concrete blocker such as cannot/could not/unable/impossible/permission denied/missing dependency/environment issue/requires user/manual/external input.
+- The first implementation treated words like `blocked` or `blocker` alone as a concrete blocker. A target rerun showed that was too permissive for ordinary incomplete-status wording, so those words were removed from the concrete-blocker regex.
+- Added integration coverage that rejects an incomplete finish for a prompt with a `## Requirements` section, then accepts a later finish that states a concrete missing-dependency blocker.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- First parallel attempt had `npm run build` pass, while `npm test -- tests/integration.test.ts` failed because the CLI integration tests raced against stale `bin/smith.js` output while the build was updating it.
+- Sequential rerun:
+  - `npm run build`: passed.
+  - `npm test -- tests/integration.test.ts`: passed `53` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `123904ms`.
+- Log: `/tmp/smith/2026-05-29T09-24-45-221Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-kVLPPg/home/.smith/runs/2026-05-29T09-22-41-879Z.trace`.
+- Verifier command: `bash /task/verify.sh`.
+- Verifier exit code: `0`.
+
+Target SWE rerun with initial permissive blocker detection:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `648622ms`.
+- Log: `/tmp/smith/2026-05-29T09-21-24-526Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-Rq3ZG1/home/.smith/runs/2026-05-29T09-10-47-196Z.trace`.
+- Smith made no source changes and finished with blocker-style incomplete checklist wording.
+- Verifier still failed on the same `cfg` / `clientCredentials` compatibility errors.
+- Decision from this attempt: generic guard should not accept the bare word `blocked` as a concrete blocker when the finish report also says requested requirements are incomplete.
+
+Target SWE rerun with stricter concrete-blocker detection:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by outer timeout after `914461ms`.
+- Log: `/tmp/smith/2026-05-29T09-40-08-282Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-JPRH6W/home/.smith/runs/2026-05-29T09-25-02-976Z.trace`.
+- Usage: `2445575` total tokens.
+- Retained workspace status:
+
+```text
+ M lib/kube/proxy/forwarder.go
+ M lib/service/kubernetes.go
+```
+
+- Retained diff stat:
+
+```text
+ lib/kube/proxy/forwarder.go | 82 ++++++++++++++++++++++++++++++++++++---------
+ lib/service/kubernetes.go   |  3 ++
+ 2 files changed, 69 insertions(+), 16 deletions(-)
+```
+
+- The stricter guard changed the failure mode: Smith continued implementing instead of finishing with an incomplete report.
+- It added broader source changes, including compatibility-oriented fields and uploader initialization, then hit validation failures such as:
+
+```text
+lib/kube/proxy/forwarder.go:123:10: f.Auth undefined (type *ForwarderConfig has no field or method Auth)
+lib/kube/proxy/forwarder.go:130:10: f.Client undefined (type *ForwarderConfig has no field or method Client)
+lib/kube/proxy/forwarder.go:144:10: f.Tunnel undefined (type *ForwarderConfig has no field or method Tunnel)
+lib/kube/proxy/forwarder.go:382:23: f.Auth undefined (type *Forwarder has no field or method Auth)
+lib/kube/proxy/forwarder.go:493:7: f.Tunnel undefined (type *Forwarder has no field or method Tunnel)
+```
+
+- Smith inspected these references, then attempted two large follow-up patches. Both failed due patch-context problems:
+
+```text
+patch failed: hunk context not found in lib/kube/proxy/forwarder.go (hunk 11)
+```
+
+```text
+patch failed: hunk context not found in lib/kube/proxy/forwarder.go (hunk 14)
+indentation-insensitive context matched 2 locations; refusing ambiguous fallback
+```
+
+Decision:
+
+- Keep the generic finish guard. It is not enough to recover `005`, but it addresses a real ordinary-task completion bug and passed focused plus representative validation.
+- Do not count `005` as recovered.
+- Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Next generic hypothesis: Smith needs better patch recovery after failed validation when large multi-hunk follow-up patches hit stale or ambiguous context. Any follow-up must stay benchmark-agnostic and should improve normal source-edit reliability, not mention Teleport, Vuls, SWE-bench, selected tests, or benchmark timing.
+- Cleanup note: `.smith-bench` is now about `13G` with `29` retained `run-*` directories. After evidence is copied into these logs, periodically prune stale retained sandboxes and keep only current diagnostic or leaderboard-evidence directories so `.smith-bench` does not grow by several more GB.

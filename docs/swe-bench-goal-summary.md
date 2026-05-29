@@ -2146,3 +2146,24 @@ Decision:
 - Keep the change because it is generic, focused-test covered, build-clean, passed a relevant project benchmark, and produced a clean `008` recovery under the raw-prompt path.
 - Current strict targeted evidence remains `6/10`: baseline full-run passes `002`, `004`, `007` plus recovered `001`, `003`, and `008`. One more Codex-passed Smith failure, likely `005` or `010`, is still needed before a full SWE-bench Pro run is justified.
 - `.smith-bench` is about `7.0G` with `24` retained `run-*` directories. Continue periodic cleanup after evidence is copied forward.
+
+## 2026-05-29 Generic Incomplete-Finish Guard
+
+Change:
+
+- Smith now rejects a `finish` message when the original prompt has explicit requirements and the finish report says requested items remain incomplete without a concrete blocker.
+- The guard is intentionally generic: it applies to ordinary tasks with requirement/checklist sections, does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing, and does not add benchmark-specific prompt content.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `53` tests after a sequential rerun. The initial parallel build/test attempt exposed a stale CLI race and was discarded.
+- Representative project benchmark `091-command-router-refactor`: passed in `123904ms`, log `/tmp/smith/2026-05-29T09-24-45-221Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-kVLPPg/home/.smith/runs/2026-05-29T09-22-41-879Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed by outer timeout after `914461ms`, log `/tmp/smith/2026-05-29T09-40-08-282Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-JPRH6W/home/.smith/runs/2026-05-29T09-25-02-976Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic task-completion integrity guard and passed focused plus representative validation.
+- Do not count `005` as recovered. The stricter guard prevented an incomplete early finish and forced real implementation work, but the run timed out after failed large follow-up patches.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `13G` with `29` retained `run-*` directories. Cleanup is now a recurring maintenance need: after copying evidence into the logs, periodically prune stale retained sandboxes and keep only current diagnostic or leaderboard-evidence runs.

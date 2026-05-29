@@ -110,6 +110,59 @@ max_turns = 30
     expect(userMessages(provider.requests[0].body)).toContain("explicit requirements or checklist items");
   });
 
+  it("rejects incomplete finish reports for prompts with explicit requirements", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "finish",
+        arguments: {
+          message: [
+            "Completed one item.",
+            "",
+            "Remaining checklist items:",
+            "- [ ] Add validation.",
+            "- [ ] Preserve compatibility."
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "Cannot continue because the required dependency is missing from this environment." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-incomplete-requirements-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const prompt = ["Update the adapter.", "", "## Requirements", "", "- Add validation.", "- Preserve compatibility."].join(
+      "\n"
+    );
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, prompt], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Cannot continue");
+    expect(provider.requests).toHaveLength(2);
+    expect(userMessages(provider.requests[1].body)).toContain(
+      "Finish rejected: the prompt has explicit requirements, and the finish message says requested items remain incomplete"
+    );
+  });
+
   it("attempts a startup rg bootstrap and warns the main agent when rg remains unavailable", async () => {
     const provider = await startFakeProvider([
       { name: "finish", arguments: { message: "rg remains unavailable" } },

@@ -513,6 +513,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: a previous validation command appeared to run no tests, but the finish message presents it as successful validation. Run a validation command that executes checks, or report validation as pending/not performed."
       );
     }
+    if (shouldRejectIncompleteRequirementsFinish(message, parentContext, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: the prompt has explicit requirements, and the finish message says requested items remain incomplete without a concrete blocker. Continue implementing the remaining requirements, or finish with a specific blocker that prevents further progress."
+      );
+    }
     if (shouldRejectUnvalidatedTaskPatchFinish(message, parentContext.unvalidatedTaskPatch, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -1094,6 +1101,29 @@ function shouldRejectUnvalidatedTaskPatchFinish(
   if (!unvalidatedTaskPatch || !availableToolNames.includes("run")) return false;
   if (finishAcknowledgesPendingValidation(message)) return false;
   return true;
+}
+
+function shouldRejectIncompleteRequirementsFinish(
+  message: string,
+  context: ToolCallContext,
+  availableToolNames: string[]
+): boolean {
+  if (!promptHasExplicitRequirements(context.options.prompt)) return false;
+  if (!availableToolNames.some((toolName) => toolName === "run" || toolName === "patch")) return false;
+  if (!finishReportsIncompleteRequirements(message)) return false;
+  return !finishReportsConcreteBlocker(message);
+}
+
+function finishReportsIncompleteRequirements(message: string): boolean {
+  return /(?:^|\n)\s*[-*]\s*\[\s\]/.test(message) || /\b(?:remaining (?:requirements?|checklist|items)|incomplete|not (?:fixed|implemented|done|complete)|not yet|has not been|have not been|still (?:needs?|relies|uses|emits|missing))\b/i.test(
+    message
+  );
+}
+
+function finishReportsConcreteBlocker(message: string): boolean {
+  return /\b(?:cannot|can't|could not|couldn't|unable|not able|not practical|impossible|permission denied|missing dependency|environment issue|requires? (?:user|manual|external))\b/i.test(
+    message
+  );
 }
 
 function finishAcknowledgesPendingValidation(message: string): boolean {
