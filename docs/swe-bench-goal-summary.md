@@ -2404,3 +2404,26 @@ Decision:
 - Do not count `005` as recovered. The target retry did not trigger the fixed post-deadline inspection path; Smith paused inspection, edited only `lib/kube/proxy/auth.go`, then finished blocked before resolving the broader proxy/test compatibility failure.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - `.smith-bench` is now about `26G` with `54` retained `run-*` directories. Add a recurring maintenance note: after each committed milestone, preserve the newest evidence sandboxes and prune stale retained runs before the folder grows by several more GB.
+
+## 2026-05-29 Keep Validation Available After Pending Patch
+
+Change:
+
+- Sustained-inspection throttling no longer removes `run` while a non-memory task patch is still pending validation.
+- This is a generic runtime invariant: Smith should not make validation impossible after it changes source files.
+- Added integration coverage for a patch followed by 36 inspection commands; the next turn still exposes `run` and the progress reminder reports `run` as available.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "keeps run available after sustained inspection"`: passed `1` selected test.
+- `npm test -- tests/integration.test.ts`: passed `63` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `203255ms`, log `/tmp/smith/2026-05-29T14-56-31-240Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-w0btlq/home/.smith/runs/2026-05-29T14-53-08-519Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed by outer Docker timeout after `918222ms`, log `/tmp/smith/2026-05-29T15-12-01-461Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-AtY13d/home/.smith/runs/2026-05-29T14-56-56-184Z.trace`.
+
+Decision:
+
+- Keep the change because it fixes a generic validation-availability failure and was exercised in the `005` trace.
+- Do not count `005` as recovered. Evidence improved from an early unvalidated blocker to a run that kept `run` available, ran `go test ./lib/service ./lib/events/filesessions ./lib/kube/proxy`, made a later source patch, then timed out before a final verifier result.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- `.smith-bench` is now about `28G` with `56` retained `run-*` directories. Cleanup should happen soon: preserve `run-w0btlq` and `run-AtY13d` for this milestone, then prune stale retained sandboxes with explicit approval.

@@ -10073,3 +10073,93 @@ Decision:
 - Rejected idea: adding benchmark- or target-specific prompt guidance about Teleport `Forwarder`, `cfg`, `clientCredentials`, or Go struct fields.
 - Next generic direction: reduce premature blocked finishes when patch is still available and the agent reports a known incomplete source edit. Investigate a generic finish-claim guard for "cannot safely patch more" blockers when patch remains available and the transcript contains concrete unresolved compile errors or known source/test incompatibilities.
 - Cleanup note: `.smith-bench` is now about `26G` with `54` retained `run-*` directories. Preserve `run-FiFTH4` and `run-8SAcEl` for this milestone, then prune stale retained sandboxes. Add a recurring checkpoint after each committed milestone so `.smith-bench` does not grow unchecked to several GB more.
+
+## 2026-05-29 Change: Keep Validation Available After Pending Patch
+
+Reasoning:
+
+- The previous `005` trace showed Smith could enter sustained-inspection pause after source edits, leaving only `patch` and `finish`.
+- That made normal validation unavailable while a task patch was still pending validation, which is a generic runtime bug independent of any benchmark.
+- The right invariant is: if Smith has changed task files and has not validated them yet, inspection throttling should not remove `run`, because `run` is the only validation path.
+
+Implementation:
+
+- `pauseInspectionAfterSustainedNoPatch` now receives `hasUnvalidatedTaskPatch`.
+- If a non-memory task patch is pending validation, sustained-inspection pause does not remove `run`.
+- The existing no-patch behavior is unchanged: long inspection with no patch still temporarily removes inspection tools.
+- Added integration coverage:
+  - apply a task patch;
+  - perform 36 inspection commands;
+  - assert the next turn still includes `run`;
+  - assert the progress reminder reports `run` as available and no inspection-disabled system note is added.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "keeps run available after sustained inspection"
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- First selected-test attempt failed because it ran while `npm run build` was still in progress and used stale built CLI output.
+- After build completed, selected regression passed `1` selected test in `2234ms`.
+- Full focused integration file passed `63` tests in `27179ms`.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `203255ms`.
+- Log: `/tmp/smith/2026-05-29T14-56-31-240Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-w0btlq/home/.smith/runs/2026-05-29T14-53-08-519Z.trace`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by outer Docker timeout after `918222ms`.
+- Log: `/tmp/smith/2026-05-29T15-12-01-461Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-AtY13d/home/.smith/runs/2026-05-29T14-56-56-184Z.trace`.
+- Retained sandbox: `.smith-bench/run-AtY13d`.
+- Usage: `3282857` total tokens.
+- Retained workspace status:
+
+```text
+ M lib/kube/proxy/forwarder.go
+ M lib/service/kubernetes.go
+?? SMITH.TASK.md
+```
+
+- Retained source diff stat:
+
+```text
+ lib/kube/proxy/forwarder.go | 26 ++++++++++++++++++--------
+ lib/service/kubernetes.go   |  4 ++++
+ 2 files changed, 22 insertions(+), 8 deletions(-)
+```
+
+- Trace evidence:
+  - The new behavior was exercised: after post-patch inspection, progress reminders still reported `available tools: run, patch, sub_agent, finish`.
+  - Smith ran `go test ./lib/service ./lib/events/filesessions ./lib/kube/proxy` and reported it as passing before later edits.
+  - Existing finish guards rejected several incomplete or contradictory finish reports, which kept Smith working.
+  - Smith later applied a patch to `lib/kube/proxy/forwarder.go`, but the overall benchmark timed out before a final verifier result.
+
+Decision:
+
+- Keep the change because it preserves a necessary validation path after source edits and was directly exercised in the target trace.
+- Do not count `005` as recovered.
+- Current strict evidence remains `6/10`.
+- Full SWE-bench Pro is still not justified.
+- Next generic direction: investigate whether finalization guards are over-rejecting honest partial blockers late in the run, because this `005` attempt spent substantial late time cycling through rejected finish reports. Any change must stay generic and must not weaken completed-work honesty.
+- Cleanup note: `.smith-bench` is now about `28G` with `56` retained `run-*` directories. Preserve `run-w0btlq` and `run-AtY13d` for this milestone, then prune stale retained sandboxes with explicit approval before additional expensive target reruns.

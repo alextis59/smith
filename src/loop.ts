@@ -270,7 +270,12 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
         let output = pendingOutput;
         toolAvailabilityState = enforceRunDeadlineFinalization(options, toolAvailabilityState, runStartedAt, unvalidatedTaskPatch);
         if (toolCallsSincePatchOrFinish > 0 && toolCallsSincePatchOrFinish % PROGRESS_REMINDER_TOOL_INTERVAL === 0) {
-          toolAvailabilityState = pauseInspectionAfterSustainedNoPatch(options, toolAvailabilityState, toolCallsSincePatchOrFinish);
+          toolAvailabilityState = pauseInspectionAfterSustainedNoPatch(
+            options,
+            toolAvailabilityState,
+            toolCallsSincePatchOrFinish,
+            unvalidatedTaskPatch
+          );
           const reminder = progressReminderOutput(options, toolAvailabilityState, toolCallsSincePatchOrFinish, turn, maxTurns);
           transcript = appendTerminalTurn(transcript, "# progress", reminder);
           providerMessages = appendProviderUserObservation(providerMessages, reminder);
@@ -1515,11 +1520,13 @@ function systemPromptForAvailableTools(
 function pauseInspectionAfterSustainedNoPatch(
   options: SmithRunOptions,
   availability: ToolAvailabilityState,
-  toolCallsSincePatchOrFinish: number
+  toolCallsSincePatchOrFinish: number,
+  hasUnvalidatedTaskPatch: boolean
 ): ToolAvailabilityState {
   if (availability.inspectionDisabledReason || availability.deadlineFinalizationReason) return availability;
   const patchAvailable = availableSmithTools(options, availability).some((tool) => tool.name === "patch");
   if (!patchAvailable || toolCallsSincePatchOrFinish < INSPECTION_PAUSE_TOOL_INTERVAL) return availability;
+  if (hasUnvalidatedTaskPatch) return availability;
   return {
     ...availability,
     inspectionDisabledReason:

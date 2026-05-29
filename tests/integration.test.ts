@@ -1465,6 +1465,65 @@ max_turns = 45
     expect(userMessages(provider.requests[37].body)).toContain("Unknown or unavailable tool 'run'");
   });
 
+  it("keeps run available after sustained inspection when a task patch needs validation", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      ...Array.from({ length: 36 }, (_, index) => ({
+        name: "run" as const,
+        arguments: { command: `printf inspect-${index}` }
+      })),
+      { name: "finish", arguments: { message: "Changed note.txt; validation is pending after inspection." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-pending-validation-inspection-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 45
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch then inspect"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("validation is pending");
+    expect(provider.requests).toHaveLength(38);
+    expect(toolNames(provider.requests[37].body)).toContain("run");
+    expect(userMessages(provider.requests[37].body)).toContain("Smith progress: 36 tool calls have completed");
+    expect(userMessages(provider.requests[37].body)).toContain("available tools: run, patch");
+    expect(systemMessage(provider.requests[37].body)).not.toContain(
+      "Sustained inspection has continued without a task patch or finish"
+    );
+  });
+
   it("does not reset progress reminders for memory-only patches", async () => {
     const provider = await startFakeProvider([
       ...Array.from({ length: 11 }, (_, index) => ({
