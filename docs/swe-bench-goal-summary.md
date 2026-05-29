@@ -2106,3 +2106,19 @@ Decision:
 - Do not count `008` as recovered. The verifier still failed `TestParse`, primarily on nil-vs-empty `Cpes`/`CweIDs` differences in Trivy parser expected output.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `5.5G` with `19` retained `run-*` directories. Continue periodic cleanup after evidence is copied forward.
+
+## 2026-05-29 Fresh 010 Diagnostic After Validation Improvements
+
+Evidence:
+
+- Current Smith rerun of `010-future-architect-vuls`: failed by outer timeout after `906259ms`, log `/tmp/smith/2026-05-29T08-06-34-584Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-BDdcJO/home/.smith/runs/2026-05-29T07-51-29-088Z.trace`.
+- Smith patched `scanner/alpine.go` and iterated through multiple focused scanner validations.
+- Retained diff: `scanner/alpine.go | 176 ++++++++++++++++++++++++++++++++++++++++++++----------`.
+- Late validation failure had narrowed to `TestParseApkVersion`, after earlier missing wrapper/build failures were addressed.
+
+Decision:
+
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Next generic hypothesis: Smith benefits from failed-validation inspection guidance, but still spends too long iterating large hand-written parser patches near the timeout. Any follow-up change must stay generic, likely around validation-loop pacing or source-compatible wrapper preservation, not Vuls-specific parser rules.
+- `.smith-bench` is about `6.8G` with `20` retained `run-*` directories. Continue periodic cleanup after evidence is copied forward.

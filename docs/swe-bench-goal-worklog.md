@@ -8661,3 +8661,78 @@ Decision:
 - Full suite is still not justified.
 - Next generic hypothesis: Smith treated its focused validation as sufficient even though it had edited or generated test files and the external verifier restored/ran selected tests that exposed nil-vs-empty slice regressions. Avoid task-specific fixes; consider general handling for modified tests, generated regression tests, and validation claims.
 - `.smith-bench` cleanup status after this run: `5.5G` with `19` retained `run-*` directories. Continue pruning stale retained sandboxes after evidence is copied into these logs.
+
+## 2026-05-29 Fresh 010 Diagnostic After Validation Improvements
+
+Reason for rotating target:
+
+- `008` has had several current targeted reruns and still fails, now at verifier rather than timeout.
+- `010-future-architect-vuls` is another Codex-passed Smith failure and exercises a different failure shape: parser compatibility wrappers and validation-driven source iteration.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by outer timeout after `906259ms`.
+- Benchmark stderr:
+
+```text
+docker timed out after 900000ms
+```
+
+- Log: `/tmp/smith/2026-05-29T08-06-34-584Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-BDdcJO/home/.smith/runs/2026-05-29T07-51-29-088Z.trace`.
+- Sandbox: `.smith-bench/run-BDdcJO`.
+- Usage: `1075994` total tokens.
+
+Trace and sandbox evidence:
+
+- Smith patched `scanner/alpine.go`:
+
+```text
+ scanner/alpine.go | 176 ++++++++++++++++++++++++++++++++++++++++++++----------
+ 1 file changed, 146 insertions(+), 30 deletions(-)
+```
+
+- Retained workspace status:
+
+```text
+ M scanner/alpine.go
+```
+
+- The run addressed earlier missing wrapper/build failures:
+
+```text
+scanner/alpine_test.go:34:16: d.parseApkInfo undefined
+scanner/alpine_test.go:70:16: d.parseApkVersion undefined
+scanner/alpine.go:273:90: undefined: fmt
+```
+
+- Late validation had narrowed to a parser behavior failure:
+
+```text
+--- FAIL: TestParseApkVersion (0.00s)
+    alpine_test.go:72: [0] expected map[libcrypto1.0:{libcrypto1.0   1.0.2m-r0     <nil> [] []} libssl1.0:{libssl1.0   1.0.2m-r0     <nil> [] []} nrpe:{nrpe   2.15-r5     <nil> [] []}], actual map[]
+```
+
+- The final inspected source showed Smith had added compatibility wrappers and parser helpers:
+
+```text
+func (o *alpine) parseApkInfo(stdout string) (models.Packages, error)
+func (o *alpine) parseApkVersion(stdout string) (models.Packages, error)
+func parseLegacyApkInfoLine(line string) (models.Package, error)
+func parseApkListUpgradableLine(line string) (models.Package, error)
+```
+
+Decision:
+
+- Do not count `010` as recovered.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- The current validation and post-failure inspection improvements appear to help Smith iterate through concrete failures, but the task still times out before a correct patch.
+- Next generic hypothesis: Smith needs better validation-loop pacing after repeated failed validations, or a generic way to preserve compatibility wrappers/signatures during parser/helper refactors. Any improvement must be applicable to normal code tasks and avoid benchmark-specific or Vuls-specific instructions.
+- `.smith-bench` cleanup status after this run: `6.8G` with `20` retained `run-*` directories. Continue pruning stale retained sandboxes after evidence is copied into these logs.
