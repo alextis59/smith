@@ -878,6 +878,13 @@ async function runShellCommandTool(
     ) {
       annotatedTerminalOutput = `${annotatedTerminalOutput}\nCompatibility hint: validation reports missing declarations, fields, methods, or symbols after source changes. Search for the referenced names and existing callers, then add or restore source declarations or compatibility wrappers when appropriate.`;
     }
+    if (
+      parentContext.unvalidatedTaskPatch &&
+      changedSourceFiles(parentContext.pendingValidationFiles).length > 0 &&
+      failedValidationReportsSignatureMismatches(rawTerminalOutput)
+    ) {
+      annotatedTerminalOutput = `${annotatedTerminalOutput}\nCompatibility hint: validation reports argument, assignment, or return-value mismatches after source changes. Prefer a small source compatibility fix: update call sites when the new signature is intentional, or keep wrappers/adapters for existing callers before broader rewrites.`;
+    }
   } else if (cachedValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command reused cached test results while a task patch is pending. Rerun validation with caching disabled, for example with an appropriate no-cache or force-recheck option, before treating the patch as validated.`;
   } else if (uncoveredValidation) {
@@ -1026,6 +1033,12 @@ function isCachedValidationOutput(command: string, output: string): boolean {
 
 function failedValidationReportsMissingDeclarations(output: string): boolean {
   return /\b(?:undefined|not defined|is not defined|cannot find name|cannot find symbol|unresolved reference|unresolved symbol|symbol not found|no field or method|no member named|has no member|does not exist|unknown field|undefined:)\b/i.test(
+    output
+  );
+}
+
+function failedValidationReportsSignatureMismatches(output: string): boolean {
+  return /\b(?:assignment mismatch|too (?:few|many) (?:arguments|values)|not enough (?:arguments|values)|expected \d+ arguments?,? but got \d+|got \d+ arguments? but (?:takes|expected)|takes? \d+ (?:positional )?arguments? but \d+ (?:were )?given|multiple-value .* in single-value context|single-value context|returns? \d+ values?)\b/i.test(
     output
   );
 }

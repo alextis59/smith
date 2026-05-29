@@ -2279,6 +2279,72 @@ max_turns = 30
     );
   });
 
+  it("adds source compatibility guidance for signature mismatches in failed validation", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/parser.go",
+            "@@",
+            "-func parseLine(input string) (string, error) {",
+            "+func parseLine(input string) (string, bool, error) {",
+            "-\treturn input, nil",
+            "+\treturn input, true, nil",
+            " }",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "run",
+        arguments: {
+          command:
+            "test -e definitely-missing || (printf 'src/parser.go:12:14: assignment mismatch: 2 variables but parseLine returns 3 values\\n' >&2; exit 1)",
+          timeout_ms: 5000
+        }
+      },
+      { name: "finish", arguments: { message: "blocked" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-signature-mismatch-validation-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src", "parser.go"), "func parseLine(input string) (string, error) {\n\treturn input, nil\n}\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("blocked");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[2].body)).toContain("Validation failed: any pending task patch is not validated");
+    expect(userMessages(provider.requests[2].body)).toContain(
+      "Compatibility hint: validation reports argument, assignment, or return-value mismatches after source changes"
+    );
+    expect(userMessages(provider.requests[2].body)).toContain("small source compatibility fix");
+  });
+
   it("tracks edits made by run commands as pending validation", async () => {
     const provider = await startFakeProvider([
       {

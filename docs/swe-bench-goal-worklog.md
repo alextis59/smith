@@ -9871,3 +9871,101 @@ Decision:
 - Rejected idea: adding benchmark- or target-specific prompt guidance about the Alpine parser, Vuls source packages, or this task's helper names. That would violate the user's instruction to discard benchmark-specific prompt edits.
 - Next generic direction: Smith needs earlier, smaller compatibility-repair patches after validation errors instead of continuing large rewrites under deadline pressure. Investigate a generic post-validation failure nudge that favors minimal source-only caller compatibility fixes after signature mismatch errors.
 - Cleanup note: `.smith-bench` is now about `23G` with `48` retained `run-*` directories. Preserve `run-vxpbw4` and `run-sbbHYK` for this milestone, then prune stale retained sandboxes before another expensive target sequence so the folder does not grow by several more GB.
+
+## 2026-05-29 Change: Signature Mismatch Validation Hint
+
+Reasoning:
+
+- The previous target trace showed same-name signature changes, followed by validation errors such as `assignment mismatch`.
+- The patch-output signature note fired, but Smith still needed clearer failed-validation feedback once the compiler reported concrete call-site breakage.
+- This is generic validation-output analysis. It does not encode benchmark-, dataset-, task-, Vuls-, Alpine-, verifier-, or scoring-specific guidance.
+
+Implementation:
+
+- `src/loop.ts` now recognizes failed validation output that reports argument, assignment, or return-value mismatch patterns.
+- When a pending source patch exists and such validation output appears, Smith appends:
+
+```text
+Compatibility hint: validation reports argument, assignment, or return-value mismatches after source changes.
+```
+
+- The hint favors a small source compatibility fix: update call sites when a new signature is intentional, or keep wrappers/adapters for existing callers before broader rewrites.
+- Added integration coverage for a Go validation failure:
+
+```text
+assignment mismatch: 2 variables but parseLine returns 3 values
+```
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `61` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `80364ms`.
+- Log: `/tmp/smith/2026-05-29T13-44-52-727Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-znPOXG/home/.smith/runs/2026-05-29T13-43-32-590Z.trace`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed verifier in `851098ms`.
+- Log: `/tmp/smith/2026-05-29T13-59-17-188Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-MTRPgg/home/.smith/runs/2026-05-29T13-45-06-863Z.trace`.
+- Retained sandbox: `.smith-bench/run-MTRPgg`.
+- Usage: `1595863` total tokens.
+- Retained workspace status:
+
+```text
+M  oval/util_test.go
+ M scanner/alpine.go
+M  scanner/alpine_test.go
+```
+
+- Retained source diff stat:
+
+```text
+ scanner/alpine.go | 185 ++++++++++++++++++++++++++++++++++++++++++++----------
+ 1 file changed, 151 insertions(+), 34 deletions(-)
+```
+
+- Verifier failures included:
+
+```text
+scanner/alpine.go:108:20: assignment mismatch: 2 variables but o.scanInstalledPackages returns 3 values
+scanner/alpine.go:113:18: undefined: srcPacks
+TestIsOvalDefAffected: expected affected false, actual true; expected fixedIn empty, actual 3.3.2-r0
+```
+
+- The new hint did not fire in the target run because Smith did not run validation after its final source patch; the benchmark verifier found the mismatch afterward.
+- Smith finished with an explicit incomplete report claiming no validation tool remained available. The benchmark then ran the verifier and exposed the compile errors.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and project-validation clean.
+- Do not count `010` as recovered.
+- Current strict evidence remains `6/10`: baseline full-run passes `002`, `004`, and `007`, plus targeted recoveries for `001`, `003`, and `008`.
+- Full SWE-bench Pro is still not justified.
+- Rejected idea: adding target-specific source-package or Alpine-parser instructions to Smith prompts.
+- Next generic direction: the target failure now points to finalization after unvalidated source patches when run is unavailable. Investigate a generic way to preserve or force a final validation slot after any non-memory source patch that occurs near the deadline, instead of allowing an unvalidated finish that the external verifier immediately fails.
+- Cleanup note: `.smith-bench` is now about `23G` with `50` retained `run-*` directories. Preserve `run-znPOXG` and `run-MTRPgg`, then prune stale retained sandboxes before more expensive target reruns.

@@ -2358,3 +2358,25 @@ Decision:
 - Do not count `010` as recovered. The new note fired for changed `scanInstalledPackages` and `parseApkInfo` signatures, but Smith still timed out after late compatibility repair attempts, read-only test-file patch attempts, and patch-context failures.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `23G` with `48` retained `run-*` directories. Before more expensive runs, preserve current evidence paths and prune stale retained sandboxes so the folder does not keep growing by several GB.
+
+## 2026-05-29 Signature Mismatch Validation Hint
+
+Change:
+
+- Failed validation output now adds a generic compatibility hint when source changes are followed by argument, assignment, or return-value mismatch errors.
+- The hint favors small source compatibility fixes: update call sites if a new signature is intentional, or keep wrappers/adapters for existing callers.
+- This is ordinary validation-output analysis; it does not mention SWE-bench, task IDs, benchmark runtimes, selected tests, verifiers, scoring, result parsing, or any target-specific implementation detail.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `61` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `80364ms`, log `/tmp/smith/2026-05-29T13-44-52-727Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-znPOXG/home/.smith/runs/2026-05-29T13-43-32-590Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed verifier in `851098ms`, log `/tmp/smith/2026-05-29T13-59-17-188Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-MTRPgg/home/.smith/runs/2026-05-29T13-45-06-863Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and passed representative project validation.
+- Do not count `010` as recovered. The new hint did not fire in the target run because Smith did not run validation after its final source patch; the benchmark verifier later found `assignment mismatch` and `undefined: srcPacks`.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `23G` with `50` retained `run-*` directories. Cleanup is urgent before further expensive runs: preserve `run-znPOXG` and `run-MTRPgg`, then prune stale retained sandboxes.
