@@ -8557,3 +8557,107 @@ Decision:
 - Full suite is still not justified.
 - Next generic hypothesis: if the model spends the entire remaining deadline thinking after a failed validation, a runtime policy may need to reserve more time after failed validation or force a concise inspect/patch/finalize loop. This must remain generic and avoid benchmark-specific instructions.
 - `.smith-bench` cleanup status after this run: `5.3G` with `17` retained `run-*` directories. Continue pruning stale retained sandboxes after evidence is copied into these logs.
+
+## 2026-05-29 Compound Validation Command Classification
+
+Hypothesis:
+
+- The prior `008` trace showed Smith attempted a command that started with inspection and then ran validation:
+
+```text
+sed -n '1,240p' contrib/trivy/pkg/converter.go && ... && go test ./contrib/trivy/parser/v2 ./contrib/trivy/pkg
+```
+
+- Because `isLikelyValidationCommand` returned false for commands that start with inspection (`sed`, `cat`, `grep`, etc.), the post-deadline reserved validation slot rejected the compound command.
+- Generic improvement: treat compound commands as validation when a later shell segment contains a validation command and that segment is not itself an inspection command. Plain inspection remains inspection.
+
+Implementation:
+
+- Added `containsValidationCommand(command)`.
+- Added `hasValidationSegmentAfterShellOperator(command)`.
+- Changed `isLikelyValidationCommand` so inspection-leading commands are rejected only when they do not contain a later validation segment.
+- Added integration coverage: `allows a compound inspection and validation command after a post-deadline task patch`.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `51` tests.
+
+Project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/025-command-alias-support --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `66844ms`.
+- Log: `/tmp/smith/2026-05-29T07-35-19-378Z-smith-025-command-alias-support.json`.
+- Trace: `.smith-bench/run-Xz2BSJ/home/.smith/runs/2026-05-29T07-34-12-941Z.trace`.
+- Sandbox: `.smith-bench/run-Xz2BSJ`.
+- Verifier command: `bash /task/verify.sh`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `817568ms`.
+- Log: `/tmp/smith/2026-05-29T07-49-06-836Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+- Trace: `.smith-bench/run-TLFgPl/home/.smith/runs/2026-05-29T07-35-30-000Z.trace`.
+- Sandbox: `.smith-bench/run-TLFgPl`.
+- Usage: `1868307` total tokens.
+
+Trace and sandbox evidence:
+
+- The run reached Smith finish instead of the benchmark Docker timeout.
+- Smith claimed validation with:
+
+```text
+go test -count=1 ./contrib/trivy/pkg ./contrib/trivy/parser/v2
+```
+
+- Benchmark verifier then failed selected `TestParse`.
+- Verifier diff examples:
+
+```text
+modified: .ScannedCves["CVE-2013-1629"].CveContents["trivy:debian"][0].Cpes = []models.Cpe{}
+modified: .ScannedCves["CVE-2013-1629"].CveContents["trivy:debian"][0].CweIDs = []string{}
+modified: .ScannedCves["CVE-2023-26154"].CveContents["trivy:ghsa"][0].Cpes = []models.Cpe{}
+modified: .ScannedCves["CVE-2023-26154"].CveContents["trivy:ghsa"][0].CweIDs = []string{}
+```
+
+- Retained workspace status:
+
+```text
+M  contrib/trivy/parser/v2/parser_test.go
+ M contrib/trivy/pkg/converter.go
+?? contrib/trivy/pkg/converter_test.go
+```
+
+- Retained source diff stat:
+
+```text
+ contrib/trivy/pkg/converter.go | 191 ++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 188 insertions(+), 3 deletions(-)
+```
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, project validation passed, and the target moved from repeated outer timeouts to a verifier failure.
+- Do not count `008` as recovered. The verifier still failed `TestParse`.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- Next generic hypothesis: Smith treated its focused validation as sufficient even though it had edited or generated test files and the external verifier restored/ran selected tests that exposed nil-vs-empty slice regressions. Avoid task-specific fixes; consider general handling for modified tests, generated regression tests, and validation claims.
+- `.smith-bench` cleanup status after this run: `5.5G` with `19` retained `run-*` directories. Continue pruning stale retained sandboxes after evidence is copied into these logs.

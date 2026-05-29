@@ -782,11 +782,20 @@ async function runShellCommandTool(
 
 function isLikelyValidationCommand(command: string): boolean {
   const trimmed = command.trim();
-  if (isLikelyInspectionCommand(trimmed)) {
+  if (isLikelyInspectionCommand(trimmed) && !hasValidationSegmentAfterShellOperator(trimmed)) {
     return false;
   }
+  return containsValidationCommand(trimmed);
+}
+
+function hasValidationSegmentAfterShellOperator(command: string): boolean {
+  const segments = command.split(/(?:&&|\|\||;|\n)/).map((segment) => segment.trim());
+  return segments.slice(1).some((segment) => segment.length > 0 && !isLikelyInspectionCommand(segment) && containsValidationCommand(segment));
+}
+
+function containsValidationCommand(command: string): boolean {
   return /\b(?:go\s+test|cargo\s+test|pytest|vitest|jest|mocha|rspec|npm\s+(?:run\s+)?test|yarn\s+test|pnpm\s+test|mvn\s+test|gradle\s+test|test|build|compile|lint|typecheck|tsc|check|verify(?:\.sh)?)\b/i.test(
-    trimmed
+    command
   );
 }
 

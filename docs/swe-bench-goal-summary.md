@@ -2085,3 +2085,24 @@ Decision:
 - Do not count `008` as recovered. The run surfaced the new failed-validation wording after a source patch, but timed out before acting on it.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `5.3G` with `17` retained `run-*` directories. Continue periodic cleanup after evidence is copied forward.
+
+## 2026-05-29 Compound Validation Command Classification
+
+Change:
+
+- Smith now treats compound commands that start with inspection but later run validation, such as `sed ... && npm test`, as validation commands.
+- Plain inspection commands still remain inspection. This is generic command classification for normal timed runs; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `51` tests.
+- Relevant project benchmark `025-command-alias-support`: passed in `66844ms`, log `/tmp/smith/2026-05-29T07-35-19-378Z-smith-025-command-alias-support.json`, trace `.smith-bench/run-Xz2BSJ/home/.smith/runs/2026-05-29T07-34-12-941Z.trace`.
+- Target SWE rerun `008-future-architect-vuls`: failed after verifier in `817568ms`, log `/tmp/smith/2026-05-29T07-49-06-836Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-TLFgPl/home/.smith/runs/2026-05-29T07-35-30-000Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, project validation passed, and moved `008` from repeated outer timeouts to a verifier failure.
+- Do not count `008` as recovered. The verifier still failed `TestParse`, primarily on nil-vs-empty `Cpes`/`CweIDs` differences in Trivy parser expected output.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `5.5G` with `19` retained `run-*` directories. Continue periodic cleanup after evidence is copied forward.
