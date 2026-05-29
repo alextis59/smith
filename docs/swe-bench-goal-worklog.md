@@ -10305,7 +10305,7 @@ Decision:
 User constraint update:
 
 - User asked to leave notes about periodically cleaning `.smith-bench` so it does not grow to several GB.
-- The summary maintenance notes now include a current cleanup reminder. Current measured size after this target sequence: `17G` and `20` retained `run-*` directories.
+- The summary maintenance notes now include a current cleanup reminder. Current measured size after this target sequence: `20G` and `23` retained `run-*` directories.
 - Do not prune yet without preserving current evidence: `run-eCJp3v`, `run-RGo0gx`, `run-suFFM5`, plus earlier active evidence sandboxes referenced above.
 
 Current-code diagnostic before edit:
@@ -10581,3 +10581,105 @@ Decision:
 - It did not recover `005` and may not be the right lever for that task; `005` remains open.
 - Strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Cleanup note: `.smith-bench` is now about `17G` with `20` retained `run-*` directories. Preserve `run-TA29B0` and `run-nFzl3f` for this milestone; prune stale older run sandboxes before another long sequence.
+
+## 2026-05-29 Worklog: Reject Heredoc File Rewrites Through Run
+
+Diagnostic before edit:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout after `906345ms`.
+- Log: `/tmp/smith/2026-05-29T20-00-19-061Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-1zl86m/home/.smith/runs/2026-05-29T19-45-13-539Z.trace`.
+- Retained workspace status:
+
+```text
+ M scanner/alpine.go
+?? SMITH.TASK.md
+```
+
+- Retained source diff:
+
+```text
+ scanner/alpine.go | 376 ++++++++++++++++++++++++++++++++++--------------------
+ 1 file changed, 239 insertions(+), 137 deletions(-)
+```
+
+- Trace evidence:
+  - Smith used `cat > scanner/alpine.go <<'EOF'` through `run` for a large rewrite.
+  - The interactive shell inserted tab-completion directory listings into the heredoc content, corrupting `scanner/alpine.go`.
+  - Later validation failed and patch-context repairs timed out.
+
+Hypothesis:
+
+- PTY heredoc source rewrites are unsafe for tab-heavy code because the interactive shell can interpret tab characters as completion.
+- This is generic: file edits should go through `patch`, which preserves exact text and reports context mismatches atomically.
+
+Implementation:
+
+- Added `isLikelyHeredocFileWrite()` in `src/loop.ts`.
+- `run` now rejects likely `cat > file <<EOF` rewrites before danger review and tells Smith to use `patch`.
+- Added integration coverage that:
+  - rejects a `cat > note.txt <<'EOF'` run edit;
+  - confirms Smith can still patch the file afterward.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "heredoc file rewrites"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- `npm run build`: passed.
+- Focused heredoc test: passed `1` selected test.
+- Full integration file: passed `69` tests in `26518ms`.
+- Representative `091-command-router-refactor`: passed in `123962ms`.
+- Representative log: `/tmp/smith/2026-05-29T20-05-17-800Z-smith-091-command-router-refactor.json`.
+- Representative trace: `.smith-bench/run-SEpBif/home/.smith/runs/2026-05-29T20-03-14-278Z.trace`.
+
+Target rerun after edit:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout after `905967ms`.
+- Log: `/tmp/smith/2026-05-29T20-20-34-816Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-6goAJU/home/.smith/runs/2026-05-29T20-05-29-607Z.trace`.
+- Retained workspace status:
+
+```text
+ M scanner/alpine.go
+```
+
+- Retained source diff:
+
+```text
+ scanner/alpine.go | 143 +++++++++++++++++++++++++++++++++++++++++++-----------
+ 1 file changed, 114 insertions(+), 29 deletions(-)
+```
+
+- Trace evidence:
+  - The new `Run command rejected: heredoc-style file rewrites` guard fired repeatedly.
+  - The retained source was no longer polluted by shell completion directory listings.
+  - The run still timed out after later validation failures:
+    - `scanner/alpine_test.go:34:14: assignment mismatch: 2 variables but d.parseApkInfo returns 3 values`
+    - `scanner/alpine.go:5:2: "fmt" imported and not used`
+    - later `TestParseApkInfo` panic and `TestParseApkVersion` expectation failures.
+
+Decision:
+
+- Keep the guard as a generic source-edit safety fix.
+- It did not recover `010`.
+- Strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Cleanup note: `.smith-bench` is now about `20G` with `23` retained `run-*` directories. Preserve `run-1zl86m`, `run-6goAJU`, and `run-SEpBif` for this milestone; prune stale older run sandboxes before another long sequence.

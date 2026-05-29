@@ -820,6 +820,13 @@ async function runShellCommandTool(
       "Post-deadline run is reserved for validation commands such as test, build, lint, typecheck, check, or verify, or for one short inspection command after a failed validation. Use patch for a known final edit or finish with the current result."
     );
   }
+  if (isLikelyHeredocFileWrite(command)) {
+    return appendToolObservation(
+      parentContext,
+      callId,
+      "Run command rejected: heredoc-style file rewrites through the interactive shell can corrupt source text, especially indentation and tab-heavy code. Use the patch tool for file edits, or use run only for generated artifacts after verifying the command changed the intended file."
+    );
+  }
   const review = await reviewDangerousCommand({
     command,
     cwd: parentContext.options.cwd,
@@ -993,6 +1000,10 @@ function containsValidationCommand(command: string): boolean {
   return /\b(?:go\s+test|cargo\s+test|pytest|vitest|jest|mocha|rspec|npm\s+(?:run\s+)?test|yarn\s+test|pnpm\s+test|mvn\s+test|gradle\s+test|test|build|compile|lint|typecheck|tsc|check|verify(?:\.sh)?)\b/i.test(
     command
   );
+}
+
+function isLikelyHeredocFileWrite(command: string): boolean {
+  return /\bcat\s*>\s*(?:\.\/)?[^\s<>|;&]+[\s\S]*<<-?\s*['"]?\w+['"]?/i.test(command);
 }
 
 function validationMissesChangedSourceFiles(command: string, changedFiles: string[]): boolean {

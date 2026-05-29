@@ -24,7 +24,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - `.smith-bench` grows quickly because many targeted runs keep full sandboxes, traces, and result artifacts. Periodically check its size with `du -sh .smith-bench` and the retained run count with `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l`.
 - After each useful failure has its command, log path, trace path, sandbox id, and relevant evidence copied into this summary/worklog, prune stale `.smith-bench/run-*` sandboxes that are no longer needed for diagnosis. Keep the raw result JSONs and any sandboxes that still contain unresolved evidence.
 - Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
-- 2026-05-29 note: after the latest targeted runs, `.smith-bench` is about `17G` with `20` retained `run-*` directories. Before starting another long target sequence, review and prune stale retained sandboxes whose evidence has already been copied into these logs.
+- 2026-05-29 note: after the latest targeted runs, `.smith-bench` is about `20G` with `23` retained `run-*` directories. Before starting another long target sequence, review and prune stale retained sandboxes whose evidence has already been copied into these logs.
 
 ## 2026-05-29 Milestone: Require External Blockers For Incomplete Requirement Finishes
 
@@ -116,6 +116,38 @@ Decision:
 
 - Keep the change as a generic finish-integrity guard.
 - Do not count `005` as recovered. Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
+
+## 2026-05-29 Milestone: Reject Heredoc Source Rewrites Through Run
+
+Problem found:
+
+- Diagnostic `010-future-architect-vuls` showed Smith rewriting `scanner/alpine.go` via `cat > scanner/alpine.go <<EOF`.
+- In the interactive PTY, tab-heavy heredoc content triggered shell completion artifacts and directory listings inside the source file, corrupting code and wasting the run.
+
+Change:
+
+- Reject likely `cat > file <<EOF` heredoc file rewrites in the `run` tool and direct Smith to use `patch` for file edits.
+- Added integration coverage that verifies a heredoc rewrite is rejected and a subsequent `patch` edit succeeds.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "heredoc file rewrites"`: passed.
+- `npm test -- tests/integration.test.ts`: passed `69` tests.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `123962ms`, log `/tmp/smith/2026-05-29T20-05-17-800Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-SEpBif/home/.smith/runs/2026-05-29T20-03-14-278Z.trace`.
+
+Target evidence:
+
+- Pre-change `010`: failed by Docker timeout after `906345ms`, log `/tmp/smith/2026-05-29T20-00-19-061Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-1zl86m/home/.smith/runs/2026-05-29T19-45-13-539Z.trace`.
+- Pre-change trace showed the corrupted heredoc rewrite and retained `scanner/alpine.go` had `376` changed lines.
+- Post-change `010`: failed by Docker timeout after `905967ms`, log `/tmp/smith/2026-05-29T20-20-34-816Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-6goAJU/home/.smith/runs/2026-05-29T20-05-29-607Z.trace`.
+- Post-change trace showed repeated `Run command rejected: heredoc-style file rewrites` messages, and the retained source diff was smaller and no longer polluted by shell completion listings.
+- The target still timed out after later validation failures in `scanner/alpine.go`; no verifier ran.
+
+Decision:
+
+- Keep the change as a generic source-edit safety improvement.
+- Do not count `010` as recovered. Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 
