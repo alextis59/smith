@@ -723,6 +723,70 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).not.toContain("Post-deadline run is reserved");
   });
 
+  it("keeps post-deadline inspection available after inspection has been paused", async () => {
+    const provider = await startFakeProvider([
+      ...Array.from({ length: 36 }, (_, index) => ({
+        name: "run" as const,
+        arguments: { command: `printf output-${index}` }
+      })),
+      {
+        name: "patch",
+        delayMs: 3500,
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-missing",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "sed -n '1p' note.txt", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "blocked after inspection" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-paused-post-deadline-inspection-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 3000
+max_turns = 50
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch note"], {
+      env: { ...process.env, HOME: home },
+      timeout: 15_000
+    });
+
+    expect(stdout).toContain("blocked after inspection");
+    expect(toolNames(provider.requests[36].body)).toEqual(["patch", "finish"]);
+    expect(systemMessage(provider.requests[36].body)).toContain(
+      "Sustained inspection has continued without a task patch or finish"
+    );
+    expect(toolNames(provider.requests[37].body)).toEqual(["run", "patch", "finish"]);
+    expect(systemMessage(provider.requests[37].body)).toContain("post-deadline patch failed because its context did not match");
+    expect(systemMessage(provider.requests[37].body)).toContain("Continue with available tools: run, patch, finish");
+    expect(userMessages(provider.requests[38].body)).toContain("old");
+    expect(userMessages(provider.requests[38].body)).not.toContain("Unknown or unavailable tool 'run'");
+  }, 12_000);
+
   it("records transcript compaction without refreshing the system prompt", async () => {
     const provider = await startFakeProvider([
       { name: "run", arguments: { command: "printf first" } },
@@ -3253,6 +3317,7 @@ timeout_ms = 5000
 type FakeToolCall = {
   name: "run" | "patch" | "sub_agent" | "finish";
   arguments: Record<string, unknown>;
+  delayMs?: number;
 };
 
 async function startFakeProvider(toolCalls: FakeToolCall[], usage?: Record<string, unknown>): Promise<{
@@ -3271,28 +3336,35 @@ async function startFakeProvider(toolCalls: FakeToolCall[], usage?: Record<strin
       requests.push({ headers: request.headers, body: JSON.parse(body) });
       const toolCall = toolCalls[Math.min(count, toolCalls.length - 1)];
       count += 1;
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                tool_calls: [
-                  {
-                    id: `call_${count}`,
-                    type: "function",
-                    function: {
-                      name: toolCall.name,
-                      arguments: JSON.stringify({ reason: "test tool call", ...toolCall.arguments })
+      const sendResponse = () => {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  tool_calls: [
+                    {
+                      id: `call_${count}`,
+                      type: "function",
+                      function: {
+                        name: toolCall.name,
+                        arguments: JSON.stringify({ reason: "test tool call", ...toolCall.arguments })
+                      }
                     }
-                  }
-                ]
+                  ]
+                }
               }
-            }
-          ],
-          ...(usage ? { usage } : {})
-        })
-      );
+            ],
+            ...(usage ? { usage } : {})
+          })
+        );
+      };
+      if (toolCall.delayMs && toolCall.delayMs > 0) {
+        setTimeout(sendResponse, toolCall.delayMs);
+      } else {
+        sendResponse();
+      }
     });
   });
 

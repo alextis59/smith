@@ -1452,12 +1452,17 @@ function availableSmithTools(options: SmithRunOptions, availability: ToolAvailab
   if (availability.subAgentDisabledReason || !options.runtime.subAgentEnabled || depth >= MAX_SUB_AGENT_DEPTH) {
     tools = tools.filter((tool) => tool.name !== "sub_agent");
   }
-  if (availability.inspectionDisabledReason) {
+  const hasPostDeadlineRunSlot = Boolean(
+    availability.postDeadlineValidationRunReason || availability.postDeadlineInspectionRunReason
+  );
+  if (availability.inspectionDisabledReason && !hasPostDeadlineRunSlot) {
     tools = tools.filter((tool) => tool.name !== "run" && tool.name !== "sub_agent");
+  } else if (availability.inspectionDisabledReason) {
+    tools = tools.filter((tool) => tool.name !== "sub_agent");
   }
   if (availability.deadlineFinalizationReason) {
     tools = tools.filter((tool) => tool.name !== "sub_agent");
-    if (!availability.postDeadlineValidationRunReason && !availability.postDeadlineInspectionRunReason) {
+    if (!hasPostDeadlineRunSlot) {
       tools = tools.filter((tool) => tool.name !== "run");
     }
   }

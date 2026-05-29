@@ -9969,3 +9969,107 @@ Decision:
 - Rejected idea: adding target-specific source-package or Alpine-parser instructions to Smith prompts.
 - Next generic direction: the target failure now points to finalization after unvalidated source patches when run is unavailable. Investigate a generic way to preserve or force a final validation slot after any non-memory source patch that occurs near the deadline, instead of allowing an unvalidated finish that the external verifier immediately fails.
 - Cleanup note: `.smith-bench` is now about `23G` with `50` retained `run-*` directories. Preserve `run-znPOXG` and `run-MTRPgg`, then prune stale retained sandboxes before more expensive target reruns.
+
+## 2026-05-29 Change: Post-Deadline Run Slot Availability Fix
+
+Reasoning:
+
+- The previous `005` trace showed a generic runtime contradiction:
+
+```text
+A post-deadline patch failed because its context did not match, so run is available for one short inspection command...
+Continue with available tools: patch, finish.
+```
+
+- Root cause: `availableSmithTools` removed `run` when `inspectionDisabledReason` was set. Later deadline logic only avoided removing `run` when a post-deadline validation/inspection slot existed; it did not restore a `run` tool already removed by inspection pause.
+- This is a general tool-availability bug. It is not specific to SWE-bench, task IDs, selected tests, verifiers, scoring, result parsing, or any target implementation detail.
+- I discarded the uncommitted struct-field compatibility warning and its test. Although it was broadly plausible for Go refactors, it was a prompt-style nudge motivated by a target trace and did not fire in the target rerun. Under the user's stricter guidance, keeping the runtime invariant fix is cleaner than adding another compatibility instruction.
+
+Implementation:
+
+- `availableSmithTools` now computes `hasPostDeadlineRunSlot`.
+- If inspection is paused but a post-deadline validation or inspection run slot exists, Smith keeps `run` available and still removes `sub_agent`.
+- Deadline finalization still removes `run` unless a post-deadline run slot exists.
+- Added an integration regression where:
+  - repeated inspection pauses `run`;
+  - a delayed failing patch crosses the configured max run time;
+  - the next turn exposes `run`, `patch`, and `finish`;
+  - the one short inspection command succeeds instead of being reported as an unavailable tool.
+- Extended the fake provider helper with an optional per-tool-call `delayMs` to exercise time-dependent availability transitions.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "keeps post-deadline inspection available"
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- Selected regression: passed `1` selected test in `5930ms`.
+- Full focused integration file: passed `62` tests in `22659ms`.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `170535ms`.
+- Log: `/tmp/smith/2026-05-29T14-33-34-452Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-FiFTH4/home/.smith/runs/2026-05-29T14-30-44-231Z.trace`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed verifier in `822575ms`.
+- Log: `/tmp/smith/2026-05-29T14-47-24-410Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-8SAcEl/home/.smith/runs/2026-05-29T14-33-49-112Z.trace`.
+- Retained sandbox: `.smith-bench/run-8SAcEl`.
+- Usage: `2351413` total tokens.
+- Retained workspace status:
+
+```text
+ M lib/kube/proxy/auth.go
+M  lib/kube/proxy/forwarder_test.go
+```
+
+- Retained source diff stat:
+
+```text
+ lib/kube/proxy/auth.go | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+```
+
+- Retained staged test diff stat:
+
+```text
+ lib/kube/proxy/forwarder_test.go | 80 ++++++++++------------------------------
+ 1 file changed, 20 insertions(+), 60 deletions(-)
+```
+
+- Trace evidence:
+  - The fixed post-deadline inspection path did not trigger on this retry.
+  - Smith hit sustained-inspection pause and continued with `patch, finish`.
+  - It finished blocked after editing only `lib/kube/proxy/auth.go`, reporting that the broader synchronized proxy refactor remained incomplete and no validation had run after the partial change.
+  - The external verifier failed `lib/kube/proxy` build because restored tests still referenced `Forwarder` fields `cfg` and `clientCredentials` that were absent from source.
+
+Decision:
+
+- Keep the change because it fixes a real generic runtime invariant and has direct regression coverage.
+- Do not count `005` as recovered.
+- Current strict evidence remains `6/10`: baseline full-run passes `002`, `004`, and `007`, plus targeted recoveries for `001`, `003`, and `008`.
+- Full SWE-bench Pro is still not justified.
+- Rejected idea: adding benchmark- or target-specific prompt guidance about Teleport `Forwarder`, `cfg`, `clientCredentials`, or Go struct fields.
+- Next generic direction: reduce premature blocked finishes when patch is still available and the agent reports a known incomplete source edit. Investigate a generic finish-claim guard for "cannot safely patch more" blockers when patch remains available and the transcript contains concrete unresolved compile errors or known source/test incompatibilities.
+- Cleanup note: `.smith-bench` is now about `26G` with `54` retained `run-*` directories. Preserve `run-FiFTH4` and `run-8SAcEl` for this milestone, then prune stale retained sandboxes. Add a recurring checkpoint after each committed milestone so `.smith-bench` does not grow unchecked to several GB more.

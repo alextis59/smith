@@ -2380,3 +2380,27 @@ Decision:
 - Do not count `010` as recovered. The new hint did not fire in the target run because Smith did not run validation after its final source patch; the benchmark verifier later found `assignment mismatch` and `undefined: srcPacks`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `23G` with `50` retained `run-*` directories. Cleanup is urgent before further expensive runs: preserve `run-znPOXG` and `run-MTRPgg`, then prune stale retained sandboxes.
+
+## 2026-05-29 Post-Deadline Run Slot Availability Fix
+
+Change:
+
+- Fixed a generic tool-availability bug where inspection pause could remove `run` even after Smith later promised a bounded post-deadline validation or inspection run slot.
+- The fix keeps `sub_agent` disabled in paused/deadline states, but allows `run` when a specific post-deadline run slot exists.
+- Added regression coverage for a paused-inspection state followed by a late patch-context failure; the next provider turn now exposes `run`, `patch`, and `finish`.
+- Dropped the uncommitted struct-field compatibility warning idea because it was a prompt-style nudge with weak target evidence and could be read as too benchmark-motivated under the user's stricter no-cheating guidance.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "keeps post-deadline inspection available"`: passed `1` selected test.
+- `npm test -- tests/integration.test.ts`: passed `62` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `170535ms`, log `/tmp/smith/2026-05-29T14-33-34-452Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-FiFTH4/home/.smith/runs/2026-05-29T14-30-44-231Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed verifier in `822575ms`, log `/tmp/smith/2026-05-29T14-47-24-410Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-8SAcEl/home/.smith/runs/2026-05-29T14-33-49-112Z.trace`.
+
+Decision:
+
+- Keep the runtime fix because it resolves a concrete generic inconsistency between promised and exposed tools, is regression-tested, build-clean, and passed representative project validation.
+- Do not count `005` as recovered. The target retry did not trigger the fixed post-deadline inspection path; Smith paused inspection, edited only `lib/kube/proxy/auth.go`, then finished blocked before resolving the broader proxy/test compatibility failure.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- `.smith-bench` is now about `26G` with `54` retained `run-*` directories. Add a recurring maintenance note: after each committed milestone, preserve the newest evidence sandboxes and prune stale retained runs before the folder grows by several more GB.
