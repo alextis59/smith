@@ -2888,7 +2888,8 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).toContain("Validation warning: test files are currently modified or untracked");
     expect(userMessages(provider.requests[2].body)).toContain("tests/new.test.js");
     expect(userMessages(provider.requests[2].body)).toContain("a source patch is still pending validation");
-    expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a task patch is still pending validation");
+    expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: test files are currently modified or untracked");
+    expect(userMessages(provider.requests[3].body)).toContain("tests/new.test.js");
   });
 
   it("keeps validation pending when only unrequested test files are modified", async () => {
@@ -2949,7 +2950,75 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).toContain(
       "a task patch is still pending validation because this passing command ran while test files were modified"
     );
-    expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a task patch is still pending validation");
+    expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: test files are currently modified or untracked");
+    expect(userMessages(provider.requests[3].body)).toContain("tests/new.test.js");
+  });
+
+  it("rejects completion finishes while unrequested test files are dirty", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Add File: tests/new.test.js",
+            "+console.log('new test');",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Implemented and verified the source fix with the existing test suite."
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Validation pending because tests are modified."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-dirty-test-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+    await execFileAsync("git", ["init"], { cwd });
+    await execFileAsync("git", ["add", "."], { cwd });
+    await execFileAsync("git", ["-c", "user.name=Smith Test", "-c", "user.email=smith@example.test", "commit", "-m", "init"], {
+      cwd
+    });
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "fix source behavior"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Validation pending");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[1].body)).toContain("Test files changed: tests/new.test.js");
+    expect(userMessages(provider.requests[2].body)).toContain("Finish rejected: test files are currently modified or untracked");
+    expect(userMessages(provider.requests[2].body)).toContain("tests/new.test.js");
   });
 
   it("keeps validation pending when go test reuses cached results", async () => {

@@ -24,7 +24,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - `.smith-bench` grows quickly because many targeted runs keep full sandboxes, traces, and result artifacts. Periodically check its size with `du -sh .smith-bench` and the retained run count with `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l`.
 - After each useful failure has its command, log path, trace path, sandbox id, and relevant evidence copied into this summary/worklog, prune stale `.smith-bench/run-*` sandboxes that are no longer needed for diagnosis. Keep the raw result JSONs and any sandboxes that still contain unresolved evidence.
 - Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
-- 2026-05-29 note: after the latest targeted runs, `.smith-bench` is about `15G` with `18` retained `run-*` directories. Before starting another long target sequence, review and prune stale retained sandboxes whose evidence has already been copied into these logs.
+- 2026-05-29 note: after the latest targeted runs, `.smith-bench` is about `17G` with `20` retained `run-*` directories. Before starting another long target sequence, review and prune stale retained sandboxes whose evidence has already been copied into these logs.
 
 ## 2026-05-29 Milestone: Require External Blockers For Incomplete Requirement Finishes
 
@@ -87,6 +87,34 @@ Target evidence:
 Decision:
 
 - Keep the change as a generic validation-integrity fix covered by tests and local benchmark validation.
+- Do not count `005` as recovered. Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
+
+## 2026-05-29 Milestone: Reject Completion Claims With Dirty Unrequested Tests
+
+Problem found:
+
+- The previous validation guard only handled dirty tests after validation commands. A model could still finish with a completion/validation claim while test files were dirty.
+
+Change:
+
+- Before accepting a finish claim, Smith checks current git status for dirty test/spec files when the user did not explicitly ask to edit tests.
+- If tests are dirty and the finish message claims completion or validation without acknowledging pending validation, Smith rejects the finish and asks for restoring tests, preserving existing compatibility, or reporting a pending/blocker state.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "unrequested test files|completion finishes"`: passed `2` selected tests after expectation updates.
+- `npm test -- tests/integration.test.ts`: passed `68` tests.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `104433ms`, log `/tmp/smith/2026-05-29T19-27-18-883Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-nFzl3f/home/.smith/runs/2026-05-29T19-25-34-689Z.trace`.
+
+Target evidence:
+
+- Target `005` failed by Docker timeout after `912286ms`, log `/tmp/smith/2026-05-29T19-42-41-728Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-TA29B0/home/.smith/runs/2026-05-29T19-27-36-353Z.trace`.
+- No verifier ran. Retained workspace only had source changes in `lib/kube/proxy/forwarder.go`; no dirty test files remained, so the new dirty-test finish guard did not fire.
+
+Decision:
+
+- Keep the change as a generic finish-integrity guard.
 - Do not count `005` as recovered. Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts

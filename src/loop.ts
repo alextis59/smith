@@ -532,6 +532,18 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: a previous validation command appeared to run no tests, but the finish message presents it as successful validation. Run a validation command that executes checks, or report validation as pending/not performed."
       );
     }
+    const dirtyFinishTestFiles = await dirtyUnrequestedTestFiles(parentContext);
+    if (
+      dirtyFinishTestFiles.length > 0 &&
+      (finishClaimsComplete(message) || finishClaimsValidationSuccess(message)) &&
+      !finishAcknowledgesPendingValidation(message)
+    ) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        `Finish rejected: test files are currently modified or untracked (${formatChangedFiles(dirtyFinishTestFiles)}), but the user did not explicitly ask to edit tests and the finish message claims completion or validation. Restore unrelated test edits, preserve compatibility with existing tests, or finish with an explicit pending-validation/blocker report.`
+      );
+    }
     if (shouldRejectContradictoryCompletionFinish(message, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -1268,6 +1280,11 @@ function shouldRejectNoOpValidationClaimFinish(message: string, context: ToolCal
   ) || /\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b[\s\S]{0,120}\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b/i.test(
     message
   );
+}
+
+async function dirtyUnrequestedTestFiles(context: ToolCallContext): Promise<string[]> {
+  if (context.options.runtime.readOnly || promptExplicitlyRequestsTestEdits(context.options.prompt)) return [];
+  return changedTrackedTestFiles(await trackedGitChangeSet(context.options.cwd, { includeUntracked: true }));
 }
 
 function shouldRejectContradictoryCompletionFinish(message: string, availableToolNames: string[]): boolean {

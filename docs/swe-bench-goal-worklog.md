@@ -10305,7 +10305,7 @@ Decision:
 User constraint update:
 
 - User asked to leave notes about periodically cleaning `.smith-bench` so it does not grow to several GB.
-- The summary maintenance notes now include a current cleanup reminder. Current measured size after this target sequence: `15G` and `18` retained `run-*` directories.
+- The summary maintenance notes now include a current cleanup reminder. Current measured size after this target sequence: `17G` and `20` retained `run-*` directories.
 - Do not prune yet without preserving current evidence: `run-eCJp3v`, `run-RGo0gx`, `run-suFFM5`, plus earlier active evidence sandboxes referenced above.
 
 Current-code diagnostic before edit:
@@ -10509,3 +10509,75 @@ Decision:
 - Next candidate improvement: a finish-time dirty-test guard that checks current git state before accepting completion/validation claims when tests are dirty and the user did not request test edits.
 - Do not count `005` as recovered. Strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Cleanup note: `.smith-bench` is now about `15G` with `18` retained `run-*` directories. Preserve `run-asx8SW` and `run-3GjAim` for this milestone; prune stale older run sandboxes before another long sequence.
+
+## 2026-05-29 Worklog: Finish-Time Dirty-Test Guard
+
+Hypothesis:
+
+- The prior dirty-test validation guard only fires after validation commands.
+- A finish-time guard can catch completion/validation claims when test/spec files are currently dirty and the user did not ask to edit tests.
+- This is generic user-task integrity, not benchmark-specific: existing tests usually encode expected behavior unless the user requested test edits.
+
+Implementation:
+
+- Added `dirtyUnrequestedTestFiles()` in `src/loop.ts`, backed by `git status --porcelain=v1 --untracked-files=all`.
+- In the finish path, reject completion or validation claims when:
+  - dirty test/spec files exist;
+  - the prompt did not explicitly ask to edit tests;
+  - the finish message does not acknowledge pending validation/blocker state.
+- Added regression coverage for a dirty unrequested test file followed by a completion/verification claim.
+- Updated adjacent dirty-test validation expectations because the new finish-time guard now rejects before the older generic pending-validation guard for completion/validation phrasing.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "unrequested test files|completion finishes"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- `npm run build`: passed.
+- Initial focused filter `dirty test` matched no tests and skipped; reran with `unrequested test files|completion finishes`.
+- Focused rerun initially exposed expectation drift in older tests; updated only expected rejection messages where the new guard legitimately fires.
+- Focused dirty-test tests: passed `2` selected tests.
+- Full integration file: passed `68` tests in `26860ms`.
+- Representative `091-command-router-refactor`: passed in `104433ms`.
+- Representative log: `/tmp/smith/2026-05-29T19-27-18-883Z-smith-091-command-router-refactor.json`.
+- Representative trace: `.smith-bench/run-nFzl3f/home/.smith/runs/2026-05-29T19-25-34-689Z.trace`.
+
+Target rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout after `912286ms`; no external verifier ran.
+- Log: `/tmp/smith/2026-05-29T19-42-41-728Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-TA29B0/home/.smith/runs/2026-05-29T19-27-36-353Z.trace`.
+- Retained workspace status:
+
+```text
+ M lib/kube/proxy/forwarder.go
+```
+
+- Retained diff:
+
+```text
+ lib/kube/proxy/forwarder.go | 35 +++++++++++++++++++++++++++++++++--
+ 1 file changed, 33 insertions(+), 2 deletions(-)
+```
+
+- Trace search for the new dirty-test finish rejection found no matches because the retained workspace did not have dirty test files.
+- Several finish attempts were rejected by existing incomplete-requirements / no-op-validation / actionable-inspection guards, then the run timed out.
+
+Decision:
+
+- Keep the change because it closes a real generic finish-integrity gap and passed local validation.
+- It did not recover `005` and may not be the right lever for that task; `005` remains open.
+- Strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Cleanup note: `.smith-bench` is now about `17G` with `20` retained `run-*` directories. Preserve `run-TA29B0` and `run-nFzl3f` for this milestone; prune stale older run sandboxes before another long sequence.
