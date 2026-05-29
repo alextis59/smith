@@ -1921,3 +1921,26 @@ Decision:
 - Do not count `005` as recovered. This target rerun did not exercise the changed-directory coverage warning because Smith patched only `lib/service/service.go`; the existing no-op validation warning fired for `go test ./lib/service -run TestNonExistent -count=0`, and Smith honestly finished with a partial blocker.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `63G` with `86` retained `run-*` directories. Prune stale retained runs after their evidence is recorded, while preserving result JSONs and sandboxes still referenced by active diagnosis.
+
+## 2026-05-29 No-Op Validation Finish Guard
+
+Change:
+
+- Smith now tracks when the most recent validation command appeared to run no tests.
+- If a later `finish` presents that no-op validation as successful validation, Smith rejects the finish and asks for a validation command that actually executes checks, or an honest pending/not-performed validation report.
+- A later non-no-op validation command clears the no-op state, so real validation success can still be reported.
+- This is generic validation honesty for ordinary tasks; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `47` tests.
+- Project benchmark `091-command-router-refactor`: passed in `124902ms`, log `/tmp/smith/2026-05-29T01-14-55-016Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-vb0AdV/home/.smith/runs/2026-05-29T01-12-50-396Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `755010ms`, log `/tmp/smith/2026-05-29T01-27-38-590Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-f4HWXI/home/.smith/runs/2026-05-29T01-15-09-643Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and project validation passed.
+- Do not count `005` as recovered. This target rerun did not exercise the no-op finish rejection; Smith failed to apply its broad patch because of exact-context mismatches and finished with a blocker reporting no source changes.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `66G` with `90` retained `run-*` directories. Prune stale retained runs after their evidence is recorded, while preserving result JSONs and sandboxes still referenced by active diagnosis.

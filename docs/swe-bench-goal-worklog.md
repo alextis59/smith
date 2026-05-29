@@ -7714,3 +7714,90 @@ Decision:
 - Current strict targeted evidence remains `6/10`.
 - Full suite is still not justified.
 - `.smith-bench` cleanup status after this run: `63G` with `86` retained `run-*` directories. Continue pruning stale retained sandboxes after log/trace evidence is copied forward.
+
+## 2026-05-29 No-Op Validation Finish Guard
+
+Hypothesis:
+
+- The previous `005-gravitational-teleport` rerun showed Smith correctly receiving a no-op validation warning, then still describing `go test ./lib/service -run TestNonExistent -count=0` as validation in the final partial report.
+- Generic failure mode: a no-op validation command should not be reported as successful validation. If later real checks run, their result can be reported.
+
+Change:
+
+- `src/loop.ts`: added `noOpValidationSinceLastCheck` run state.
+- `src/loop.ts`: no-op validation commands set that state; any later validation command that does not look no-op clears it.
+- `src/loop.ts`: `finish` now rejects successful-validation claims while the no-op state is active.
+- `tests/integration.test.ts`: added coverage for rejecting `Validation passed with npm test` after `npm test` reports no tests.
+- `tests/integration.test.ts`: added coverage that a later real `npm run verify` clears the no-op state and allows a validation success report.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- TypeScript build passed.
+- Integration suite passed `47` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `124902ms`.
+- Log: `/tmp/smith/2026-05-29T01-14-55-016Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-vb0AdV/home/.smith/runs/2026-05-29T01-12-50-396Z.trace`.
+- Sandbox: `.smith-bench/run-vb0AdV`.
+- Usage: `57127` total tokens.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `755010ms`.
+- Log: `/tmp/smith/2026-05-29T01-27-38-590Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-f4HWXI/home/.smith/runs/2026-05-29T01-15-09-643Z.trace`.
+- Sandbox: `.smith-bench/run-f4HWXI`.
+- Usage: `1215019` total tokens.
+
+Trace and sandbox evidence:
+
+- The no-op finish rejection did not fire in this target rerun because Smith did not reach a no-op validation claim.
+- Smith attempted a broad `lib/kube/proxy/forwarder.go` patch and failed on exact context/leading-tab mismatches:
+
+```text
+patch failed: hunk context not found in lib/kube/proxy/forwarder.go
+No files were changed because Smith patches are atomic.
+```
+
+- Retained workspace status after Smith execution had no source changes; only restored verifier test index state showed:
+
+```text
+M  lib/kube/proxy/forwarder_test.go
+```
+
+- Smith finished with a blocker:
+
+```text
+No files were changed. To finish this fix, I need either a fresh run with inspection tools available again or the exact current snippets...
+```
+
+- External verifier still failed with restored-test compile errors in `lib/kube/proxy/forwarder_test.go` for missing `Forwarder.cfg` and `Forwarder.clientCredentials`.
+
+Decision:
+
+- Keep the change because it is a generic validation-honesty guard and did not reduce local project benchmark performance.
+- Do not count `005` as recovered. This run ended before a candidate source patch landed.
+- Current strict targeted evidence remains `6/10`.
+- Full suite is still not justified.
+- `.smith-bench` cleanup status after this run: `66G` with `90` retained `run-*` directories. Continue pruning stale retained sandboxes after log/trace evidence is copied forward.

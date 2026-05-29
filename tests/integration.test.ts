@@ -1427,6 +1427,121 @@ max_run_ms = 1
     expect(toolNames(provider.requests[3].body)).toEqual(["patch", "finish"]);
   });
 
+  it("rejects finish claims that treat no-op validation as successful", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "Validation passed with npm test." } },
+      { name: "finish", arguments: { message: "Changed note.txt; validation pending because npm test ran no tests." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-noop-validation-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "printf 'no tests to run\\n'" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("validation pending");
+    expect(provider.requests).toHaveLength(4);
+    expect(userMessages(provider.requests[2].body)).toContain("Validation warning: this command appears to have run no tests");
+    expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a previous validation command appeared to run no tests");
+  });
+
+  it("allows validation success claims after a later check runs tests", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test", timeout_ms: 5000 } },
+      { name: "run", arguments: { command: "npm run verify", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "Validation passed with npm run verify." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-noop-then-real-validation-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({ scripts: { test: "printf 'no tests to run\\n'", verify: "printf 'checked\\n'" } }),
+      "utf8"
+    );
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Validation passed");
+    expect(provider.requests).toHaveLength(4);
+    expect(userMessages(provider.requests[2].body)).toContain("Validation warning: this command appears to have run no tests");
+    expect(userMessages(provider.requests[3].body)).toContain("checked");
+    expect(userMessages(provider.requests[3].body)).not.toContain(
+      "Finish rejected: a previous validation command appeared to run no tests"
+    );
+  });
+
   it("keeps post-deadline validation available after a failed validation command", async () => {
     const provider = await startFakeProvider([
       {

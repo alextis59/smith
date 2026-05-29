@@ -171,6 +171,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let runDeadlineReminderIndex = 0;
   let unvalidatedTaskPatch = false;
   let pendingValidationFiles = new Set<string>();
+  let noOpValidationSinceLastCheck = false;
   const runStartedAt = Date.now();
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
   const providerDebugJson =
@@ -311,7 +312,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             totalUsage,
             toolAvailabilityState,
             unvalidatedTaskPatch,
-            pendingValidationFiles: [...pendingValidationFiles]
+            pendingValidationFiles: [...pendingValidationFiles],
+            noOpValidationSinceLastCheck
           });
           totalUsage = action.totalUsage;
           transcript = action.transcript;
@@ -355,6 +357,11 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           } else if (action.validationRunExecuted) {
             unvalidatedTaskPatch = false;
             pendingValidationFiles = new Set();
+          }
+          if (action.noOpValidationRun) {
+            noOpValidationSinceLastCheck = true;
+          } else if (action.nonNoOpValidationRun) {
+            noOpValidationSinceLastCheck = false;
           }
           toolCallsSincePatchOrFinish = madeTaskPatch || action.finished ? 0 : toolCallsSincePatchOrFinish + 1;
           if (action.finished) {
@@ -413,6 +420,8 @@ type ToolActionResult = {
   postDeadlineValidationRunConsumed?: boolean;
   postDeadlineInspectionRunConsumed?: boolean;
   postDeadlineValidationFailed?: boolean;
+  noOpValidationRun?: boolean;
+  nonNoOpValidationRun?: boolean;
   validationRunExecuted?: boolean;
 };
 
@@ -428,6 +437,7 @@ type ToolCallContext = {
   toolAvailabilityState: ToolAvailabilityState;
   unvalidatedTaskPatch: boolean;
   pendingValidationFiles: string[];
+  noOpValidationSinceLastCheck: boolean;
 };
 
 async function handleToolCall(context: ToolCallContext): Promise<ToolActionResult> {
@@ -476,6 +486,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         parentContext,
         callId,
         "Finish rejected: run is currently available. Do not claim validation is impossible because only patch/finish or no run tool is available. Run a relevant validation command, or finish with the actual blocker."
+      );
+    }
+    if (shouldRejectNoOpValidationClaimFinish(message, parentContext)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: a previous validation command appeared to run no tests, but the finish message presents it as successful validation. Run a validation command that executes checks, or report validation as pending/not performed."
       );
     }
     if (shouldRejectUnvalidatedTaskPatchFinish(message, parentContext.unvalidatedTaskPatch, availableToolNames)) {
@@ -721,6 +738,8 @@ async function runShellCommandTool(
     responsesInputItems,
     toolOutput: terminalOutput,
     totalUsage,
+    ...(noOpValidation ? { noOpValidationRun: true } : {}),
+    ...(validationCommand && !noOpValidation ? { nonNoOpValidationRun: true } : {}),
     ...(postDeadlineValidationRun && !noOpValidation && !failedValidation && !cachedValidation && !uncoveredValidation && !narrowValidation
       ? { postDeadlineValidationRunConsumed: true }
       : {}),
@@ -976,6 +995,22 @@ function shouldRejectUnsupportedValidationUnavailableFinish(message: string, ava
   return /\b(?:only\s+(?:patch\s*(?:\/|,|\s+and\s+)\s*finish|finish\s*(?:\/|,|\s+and\s+)\s*patch)|no\s+(?:run|validation)\s+tool|run\s+(?:is\s+)?unavailable|no further tool)\b/i.test(
     message
   ) || /\b(?:validation|test|build|lint|typecheck|check|verify)\s+(?:commands?|tooling)\s+(?:were|are|is|was)?\s*unavailable\b/i.test(message);
+}
+
+function shouldRejectNoOpValidationClaimFinish(message: string, context: ToolCallContext): boolean {
+  if (!context.noOpValidationSinceLastCheck) return false;
+  if (finishAcknowledgesValidationNotPerformed(message)) return false;
+  return /\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b[\s\S]{0,120}\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b/i.test(
+    message
+  ) || /\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b[\s\S]{0,120}\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b/i.test(
+    message
+  );
+}
+
+function finishAcknowledgesValidationNotPerformed(message: string): boolean {
+  return /\b(?:validation pending|pending validation|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)\b/i.test(
+    message
+  );
 }
 
 function shouldRejectUnvalidatedTaskPatchFinish(
