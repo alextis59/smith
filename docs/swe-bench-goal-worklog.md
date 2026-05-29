@@ -9690,3 +9690,92 @@ Decision:
 - Rejected idea: using the target-specific Alpine/Vuls implementation details from the trace as Smith prompt text. That remains benchmark-specific and disallowed by the user.
 - Next generic direction: Smith needs stronger completion gating when it edits or adds test files and then claims success under deadline finalization; in this run it reported `go test ./scanner` success despite verifier showing source compatibility wrappers were still missing.
 - Cleanup note: `.smith-bench` is now about `20G` with `44` retained `run-*` directories. Preserve `run-ykT9b9`, `run-pP67Sj`, and `run-b4JRst` for this milestone, then prune stale retained sandboxes before another expensive sequence.
+
+## 2026-05-29 Change: Unvalidated Validation-Claim Guard
+
+Reasoning:
+
+- A previous `010` attempt finished with a successful-validation claim even though Smith still had only narrow or otherwise insufficient validation evidence.
+- The generic invariant is simple: if Smith's loop still marks a task patch as unvalidated, the final answer must not claim tests/build/checks validated the work.
+- Honest pending-validation reports should be accepted; the existing recognizer did not accept phrasing such as `validation remains pending`, which caused retry loops in a focused test.
+- This change is generic final-answer integrity. It does not alter prompts, selected tests, parsers, run scripts, scoring, verifier logic, or benchmark result parsing.
+
+Implementation:
+
+- `src/loop.ts` now rejects a finish if:
+  - `unvalidatedTaskPatch` is still true;
+  - the message does not acknowledge pending validation;
+  - the message claims validation/test/build/check success.
+- `finishAcknowledgesValidationNotPerformed` and `finishAcknowledgesPendingValidation` now recognize `validation is pending` and `validation remains pending`.
+- Added integration coverage where Smith applies a source patch, runs a narrow validation command, tries to claim validation passed, receives the new rejection, and then finishes with an explicit pending-validation report.
+
+Focused validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- First integration attempts exposed fixture issues:
+  - the final pending-validation wording needed to be recognized as pending validation;
+  - the test incorrectly assumed `run` would be unavailable.
+- After adjusting the generic pending-validation recognizer and the test expectation, `npm test -- tests/integration.test.ts` passed `59` tests.
+
+Representative project validation:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `139376ms`.
+- Log: `/tmp/smith/2026-05-29T13-00-03-033Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-qZvKGl/home/.smith/runs/2026-05-29T12-57-44-052Z.trace`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout after `906345ms`.
+- Log: `/tmp/smith/2026-05-29T13-15-18-703Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-Y8LeVK/home/.smith/runs/2026-05-29T13-00-13-124Z.trace`.
+- Retained sandbox: `.smith-bench/run-Y8LeVK`.
+- Usage: `1416766` total tokens.
+- Retained workspace status:
+
+```text
+ M scanner/alpine.go
+```
+
+- Retained source diff stat:
+
+```text
+ scanner/alpine.go | 234 +++++++++++++++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 205 insertions(+), 29 deletions(-)
+```
+
+- Trace evidence:
+  - Smith applied `scanner/alpine.go`.
+  - Validation failed with build errors, including signature mismatch in `scanInstalledPackages`/`parseApkInfo`.
+  - Post-deadline inspection commands were rejected as reserved.
+  - Smith attempted follow-up patches and inspections, then the wrapper timed out before a finish or verifier result.
+- The new validation-claim rejection did not need to fire in this run because Smith did not produce a false validation-success finish; it kept working until timeout.
+
+Decision:
+
+- Keep the change because it is generic, covered by integration tests, build-clean, and project-validation clean.
+- Do not count `010` as recovered.
+- Current strict evidence remains `6/10`: baseline full-run passes `002`, `004`, and `007`, plus targeted recoveries for `001`, `003`, and `008`.
+- Full SWE-bench Pro is still not justified.
+- Rejected idea: using the Alpine/Vuls implementation details from the trace as Smith prompt text. That remains benchmark-specific and disallowed by the user.
+- Next generic direction: target `010` is still spending too long in broad reconstruction and late patches. The next improvement should be generic deadline-aware patch sizing or earlier source compatibility wrapper preservation, not benchmark-specific guidance.
+- Cleanup note: `.smith-bench` is now about `22G` with `46` retained `run-*` directories. Preserve `run-qZvKGl` and `run-Y8LeVK` for this milestone, then prune stale retained sandboxes before another expensive target sequence.

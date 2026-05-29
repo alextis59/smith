@@ -534,6 +534,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: the message claims the task is done while also reporting incomplete or blocked requested work. Continue with available tools, or finish with a clear partial/blocker report that does not present the task as complete."
       );
     }
+    if (shouldRejectUnvalidatedTaskPatchValidationClaimFinish(message, parentContext.unvalidatedTaskPatch)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: a task patch is still not validated as complete, but the finish message claims successful validation. Finish with an explicit pending-validation or blocker report, or continue if tools are available."
+      );
+    }
     if (shouldRejectIncompleteRequirementsFinish(message, parentContext, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -1195,7 +1202,7 @@ function finishClaimsComplete(message: string): boolean {
 }
 
 function finishAcknowledgesValidationNotPerformed(message: string): boolean {
-  return /\b(?:validation pending|pending validation|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)\b/i.test(
+  return /\b(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)\b/i.test(
     message
   );
 }
@@ -1208,6 +1215,20 @@ function shouldRejectUnvalidatedTaskPatchFinish(
   if (!unvalidatedTaskPatch || !availableToolNames.includes("run")) return false;
   if (finishAcknowledgesPendingValidation(message)) return false;
   return true;
+}
+
+function shouldRejectUnvalidatedTaskPatchValidationClaimFinish(message: string, unvalidatedTaskPatch: boolean): boolean {
+  if (!unvalidatedTaskPatch) return false;
+  if (finishAcknowledgesPendingValidation(message)) return false;
+  return finishClaimsValidationSuccess(message);
+}
+
+function finishClaimsValidationSuccess(message: string): boolean {
+  return /\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b[\s\S]{0,120}\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b/i.test(
+    message
+  ) || /\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b[\s\S]{0,120}\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b/i.test(
+    message
+  );
 }
 
 function shouldRejectIncompleteRequirementsFinish(
@@ -1234,7 +1255,7 @@ function finishReportsConcreteBlocker(message: string): boolean {
 }
 
 function finishAcknowledgesPendingValidation(message: string): boolean {
-  return /\b(?:validation pending|pending validation|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation failed|tests? failed|build failed|lint failed|typecheck failed|blocked|blocker|partial|incomplete)\b/i.test(
+  return /\b(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation failed|tests? failed|build failed|lint failed|typecheck failed|blocked|blocker|partial|incomplete)\b/i.test(
     message
   );
 }

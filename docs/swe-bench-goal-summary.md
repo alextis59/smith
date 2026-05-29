@@ -2314,3 +2314,25 @@ Decision:
 - Do not count `010` as recovered. The target no longer failed with `shell is closed`, but verifier still failed on missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`, plus `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `20G` with `44` retained `run-*` directories. Cleanup should happen before more multi-run sweeps after preserving `run-ykT9b9`, `run-pP67Sj`, and `run-b4JRst`.
+
+## 2026-05-29 Unvalidated Validation-Claim Guard
+
+Change:
+
+- Smith now rejects finish messages that claim successful validation while a task patch is still tracked as unvalidated.
+- Smith also recognizes `validation is pending` and `validation remains pending` as honest pending-validation reports.
+- This is generic final-answer integrity for ordinary coding tasks; it does not alter benchmark prompts, selected tests, verifiers, scoring, parsers, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `59` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `139376ms`, log `/tmp/smith/2026-05-29T13-00-03-033Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-qZvKGl/home/.smith/runs/2026-05-29T12-57-44-052Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed by Docker timeout after `906345ms`, log `/tmp/smith/2026-05-29T13-15-18-703Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-Y8LeVK/home/.smith/runs/2026-05-29T13-00-13-124Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and passed representative project validation.
+- Do not count `010` as recovered. The run timed out while still trying to repair Alpine source changes after failed validation; no verifier pass.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- `.smith-bench` is about `22G` with `46` retained `run-*` directories. Cleanup is now urgent before additional target runs.

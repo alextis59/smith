@@ -2048,6 +2048,70 @@ max_run_ms = 1
     expect(userMessages(provider.requests[5].body)).toContain("checked");
   });
 
+  it("rejects validation success claims while a task patch remains unvalidated", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "sleep 0.02; node test.js", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "Changed note.txt and validation passed with node test.js." } },
+      {
+        name: "finish",
+        arguments: {
+          message:
+            "Changed note.txt; validation remains pending after only a narrow test file check because broader validation is not practical after run became unavailable."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-unvalidated-deadline-claim-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "test.js"), "console.log('checked');\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("validation remains pending");
+    expect(provider.requests).toHaveLength(4);
+    expect(toolNames(provider.requests[2].body)).toEqual(["run", "patch", "finish"]);
+    expect(userMessages(provider.requests[2].body)).toContain("Validation warning: this command selected a subset of checks");
+    expect(userMessages(provider.requests[3].body)).toContain(
+      "Finish rejected: a task patch is still not validated as complete"
+    );
+  });
+
   it("warns that failed validation does not validate a task patch", async () => {
     const provider = await startFakeProvider([
       {
