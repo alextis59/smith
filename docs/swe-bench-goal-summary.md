@@ -24,6 +24,40 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - `.smith-bench` grows quickly because many targeted runs keep full sandboxes, traces, and result artifacts. Periodically check its size with `du -sh .smith-bench` and the retained run count with `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l`.
 - After each useful failure has its command, log path, trace path, sandbox id, and relevant evidence copied into this summary/worklog, prune stale `.smith-bench/run-*` sandboxes that are no longer needed for diagnosis. Keep the raw result JSONs and any sandboxes that still contain unresolved evidence.
 - Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
+- 2026-05-29 note: after the latest targeted runs, `.smith-bench` is about `13G` with `16` retained `run-*` directories. Before starting another long target sequence, review and prune stale retained sandboxes whose evidence has already been copied into these logs.
+
+## 2026-05-29 Milestone: Require External Blockers For Incomplete Requirement Finishes
+
+Problem found:
+
+- Target `005-gravitational-teleport` reached a finish that explicitly reported incomplete requested work while `run` and `patch` avenues still existed.
+- The existing explicit-requirements finish guard accepted generic phrases such as "could not" as a concrete blocker, even when the message really meant more source refactoring remained.
+- This is a generic task-integrity issue: when a prompt has explicit requirements, Smith should not stop with incomplete items unless the blocker is external to the implementation work, such as a missing dependency, access issue, environment limit, or required user input.
+
+Change:
+
+- Tightened incomplete-requirements finish rejection in `src/loop.ts` so "concrete blocker" means a concrete external/environment/access/dependency/user-input blocker, not ordinary remaining implementation work.
+- Added integration coverage for a non-external partial blocker on a prompt with explicit requirements.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "explicit requirements"`: passed `3` selected tests after rebuild.
+- `npm test -- tests/integration.test.ts`: passed `66` tests.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `107197ms`, log `/tmp/smith/2026-05-29T18-42-43-976Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-suFFM5/home/.smith/runs/2026-05-29T18-40-57-072Z.trace`.
+
+Target evidence:
+
+- Pre-change diagnostic `005`: failed verifier in `738331ms`, log `/tmp/smith/2026-05-29T18-36-24-835Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-eCJp3v/home/.smith/runs/2026-05-29T18-24-13-431Z.trace`.
+- Pre-change final message reported partial/incomplete work while local validation had passed against modified/staged tests; external verifier restored/used selected tests and failed on missing `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility.
+- Post-change `005`: failed verifier in `838850ms`, log `/tmp/smith/2026-05-29T18-56-50-927Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-RGo0gx/home/.smith/runs/2026-05-29T18-42-56-393Z.trace`.
+- The stricter guard changed behavior from an early partial/incomplete finish to continued work until the run budget was exhausted. The final external verifier still failed on missing `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility.
+
+Decision:
+
+- Keep the change because it closes a generic false-finish path and passed focused/full integration plus the representative project benchmark.
+- Do not count `005` as recovered. Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Next direction: investigate a generic way to keep validation honest when test files are modified but the user did not request test edits, without adding SWE-specific or benchmark-specific instructions.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 

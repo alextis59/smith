@@ -10299,3 +10299,133 @@ Decision:
 - Full SWE-bench Pro is still not justified.
 - Next generic direction: investigate whether source validation that passes while test files are staged/modified is being treated too optimistically in some paths; however, avoid adding benchmark-specific Alpine/Vuls guidance.
 - Cleanup note: `.smith-bench` is now about `9.0G` with `13` retained `run-*` directories. Preserve `run-ib0Jjd`, `run-xFserO`, `run-mFbpeO`, and `run-CCZuQc` for this milestone; prune stale retained sandboxes again before another long target sequence.
+
+## 2026-05-29 Worklog: Tighten Incomplete Requirement Blockers
+
+User constraint update:
+
+- User asked to leave notes about periodically cleaning `.smith-bench` so it does not grow to several GB.
+- The summary maintenance notes now include a current cleanup reminder. Current measured size after this target sequence: `13G` and `16` retained `run-*` directories.
+- Do not prune yet without preserving current evidence: `run-eCJp3v`, `run-RGo0gx`, `run-suFFM5`, plus earlier active evidence sandboxes referenced above.
+
+Current-code diagnostic before edit:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed verifier in `738331ms`.
+- Log: `/tmp/smith/2026-05-29T18-36-24-835Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-eCJp3v/home/.smith/runs/2026-05-29T18-24-13-431Z.trace`.
+- Retained workspace status:
+
+```text
+ M lib/kube/proxy/forwarder.go
+M  lib/kube/proxy/forwarder_test.go
+ M lib/service/kubernetes.go
+```
+
+- Unstaged source diff:
+
+```text
+ lib/kube/proxy/forwarder.go | 23 ++++++++++++++++-------
+ lib/service/kubernetes.go   |  9 +++++++++
+ 2 files changed, 25 insertions(+), 7 deletions(-)
+```
+
+- Staged test diff:
+
+```text
+ lib/kube/proxy/forwarder_test.go | 80 ++++++++++------------------------------
+ 1 file changed, 20 insertions(+), 60 deletions(-)
+```
+
+- Smith finished with an explicit partial/incomplete report:
+  - `ForwarderConfig` still used old names like `Auth`, `Client`, `Tunnel`, and `PingPeriod`.
+  - `clusterSession` cache-boundary refactor was not finished.
+  - credential freshness and explicit `CachingAuthClient` / `AuthClient` use remained incomplete.
+- External verifier restored/used selected tests and failed with missing compatibility:
+  - `unknown field 'cfg' in struct literal of type Forwarder`
+  - `f.cfg undefined`
+  - `unknown field 'clientCredentials'`
+  - `f.clientCredentials undefined`
+
+Hypothesis:
+
+- The generic explicit-requirements guard was too permissive because `finishReportsConcreteBlocker()` treated broad wording such as `could not` as a concrete blocker.
+- That let Smith stop with ordinary remaining implementation work rather than a real external blocker.
+- This is not SWE-specific: ordinary user tasks with explicit requirements should also keep going when remaining work is still implementable.
+
+Implementation:
+
+- Changed `finishReportsConcreteBlocker()` to recognize concrete external blockers:
+  - permission/read-only/access problems;
+  - missing dependencies/tools/services/credentials;
+  - environment/network limitations;
+  - required user/manual/external input;
+  - "cannot continue because ..." only when tied to dependency/tool/service/credential/environment/network.
+- Updated the rejection message to say `concrete external blocker`.
+- Added a regression test that rejects a partial source-refactor blocker for a prompt with explicit requirements, then accepts a missing-build-tool environment blocker.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "explicit requirements"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Initial focused test before rebuild failed because the CLI was using stale built `dist` output. After `npm run build`, focused tests passed.
+- `npm run build`: passed.
+- Focused `explicit requirements`: passed `3` selected tests.
+- Full integration file: passed `66` tests in `25913ms`.
+- Representative `091-command-router-refactor`: passed in `107197ms`.
+- Representative log: `/tmp/smith/2026-05-29T18-42-43-976Z-smith-091-command-router-refactor.json`.
+- Representative trace: `.smith-bench/run-suFFM5/home/.smith/runs/2026-05-29T18-40-57-072Z.trace`.
+
+Target rerun after edit:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed verifier in `838850ms`.
+- Log: `/tmp/smith/2026-05-29T18-56-50-927Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-RGo0gx/home/.smith/runs/2026-05-29T18-42-56-393Z.trace`.
+- Retained workspace status:
+
+```text
+ M lib/kube/proxy/forwarder.go
+M  lib/kube/proxy/forwarder_test.go
+```
+
+- Unstaged source diff:
+
+```text
+ lib/kube/proxy/forwarder.go | 71 ++++++++++++++++++++++++++++++++++-----------
+ 1 file changed, 54 insertions(+), 17 deletions(-)
+```
+
+- Staged test diff remained:
+
+```text
+ lib/kube/proxy/forwarder_test.go | 80 ++++++++++------------------------------
+ 1 file changed, 20 insertions(+), 60 deletions(-)
+```
+
+- Behavior changed: the previous partial/incomplete implementation finish was not accepted; Smith continued work until max-runtime finalization and then reported an environment-limit blocker.
+- External verifier still failed with the same `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility errors.
+
+Decision:
+
+- Keep and commit this change because it is a generic integrity improvement with tests and local benchmark validation.
+- Do not count `005` as recovered.
+- Strict targeted evidence remains `6/10`; no full SWE-bench Pro run.
+- Next candidate improvement should be generic validation honesty around dirty test files. Evidence: both `005` runs had staged `forwarder_test.go` edits, while external verification still failed against selected tests; local passing validation with modified tests can mislead Smith.

@@ -163,6 +163,67 @@ max_turns = 30
     );
   });
 
+  it("rejects non-external blockers for prompts with explicit requirements", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "finish",
+        arguments: {
+          message: [
+            "Partial blocker:",
+            "- Compatibility wrappers are still incomplete.",
+            "- More source refactoring is still needed before the requested behavior is complete."
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Cannot continue because the required build tool is missing from this environment."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-explicit-requirements-blocker-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const prompt = [
+      "Refactor the adapter.",
+      "",
+      "## Requirements",
+      "",
+      "- Preserve existing callers.",
+      "- Add validation."
+    ].join("\n");
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, prompt], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Cannot continue");
+    expect(provider.requests).toHaveLength(2);
+    expect(userMessages(provider.requests[1].body)).toContain(
+      "Finish rejected: the prompt has explicit requirements, and the finish message says requested items remain incomplete without a concrete external blocker"
+    );
+  });
+
   it("rejects finish reports that claim completion while reporting incomplete work", async () => {
     const provider = await startFakeProvider([
       {

@@ -550,7 +550,7 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
       return appendToolObservation(
         parentContext,
         callId,
-        "Finish rejected: the prompt has explicit requirements, and the finish message says requested items remain incomplete without a concrete blocker. Continue implementing the remaining requirements, or finish with a specific blocker that prevents further progress."
+        "Finish rejected: the prompt has explicit requirements, and the finish message says requested items remain incomplete without a concrete external blocker. Continue implementing the remaining requirements, or finish with a specific environment, access, dependency, or user-input blocker that prevents further progress."
       );
     }
     if (shouldRejectUnvalidatedTaskPatchFinish(message, parentContext.unvalidatedTaskPatch, availableToolNames)) {
@@ -1316,7 +1316,7 @@ function finishReportsIncompleteRequirements(message: string): boolean {
 }
 
 function finishReportsConcreteBlocker(message: string): boolean {
-  return /\b(?:cannot|can't|could not|couldn't|unable|not able|not practical|impossible|permission denied|missing dependency|environment issue|requires? (?:user|manual|external))\b/i.test(
+  return /\b(?:permission denied|not writable|read-only|missing (?:dependency|package|tool|service|credential|credentials)|dependency (?:is )?missing|environment (?:issue|limitation|does not support|is missing)|network (?:unavailable|blocked|failure)|access (?:denied|blocked|unavailable)|requires? (?:user|manual|external|network|credential|credentials)|cannot continue because (?:the )?(?:required )?(?:dependency|tool|service|credential|credentials|environment|network)|not practical (?:in|with|without) (?:this|the) (?:environment|workspace|available tools)|impossible (?:in|with|without) (?:this|the) (?:environment|workspace|available tools))\b/i.test(
     message
   );
 }
