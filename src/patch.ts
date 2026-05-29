@@ -275,8 +275,22 @@ function hunkFailureMessage(
   if (nearest) {
     lines.push(...formatWhitespaceComparison(hunk.oldLines, nearest.lines, nearest.lineNumber));
     lines.push(`tip: inspect exact leading whitespace with: sed -n '${nearest.lineNumber},${nearest.lineNumber + nearest.lines.length - 1}p' ${path} | cat -vet`);
+  } else {
+    lines.push(...formatUnmatchedHunkPreview(hunk.oldLines));
   }
   return lines.join("\n");
+}
+
+function formatUnmatchedHunkPreview(oldLines: string[]): string[] {
+  const previewLines = oldLines.filter((line) => stripLeadingWhitespace(line).length > 0);
+  if (previewLines.length === 0) return [];
+  const limit = 6;
+  const output = ["unmatched hunk expected context:"];
+  for (const [index, line] of previewLines.slice(0, limit).entries()) {
+    output.push(`patch context ${index + 1}: ${whitespaceSummary(line)} ${JSON.stringify(stripLeadingWhitespace(line))}`);
+  }
+  if (previewLines.length > limit) output.push(`... ${previewLines.length - limit} more hunk context lines omitted`);
+  return output;
 }
 
 function nearestLineWindow(content: string, oldLines: string[], cursor: number): IndentInsensitiveCandidate | undefined {

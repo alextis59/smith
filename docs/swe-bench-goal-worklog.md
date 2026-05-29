@@ -8977,3 +8977,156 @@ Decision:
 - Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Next generic hypothesis: Smith needs better patch recovery after failed validation when large multi-hunk follow-up patches hit stale or ambiguous context. Any follow-up must stay benchmark-agnostic and should improve normal source-edit reliability, not mention Teleport, Vuls, SWE-bench, selected tests, or benchmark timing.
 - Cleanup note: `.smith-bench` is now about `13G` with `29` retained `run-*` directories. After evidence is copied into these logs, periodically prune stale retained sandboxes and keep only current diagnostic or leaderboard-evidence directories so `.smith-bench` does not grow by several more GB.
+
+## 2026-05-29 Change: Generic Patch Failure Context And Actionable Inspection Finish Guard
+
+Boundary reminder:
+
+- No prompt edits were made.
+- No SWE-bench-specific runtime logic was added.
+- The changes are generic:
+  - preserve actionable context from patch failures after provider-history compaction;
+  - reject finish reports that say more inspection/diagnosis is needed while the `run` tool is still available.
+
+Reasoning from `005` trace:
+
+- Previous `005` run `.smith-bench/run-JPRH6W` hit large follow-up patch failures near the end of the run.
+- The first patch failure only reported:
+
+```text
+patch failed: hunk context not found in lib/kube/proxy/forwarder.go (hunk 11)
+No files were changed because Smith patches are atomic. If the patch contains independent edits, split them into smaller patch calls.
+Patch context did not match the current file. Before retrying, inspect the exact current lines and send a smaller patch anchored to that output.
+```
+
+- In later provider requests the patch body was compacted to `[smith omitted previous patch body from provider history]`, so "hunk 11" alone was not actionable.
+- A generic patch-tool improvement is to include a bounded preview of the unmatched hunk's expected context when no nearby file context can be found.
+
+Implementation:
+
+- `src/patch.ts` now adds `unmatched hunk expected context:` with up to six stripped expected context lines when a hunk cannot be matched and `nearestLineWindow()` cannot find useful nearby context.
+- `tests/patch.test.ts` covers the new failure preview.
+
+First focused validation:
+
+```sh
+npm test -- tests/patch.test.ts
+npm run build
+```
+
+Observed:
+
+- `npm test -- tests/patch.test.ts`: passed `10` tests.
+- `npm run build`: passed.
+
+Representative project validation, first attempt:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Failed by Docker timeout in `303863ms`.
+- Log: `/tmp/smith/2026-05-29T09-49-00-896Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-AeEZu8/home/.smith/runs/2026-05-29T09-43-57-398Z.trace`.
+- Retained diff only contained the current Smith source changes, because the benchmark workspace was the repo under test.
+- Trace showed Smith patched `src/router.js`, ran `bash /task/verify.sh`, got a silent verifier failure, inspected files, then finished with:
+
+```text
+I’m blocked on a verifier failure and need to inspect the verification script or a failing test case before I can safely finish.
+```
+
+- Since `run` was available, that was not a concrete blocker. It was an actionable next step.
+
+Second implementation:
+
+- `src/loop.ts` now rejects finish messages that say Smith needs to inspect/diagnose/read/check/look at/review a failure, file, script, test, trace, or log while `run` is available.
+- Added integration coverage with a build-failure message that says it needs to inspect the failing file before finish; Smith rejects it, runs inspection, then accepts the final finish.
+- The first integration test run failed because `bin/smith.js` was stale after editing `src/loop.ts`; after `npm run build`, the same test passed. This is the same integration-test caveat seen earlier.
+
+Focused validation after second implementation:
+
+```sh
+npm run build
+npm test -- tests/patch.test.ts
+npm test -- tests/integration.test.ts
+```
+
+Observed:
+
+- `npm run build`: passed.
+- `npm test -- tests/patch.test.ts`: passed `10` tests.
+- `npm test -- tests/integration.test.ts`: passed `54` tests.
+
+Representative project validation, clean attempt:
+
+```sh
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- Passed in `215051ms`.
+- Log: `/tmp/smith/2026-05-29T09-54-56-194Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-P3xsPQ/home/.smith/runs/2026-05-29T09-51-21-365Z.trace`.
+- Verifier command: `bash /task/verify.sh`.
+- Verifier exit code: `0`.
+
+Target SWE rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed after verifier in `883616ms`.
+- Log: `/tmp/smith/2026-05-29T10-09-44-721Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-E5vKcp/home/.smith/runs/2026-05-29T09-55-07-385Z.trace`.
+- Usage: `2655405` total tokens.
+- Retained workspace status:
+
+```text
+ M lib/kube/proxy/forwarder.go
+M  lib/kube/proxy/forwarder_test.go
+```
+
+- Retained source diff stat:
+
+```text
+ lib/kube/proxy/forwarder.go | 71 +++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 69 insertions(+), 2 deletions(-)
+```
+
+- The target run did not exercise the new patch hunk-preview path; no patch context failures appeared in the final trace.
+- The new actionable-inspection finish guard did fire:
+
+```text
+Finish rejected: run is currently available, and the finish message says more inspection or diagnosis is needed. Use run to inspect the relevant failure, file, or script, or finish with the actual blocker.
+```
+
+- Existing no-op validation and incomplete-requirements finish guards also fired later.
+- Smith ultimately finished with a concrete blocker and did not claim full success:
+
+```text
+The requested bug fix still requires coordinated changes across `lib/kube/proxy/forwarder.go`, `lib/service/kubernetes.go`, and `lib/service/service.go` ...
+```
+
+- The external verifier failed because restored tests still expected compatibility fields on `Forwarder`:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:574:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+```
+
+Decision:
+
+- Keep the changes. They are generic, covered by focused tests, and passed the representative project benchmark after the second guard was added.
+- Do not count `005` as recovered.
+- Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Avoid spending more consecutive cycles on `005`; rotate to `010` or another Codex-passed failure for the next improvement, per the user's instruction not to overfocus flawed or stubborn tasks.
+- Cleanup note: `.smith-bench` is now about `15G` with `32` retained `run-*` directories. Preserve `run-P3xsPQ` and `run-E5vKcp` for this milestone, then prune older stale retained sandboxes soon.

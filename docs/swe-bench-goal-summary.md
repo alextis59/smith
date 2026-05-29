@@ -2167,3 +2167,27 @@ Decision:
 - Do not count `005` as recovered. The stricter guard prevented an incomplete early finish and forced real implementation work, but the run timed out after failed large follow-up patches.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - `.smith-bench` is about `13G` with `29` retained `run-*` directories. Cleanup is now a recurring maintenance need: after copying evidence into the logs, periodically prune stale retained sandboxes and keep only current diagnostic or leaderboard-evidence runs.
+
+## 2026-05-29 Generic Patch Failure Context And Inspection-Finish Guard
+
+Change:
+
+- Patch context failures now include a short preview of the unmatched hunk context when Smith cannot find nearby file context. This preserves actionable retry information after prior patch bodies are compacted out of provider history.
+- Smith now rejects `finish` messages that say more inspection or diagnosis is needed while `run` is still available. This is generic loop integrity for ordinary coding tasks; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/patch.test.ts`: passed `10` tests.
+- `npm test -- tests/integration.test.ts`: passed `54` tests after rebuilding. The first integration run used stale built CLI output and failed the new test, then passed after `npm run build`.
+- First representative project benchmark `091-command-router-refactor`: failed by timeout in `303863ms`, log `/tmp/smith/2026-05-29T09-49-00-896Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-AeEZu8/home/.smith/runs/2026-05-29T09-43-57-398Z.trace`. This exposed the generic actionable-inspection finish issue.
+- Final representative project benchmark `091-command-router-refactor`: passed in `215051ms`, log `/tmp/smith/2026-05-29T09-54-56-194Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-P3xsPQ/home/.smith/runs/2026-05-29T09-51-21-365Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `883616ms`, log `/tmp/smith/2026-05-29T10-09-44-721Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-E5vKcp/home/.smith/runs/2026-05-29T09-55-07-385Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and the final local benchmark passed.
+- Do not count `005` as recovered. The actionable-inspection guard fired, but final verifier still failed because `Forwarder` lacks `cfg` and `clientCredentials` compatibility fields expected by restored tests.
+- The patch hunk-preview path was not exercised in the final `005` rerun, but remains a generic patch-tool improvement covered by unit tests.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified. Rotate to `010` or a different Codex-passed failure before spending another full run.
+- `.smith-bench` is about `15G` with `32` retained `run-*` directories. Cleanup should happen soon after preserving the current evidence paths.

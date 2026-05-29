@@ -506,6 +506,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: run is currently available. Do not claim validation is impossible because only patch/finish or no run tool is available. Run a relevant validation command, or finish with the actual blocker."
       );
     }
+    if (shouldRejectActionableInspectionBlockerFinish(message, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: run is currently available, and the finish message says more inspection or diagnosis is needed. Use run to inspect the relevant failure, file, or script, or finish with the actual blocker."
+      );
+    }
     if (shouldRejectNoOpValidationClaimFinish(message, parentContext)) {
       return appendToolObservation(
         parentContext,
@@ -1075,6 +1082,16 @@ function shouldRejectUnsupportedValidationUnavailableFinish(message: string, ava
   return /\b(?:only\s+(?:patch\s*(?:\/|,|\s+and\s+)\s*finish|finish\s*(?:\/|,|\s+and\s+)\s*patch)|no\s+(?:run|validation)\s+tool|run\s+(?:is\s+)?unavailable|no further tool)\b/i.test(
     message
   ) || /\b(?:validation|test|build|lint|typecheck|check|verify)\s+(?:commands?|tooling)\s+(?:were|are|is|was)?\s*unavailable\b/i.test(message);
+}
+
+function shouldRejectActionableInspectionBlockerFinish(message: string, availableToolNames: string[]): boolean {
+  if (!availableToolNames.includes("run")) return false;
+  if (!/\b(?:need|needs|needed|must|should|would need|blocked)\b[\s\S]{0,160}\b(?:inspect|diagnose|read|check|look at|examine|review)\b/i.test(message)) {
+    return false;
+  }
+  return /\b(?:failure|failed|failing|error|trace|log|file|script|test|before (?:I )?(?:can )?(?:safely )?(?:finish|complete|continue|proceed))\b/i.test(
+    message
+  );
 }
 
 function shouldRejectNoOpValidationClaimFinish(message: string, context: ToolCallContext): boolean {

@@ -2586,6 +2586,50 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).toContain("checked");
   });
 
+  it("rejects actionable inspection blockers when run is available", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "finish",
+        arguments: {
+          message: "I am blocked on a build failure and need to inspect the failing file before I can safely finish."
+        }
+      },
+      { name: "run", arguments: { command: "printf inspected", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "inspected and reported" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-actionable-inspection-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "diagnose build"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("inspected and reported");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[1].body)).toContain("Finish rejected: run is currently available");
+    expect(userMessages(provider.requests[2].body)).toContain("inspected");
+  });
+
   it("allows read-only finish claims when transcript evidence supports them", async () => {
     const provider = await startFakeProvider([
       {

@@ -54,6 +54,24 @@ describe("smith_patch", () => {
     ).toThrow("hunk context not found");
   });
 
+  it("shows unmatched hunk context when no nearby file context is found", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "file.txt"), "alpha\nbeta\n", "utf8");
+
+    expect(() =>
+      applySmithPatch(
+        `*** Begin Patch
+*** Update File: file.txt
+@@
+-missing one
+-missing two
++new
+*** End Patch`,
+        cwd
+      )
+    ).toThrow(/unmatched hunk expected context:[\s\S]*patch context 1: tabs=0 spaces=0 "missing one"[\s\S]*patch context 2: tabs=0 spaces=0 "missing two"/);
+  });
+
   it("reports visible whitespace details when indentation-insensitive context is ambiguous", () => {
     const cwd = tempDir();
     writeFileSync(join(cwd, "file.txt"), "\t\talpha\n\t\tbeta\nmiddle\n\t\talpha\n\t\tbeta\n", "utf8");
