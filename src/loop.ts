@@ -348,6 +348,12 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
               postDeadlineInspectionRunReason:
                 "A post-deadline validation command failed, so run is available for one short inspection command to inspect the failure before patching or finalizing."
             };
+          } else if (action.patchContextFailed && toolAvailabilityState.deadlineFinalizationReason) {
+            toolAvailabilityState = {
+              ...toolAvailabilityState,
+              postDeadlineInspectionRunReason:
+                "A post-deadline patch failed because its context did not match, so run is available for one short inspection command to inspect exact current lines before patching or finalizing."
+            };
           }
           if (madeTaskPatch) {
             unvalidatedTaskPatch = true;
@@ -369,6 +375,17 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             return { chatOut: action.finished, turns: turn, transcript, ...(totalUsage ? { usage: totalUsage } : {}) };
           }
           nextPendingOutput = appendReminders(nextPendingOutput);
+          if (
+            action.patchContextFailed &&
+            toolAvailabilityState.deadlineFinalizationReason &&
+            !toolAvailabilityState.postDeadlineInspectionRunReason
+          ) {
+            toolAvailabilityState = {
+              ...toolAvailabilityState,
+              postDeadlineInspectionRunReason:
+                "A post-deadline patch failed because its context did not match, so run is available for one short inspection command to inspect exact current lines before patching or finalizing."
+            };
+          }
         }
       }
       responsesInputItems = nextResponsesInputItems;
@@ -420,6 +437,7 @@ type ToolActionResult = {
   postDeadlineValidationRunConsumed?: boolean;
   postDeadlineInspectionRunConsumed?: boolean;
   postDeadlineValidationFailed?: boolean;
+  patchContextFailed?: boolean;
   noOpValidationRun?: boolean;
   nonNoOpValidationRun?: boolean;
   validationRunExecuted?: boolean;
@@ -556,6 +574,7 @@ async function runPatchTool(
   const patch = stripPatchFence(rawPatch).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   let output: string;
   let changedFiles: string[] | undefined;
+  let patchContextFailed = false;
   try {
     const result = applySmithPatch(patch, parentContext.options.cwd);
     changedFiles = result.changedFiles;
@@ -568,6 +587,7 @@ async function runPatchTool(
       }
     }
   } catch (error) {
+    patchContextFailed = isPatchContextMismatchError(error);
     output = formatPatchFailure(error);
   }
   const transcript = appendTerminalTurn(parentContext.transcript, "patch", output);
@@ -575,7 +595,15 @@ async function runPatchTool(
   const responsesInputItems = appendResponsesTerminalOutput(parentContext.responsesInputItems, callId, output);
   parentContext.options.trace?.write("tool output", output);
   if (output) parentContext.options.onTerminalOutput?.(output);
-  return { transcript, providerMessages, responsesInputItems, toolOutput: output, totalUsage, ...(changedFiles ? { changedFiles } : {}) };
+  return {
+    transcript,
+    providerMessages,
+    responsesInputItems,
+    toolOutput: output,
+    totalUsage,
+    ...(changedFiles ? { changedFiles } : {}),
+    ...(patchContextFailed ? { patchContextFailed: true } : {})
+  };
 }
 
 function changedFilesAreOnlySmithMemory(changedFiles: string[]): boolean {
@@ -1076,6 +1104,10 @@ function formatPatchFailure(error: unknown): string {
       ? "Patch context did not match the current file. Before retrying, inspect the exact current lines and send a smaller patch anchored to that output."
     : "";
   return ["patch failed: " + message, guidance].filter(Boolean).join("\n");
+}
+
+function isPatchContextMismatchError(error: unknown): boolean {
+  return /\bhunk context not found\b/i.test(errorMessage(error));
 }
 
 function patchFailureMentionsLikelyTestPath(message: string): boolean {

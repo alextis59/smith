@@ -429,6 +429,61 @@ timeout_ms = 5000
     expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("old\n");
   });
 
+  it("allows one short inspection after a post-deadline patch context mismatch", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-missing",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "sed -n '1,2p' note.txt", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "blocked after inspection" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-post-deadline-patch-context-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch note"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("blocked after inspection");
+    expect(provider.requests).toHaveLength(3);
+    expect(toolNames(provider.requests[1].body)).toEqual(["run", "patch", "finish"]);
+    expect(systemMessage(provider.requests[1].body)).toContain("post-deadline patch failed because its context did not match");
+    expect(userMessages(provider.requests[2].body)).toContain("old");
+    expect(userMessages(provider.requests[2].body)).not.toContain("Post-deadline run is reserved");
+  });
+
   it("records transcript compaction without refreshing the system prompt", async () => {
     const provider = await startFakeProvider([
       { name: "run", arguments: { command: "printf first" } },

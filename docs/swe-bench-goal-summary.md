@@ -1944,3 +1944,25 @@ Decision:
 - Do not count `005` as recovered. This target rerun did not exercise the no-op finish rejection; Smith failed to apply its broad patch because of exact-context mismatches and finished with a blocker reporting no source changes.
 - Current strict targeted evidence remains `6/10`; full suite is still not justified.
 - Cleanup reminder update: `.smith-bench` is now `66G` with `90` retained `run-*` directories. Prune stale retained runs after their evidence is recorded, while preserving result JSONs and sandboxes still referenced by active diagnosis.
+
+## 2026-05-29 Post-Deadline Patch Context Inspection
+
+Change:
+
+- Smith now allows one short inspection `run` after a post-deadline patch fails because hunk context no longer matches the current file.
+- This reuses the existing post-deadline inspection path and is generic patch-recovery behavior for normal editing tasks; it does not mention SWE-bench, task IDs, selected tests, verifiers, scoring, or result parsing.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts`: passed `48` tests.
+- Project benchmark `091-command-router-refactor`: passed in `147204ms`, log `/tmp/smith/2026-05-29T01-34-23-090Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-PD1E92/home/.smith/runs/2026-05-29T01-31-56-311Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed after verifier in `681504ms`, log `/tmp/smith/2026-05-29T01-45-50-268Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-tI3CJl/home/.smith/runs/2026-05-29T01-34-34-517Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic, focused-test covered, build-clean, and project validation passed.
+- Do not count `005` as recovered. The target run landed a candidate source patch, but the verifier still failed against restored tests with missing `Forwarder.cfg` and `Forwarder.clientCredentials` fields.
+- The target rerun did not clearly exercise the new post-deadline inspection slot; many patch context failures happened before deadline.
+- Current strict targeted evidence remains `6/10`; full suite is still not justified.
+- Cleanup reminder update: `.smith-bench` is now `68G` with `92` retained `run-*` directories. Add a recurring habit to prune stale retained sandboxes from time to time after logs, traces, commands, and diagnostic snippets have been recorded, so `.smith-bench` does not silently grow by several more GB. Preserve any sandbox still referenced by active diagnosis.
