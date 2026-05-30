@@ -11149,3 +11149,85 @@ Decision:
 - Strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Next generic direction: improve Smith's ability to do broad, multi-file refactors without losing patch context, likely through smaller source reads/patches or better stale-context recovery. Avoid any instruction tailored to SWE-bench, Teleport, or benchmark-specific task wording.
 - Maintenance note: after this run `.smith-bench` is about `8.2G` with `9` retained `run-*` directories: `run-hKlpEQ`, `run-ZUFLnx`, `run-pHfcsJ`, `run-qrHvTR`, `run-dCnj9o`, `run-pbVQuJ`, `run-jkwAbH`, `run-TA29B0`, and `run-8z0A50`. Before another long iteration sequence, preserve only evidence still needed for current decisions and prune stale sandboxes so `.smith-bench` does not grow by several GB unnoticed.
+
+## 2026-05-30 Worklog: Paused Patch-Context Recovery
+
+Hypothesis:
+
+- Latest `005` evidence showed a general tool-availability trap: after sustained inspection paused `run`, Smith attempted a large patch, the patch context did not match, and Smith had no way to inspect exact current lines except to finish with a blocker.
+- Existing code already allowed one short inspection after a post-deadline patch context mismatch, but not after an inspection pause.
+- Desired generic behavior: if a patch fails because context is stale, allow exactly one bounded inspection command to re-anchor the patch, even when broad inspection had previously been paused.
+
+Implementation:
+
+- In `src/loop.ts`, detect patch-context failures from the structured action flag or from the patch tool output text.
+- After any patch-context failure, set the existing bounded inspection slot with a context-specific reason:
+  - post-deadline patch context mismatch keeps the existing post-deadline wording;
+  - paused-inspection patch context mismatch gets a new paused-inspection wording;
+  - ordinary patch context mismatch gets a generic exact-line inspection wording.
+- Added helper `patchContextInspectionReason()`.
+- Added integration test `allows one short inspection after a paused-inspection patch context mismatch`.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "paused-inspection patch context"
+npm test -- tests/integration.test.ts -t "patch context"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed repo validation:
+
+- `npm run build`: passed.
+- Focused paused-inspection selector: passed `1` selected test before the helper cleanup.
+- Focused `patch context` selector after helper cleanup: passed `4` selected tests.
+- Full integration file after helper cleanup: passed `75` tests in `31251ms`.
+
+Representative project validation:
+
+- First `091-command-router-refactor` attempt failed by outer Docker timeout after `305262ms`.
+  - Log: `/tmp/smith/2026-05-30T11-40-47-586Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-9F2k0z/home/.smith/runs/2026-05-30T11-35-42-562Z.trace`.
+  - Trace ended after a sub-agent result plus a 75% deadline reminder; no patch attempt or new paused-inspection recovery path was involved. Treated as a transient/bad model trajectory.
+- Rerun passed in `93702ms`.
+  - Log: `/tmp/smith/2026-05-30T11-42-43-692Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-fsxY37/home/.smith/runs/2026-05-30T11-41-10-233Z.trace`.
+
+Target rerun:
+
+- `005-gravitational-teleport` failed verifier in `733139ms`.
+- Log: `/tmp/smith/2026-05-30T11-55-13-389Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-Tn9iHO/home/.smith/runs/2026-05-30T11-43-07-327Z.trace`.
+
+Trace evidence:
+
+- At turn 36, sustained inspection paused `run` and left only `patch, finish`.
+- Smith attempted a large patch against `lib/kube/proxy/forwarder.go`.
+- Patch failed with:
+
+```text
+patch failed: hunk context not found in /workspace/lib/kube/proxy/forwarder.go (hunk 21)
+Patch context did not match the current file. Before retrying, inspect the exact current lines and send a smaller patch anchored to that output.
+```
+
+- The new recovery path offered one bounded `run`, and Smith used it to inspect `ForwarderConfig` plus the exec/catchAll regions in `forwarder.go`.
+- Later, after additional constraints and deadline/sub-agent state, Smith still ended with a blocker and no completed source patch.
+- Verifier failed because `lib/kube/proxy` did not compile, with errors including:
+
+```text
+unknown field 'cfg' in struct literal of type Forwarder
+f.cfg undefined (type *Forwarder has no field or method cfg)
+unknown field 'clientCredentials' in struct literal of type Forwarder
+f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+```
+
+Decision:
+
+- Keep the change because it fixes a real generic recovery gap and was exercised in the target trace.
+- Do not count `005` as recovered. The change improved recovery opportunity but did not complete the broad refactor.
+- Strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Next generic direction: avoid broad all-or-nothing patches after long inspection. Potential non-prompt implementation ideas include detecting very large failed atomic patches and allowing another bounded inspection or encouraging smaller independent patch units through tool feedback. Any change must remain generic and not mention SWE-bench, Teleport, or task-specific requirements.
+- Maintenance note: `.smith-bench` is about `9.7G` with `12` retained `run-*` directories: `run-fsxY37`, `run-hKlpEQ`, `run-ZUFLnx`, `run-pHfcsJ`, `run-qrHvTR`, `run-Tn9iHO`, `run-dCnj9o`, `run-pbVQuJ`, `run-jkwAbH`, `run-TA29B0`, `run-8z0A50`, and `run-9F2k0z`. Prune stale sandboxes after preserving the latest evidence needed for current decisions.

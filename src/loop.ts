@@ -331,6 +331,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           nextResponsesInputItems = action.responsesInputItems;
           nextPendingOutput = [nextPendingOutput, action.toolOutput].filter(Boolean).join("\n");
           const madeTaskPatch = action.changedFiles !== undefined && !changedFilesAreOnlySmithMemory(action.changedFiles);
+          const patchContextFailed =
+            action.patchContextFailed || /\b(?:hunk context not found|Patch context did not match the current file)\b/i.test(action.toolOutput);
           const hadUnvalidatedTaskPatch = unvalidatedTaskPatch;
           if (action.readOnlyTestPatchFailed) {
             unresolvedReadOnlyTestPatchFailure = true;
@@ -364,11 +366,10 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
               postDeadlineInspectionRunReason:
                 "A post-deadline validation command failed, so run is available for one short inspection command to inspect the failure before patching or finalizing."
             };
-          } else if (action.patchContextFailed && toolAvailabilityState.deadlineFinalizationReason) {
+          } else if (patchContextFailed) {
             toolAvailabilityState = {
               ...toolAvailabilityState,
-              postDeadlineInspectionRunReason:
-                "A post-deadline patch failed because its context did not match, so run is available for one short inspection command to inspect exact current lines before patching or finalizing."
+              postDeadlineInspectionRunReason: patchContextInspectionReason(toolAvailabilityState)
             };
           } else if (action.unsafeRunEditRejected) {
             unsafeRunEditRejectionsSincePatch += 1;
@@ -400,14 +401,15 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           }
           nextPendingOutput = appendReminders(nextPendingOutput);
           if (
-            action.patchContextFailed &&
-            toolAvailabilityState.deadlineFinalizationReason &&
-            !toolAvailabilityState.postDeadlineInspectionRunReason
+            patchContextFailed &&
+            (toolAvailabilityState.deadlineFinalizationReason || toolAvailabilityState.inspectionDisabledReason) &&
+            (!toolAvailabilityState.postDeadlineInspectionRunReason ||
+              (toolAvailabilityState.deadlineFinalizationReason &&
+                !toolAvailabilityState.postDeadlineInspectionRunReason.startsWith("A post-deadline patch failed")))
           ) {
             toolAvailabilityState = {
               ...toolAvailabilityState,
-              postDeadlineInspectionRunReason:
-                "A post-deadline patch failed because its context did not match, so run is available for one short inspection command to inspect exact current lines before patching or finalizing."
+              postDeadlineInspectionRunReason: patchContextInspectionReason(toolAvailabilityState)
             };
           }
         }
@@ -1643,6 +1645,16 @@ function pauseInspectionAfterRepeatedRunEditRejections(
     inspectionDisabledReason:
       "Repeated run commands attempted unsafe file rewrites and were rejected, so run is temporarily unavailable until a task patch is applied or the run finishes. Use patch for source edits."
   };
+}
+
+function patchContextInspectionReason(availability: ToolAvailabilityState): string {
+  if (availability.deadlineFinalizationReason) {
+    return "A post-deadline patch failed because its context did not match, so run is available for one short inspection command to inspect exact current lines before patching or finalizing.";
+  }
+  if (availability.inspectionDisabledReason) {
+    return "A patch failed because its context did not match after inspection was paused, so run is available for one short inspection command to inspect exact current lines before patching or finalizing.";
+  }
+  return "A patch failed because its context did not match, so run is available for one short inspection command to inspect exact current lines before patching or finalizing.";
 }
 
 function retainPersistentToolAvailability(availability: ToolAvailabilityState): ToolAvailabilityState {

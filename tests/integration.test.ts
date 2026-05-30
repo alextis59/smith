@@ -1729,6 +1729,67 @@ max_turns = 45
     expect(userMessages(provider.requests[37].body)).toContain("Unknown or unavailable tool 'run'");
   });
 
+  it("allows one short inspection after a paused-inspection patch context mismatch", async () => {
+    const provider = await startFakeProvider([
+      ...Array.from({ length: 36 }, (_, index) => ({
+        name: "run" as const,
+        arguments: { command: `printf output-${index}` }
+      })),
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-stale",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "sed -n '1,20p' note.txt" } },
+      { name: "finish", arguments: { message: "blocked after exact-line inspection" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-paused-context-inspection-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "current\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 45
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "inspect then patch"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("blocked after exact-line inspection");
+    expect(provider.requests).toHaveLength(39);
+    expect(toolNames(provider.requests[36].body)).toEqual(["patch", "finish"]);
+    expect(systemMessage(provider.requests[37].body)).toContain(
+      "A patch failed because its context did not match after inspection was paused"
+    );
+    expect(toolNames(provider.requests[37].body)).toContain("run");
+    expect(userMessages(provider.requests[38].body)).toContain("current");
+    expect(toolNames(provider.requests[38].body)).toEqual(["patch", "finish"]);
+  });
+
   it("keeps run available after sustained inspection when a task patch needs validation", async () => {
     const provider = await startFakeProvider([
       {

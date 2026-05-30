@@ -2737,3 +2737,26 @@ Decision:
 - Do not count `005` as recovered. The verifier failed because `lib/kube/proxy` did not compile after an incomplete refactor; strict targeted evidence remains `6/10`.
 - Full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `8.2G` with `9` retained `run-*` directories after this validation. Clean stale retained sandboxes periodically, preserving only runs still needed for current evidence, so the directory does not grow to several GB again unnoticed.
+
+## 2026-05-30 Paused Patch-Context Recovery
+
+Change:
+
+- When inspection has been paused after sustained no-patch progress, a patch context mismatch now grants one bounded inspection command so Smith can re-read exact current lines before retrying or finalizing.
+- Existing post-deadline patch-context recovery behavior is preserved.
+- Added integration coverage for a paused-inspection stale patch followed by one successful exact-line inspection.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "patch context"`: passed `4` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `75` tests.
+- Representative project benchmark `091-command-router-refactor`: first run timed out after `305262ms`, log `/tmp/smith/2026-05-30T11-40-47-586Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-9F2k0z/home/.smith/runs/2026-05-30T11-35-42-562Z.trace`; rerun passed in `93702ms`, log `/tmp/smith/2026-05-30T11-42-43-692Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-fsxY37/home/.smith/runs/2026-05-30T11-41-10-233Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed verifier in `733139ms`, log `/tmp/smith/2026-05-30T11-55-13-389Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-Tn9iHO/home/.smith/runs/2026-05-30T11-43-07-327Z.trace`.
+
+Decision:
+
+- Keep the change because the `005` trace shows the new bounded inspection slot was offered and used after a paused-inspection patch context mismatch.
+- Do not count `005` as recovered. Smith still ended with an incomplete broad refactor, and verifier failed because `lib/kube/proxy` did not compile after removed/renamed fields were not carried through tests and callers.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `9.7G` with `12` retained `run-*` directories. Prune stale sandboxes after preserving the latest evidence runs needed for current decisions.
