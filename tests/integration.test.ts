@@ -781,6 +781,60 @@ timeout_ms = 5000
     expect(messages(provider.requests[1].body)[4].content).toContain("keep wrappers or adapters");
   });
 
+  it("warns when a patch changes struct fields that may break keyed callers", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: forwarder.go",
+            "@@",
+            " type Forwarder struct {",
+            "-\tForwarderConfig",
+            "+\tcfg ForwarderConfig",
+            " \tlog Logger",
+            " }",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "patched; validation pending" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-compat-struct-fields-patch-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "forwarder.go"), "type Forwarder struct {\n\tForwarderConfig\n\tlog Logger\n}\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "change forwarder"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("patched");
+    expect(messages(provider.requests[1].body)[4].content).toContain("changes struct or object fields");
+    expect(messages(provider.requests[1].body)[4].content).toContain("`ForwarderConfig`");
+    expect(messages(provider.requests[1].body)[4].content).toContain("keyed struct literals");
+    expect(messages(provider.requests[1].body)[4].content).toContain("embedded-field callers");
+  });
+
   it("applies tab-indented patch tool calls without shell tab completion", async () => {
     const provider = await startFakeProvider([
       {

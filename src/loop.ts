@@ -709,6 +709,10 @@ async function runPatchTool(
       if (changedDeclarationSignatures.length > 0) {
         output = `${output}\nCompatibility note: this patch changes declaration signatures: ${changedDeclarationSignatures.map((name) => `\`${name}\``).join(", ")}. Search for existing callers and keep wrappers or adapters when existing callers may use the old signature before treating validation as complete.`;
       }
+      const changedStructFields = changedStructFieldNamesFromPatch(patch);
+      if (changedStructFields.length > 0) {
+        output = `${output}\nCompatibility note: this patch changes struct or object fields: ${changedStructFields.map((name) => `\`${name}\``).join(", ")}. Search for keyed struct literals, direct field access, and embedded-field callers; preserve legacy fields, aliases, or adapters when existing callers may still use them before treating validation as complete.`;
+      }
       const changedTestFiles = result.changedFiles.filter(isLikelyTestFilePath);
       if (changedTestFiles.length > 0) {
         output = `${output}\nTest files changed: ${formatChangedFiles(changedTestFiles)}. Local validation may include the changed tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.`;
@@ -777,6 +781,36 @@ function changedDeclarationSignatureNamesFromPatch(patch: string): string[] {
     })
     .map(([name]) => name)
     .slice(0, 8);
+}
+
+function changedStructFieldNamesFromPatch(patch: string): string[] {
+  const removed = new Set<string>();
+  const added = new Set<string>();
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("---") || line.startsWith("+++")) continue;
+    const marker = line[0];
+    if (marker !== "-" && marker !== "+") continue;
+    const field = structFieldNameFromLine(line.slice(1));
+    if (!field) continue;
+    if (marker === "-") removed.add(field);
+    else added.add(field);
+  }
+  return [...new Set([...removed, ...added])]
+    .filter((name) => removed.has(name) !== added.has(name))
+    .slice(0, 8);
+}
+
+function structFieldNameFromLine(line: string): string | undefined {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("*")) return undefined;
+  if (/^(?:type|func|return|if|for|switch|case|default|const|var|import|package)\b/.test(trimmed)) return undefined;
+  if (/[=;]$/.test(trimmed) || /^(?:private|protected|public|readonly)\b/.test(trimmed)) return undefined;
+  if (/^[A-Za-z_]\w*$/.test(trimmed)) return trimmed;
+  const goField = /^([A-Za-z_]\w*)(?:\s+|,)/.exec(trimmed);
+  if (goField && /[A-Za-z_\]\)]/.test(trimmed.slice(goField[0].length))) return goField[1];
+  const tsField = /^([A-Za-z_$][\w$]*)\??\s*:\s*[^=]/.exec(trimmed);
+  if (tsField) return tsField[1];
+  return undefined;
 }
 
 function declarationNamesFromLine(line: string): string[] {

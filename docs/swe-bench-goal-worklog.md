@@ -11791,3 +11791,81 @@ Decision:
 - Strict current evidence remains `6/10`; no full SWE-bench Pro run.
 - Next generic direction: improve source-compatibility preservation when validation or verifier errors mention missing struct fields or legacy fields. This should be generic, but avoid task-specific names or SWE-specific prompting.
 - Maintenance note: `.smith-bench` is about `17G` with `19` retained `run-*` directories. Cleanup should happen before more long SWE runs; preserve current evidence (`run-UeB6Zv`, `run-61fJqu`, and any still-needed prior milestone runs) and prune stale sandboxes.
+
+## 2026-05-30 Worklog: Struct Field Compatibility Hint
+
+Context:
+
+- The latest `005` verifier failure remained a source compatibility break:
+  - `unknown field 'cfg' in struct literal of type Forwarder`
+  - `f.cfg undefined`
+  - `unknown field 'clientCredentials' in struct literal of type Forwarder`
+  - `f.clientCredentials undefined`
+- The retained sandbox showed local tests were not authoritative because the benchmark verifier restored/used selected tests after Smith finished.
+- A generic prevention path is to make Smith treat struct/object field changes as a compatibility risk at patch time, before validation misses hidden or restored callers.
+
+Hypothesis:
+
+- When a patch changes fields on a struct/object shape, the next model turn should explicitly search keyed struct literals, direct field access, and embedded-field callers before treating validation as complete.
+- This is generic and applies to ordinary user tasks in Go, TypeScript, and similar languages; it is not benchmark-specific.
+
+Implementation:
+
+- Added `changedStructFieldNamesFromPatch()` and `structFieldNameFromLine()` to detect changed field-like lines in patches.
+- Detection covers:
+  - Go-style fields such as `cfg ForwarderConfig`.
+  - Embedded Go fields such as `ForwarderConfig`.
+  - TypeScript-like object/interface fields such as `name?: string`.
+- Patch output now appends:
+  - `Compatibility note: this patch changes struct or object fields...`
+  - The note tells Smith to search keyed struct literals, direct field access, and embedded-field callers, and to preserve legacy fields, aliases, or adapters when existing callers may still use them.
+- Added integration coverage for a Go embedded field rename:
+
+```diff
+ type Forwarder struct {
+-	ForwarderConfig
++	cfg ForwarderConfig
+ 	log Logger
+ }
+```
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "patch changes struct fields|patch changes declaration signatures|patch removes declarations"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- First focused selector failed because I ran build and integration in parallel, so the CLI integration used stale `dist`. After the build completed, the same focused selector passed `3` selected tests.
+- Full integration file: passed `85` tests in `33470ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed:
+  - Duration: `179335ms`.
+  - Log: `/tmp/smith/2026-05-30T17-06-41-449Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-HHKi3P/home/.smith/runs/2026-05-30T17-03-42-649Z.trace`.
+
+Target rerun:
+
+- `005-gravitational-teleport` reached verifier and failed:
+  - Duration: `752747ms`.
+  - Log: `/tmp/smith/2026-05-30T17-19-23-330Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-nnfGIf/home/.smith/runs/2026-05-30T17-06-56-868Z.trace`.
+  - Sandbox: `.smith-bench/run-nnfGIf`.
+  - Smith ended with: `Blocker: the remaining work is a breaking refactor of lib/kube/proxy ForwarderConfig and the credential/session cache model... Please approve...`.
+  - Verifier still failed with the same missing compatibility fields/methods: `Forwarder.cfg`, `f.cfg`, `Forwarder.clientCredentials`, and `f.clientCredentials`.
+
+Decision:
+
+- Keep the change because it is a general compatibility hint for struct/object field refactors and is covered by tests.
+- Do not count `005` as recovered. It still fails selected verifier tests.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Next direction: move to another Codex-passed unrecovered task or find a stronger generic finish/validation behavior. The current `005` failure may need better generic handling of "approval for breaking API" blockers, but avoid task-specific or SWE-specific prompting.
+- Maintenance note: `.smith-bench` is about `19G` with `21` retained `run-*` directories. Preserve current evidence (`run-nnfGIf`, `run-HHKi3P`, `run-UeB6Zv`, `run-61fJqu`) and prune stale retained sandboxes before another sequence of long target runs.

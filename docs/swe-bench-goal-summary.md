@@ -2936,3 +2936,26 @@ Decision:
 - The `005` run improved from outer timeout to verifier evidence, but it did not recover the task. Verifier failed because `lib/kube/proxy/forwarder_test.go` still expected `Forwarder.cfg` and `Forwarder.clientCredentials`.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `17G` with `19` retained `run-*` directories. Cleanup is due before another sequence of long SWE runs; preserve `run-UeB6Zv`, `run-61fJqu`, and other current evidence, then prune stale retained sandboxes.
+
+## 2026-05-30 Struct Field Compatibility Hint
+
+Change:
+
+- Added a generic patch-time compatibility note when Smith changes struct/object fields, including embedded fields.
+- The note tells Smith to search keyed struct literals, direct field access, and embedded-field callers, and to preserve legacy fields, aliases, or adapters when existing callers may still use them.
+- Added integration coverage for a Go embedded-field rename from `ForwarderConfig` to `cfg ForwarderConfig`.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for declaration/signature/struct compatibility notes: passed `3` selected tests after rebuilding.
+- `npm test -- tests/integration.test.ts`: passed `85` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `179335ms`, log `/tmp/smith/2026-05-30T17-06-41-449Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-HHKi3P/home/.smith/runs/2026-05-30T17-03-42-649Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: reached verifier and failed in `752747ms`, log `/tmp/smith/2026-05-30T17-19-23-330Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-nnfGIf/home/.smith/runs/2026-05-30T17-06-56-868Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic compatibility safeguard for ordinary refactors and directly targets a real class of source breakage: keyed struct literals and direct field access.
+- Do not count `005` as recovered. The latest target rerun still failed verifier with the same missing `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility errors.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `19G` with `21` retained `run-*` directories. Cleanup should happen before more long target runs; preserve latest evidence (`run-nnfGIf`, `run-HHKi3P`, `run-UeB6Zv`, `run-61fJqu`) and prune stale sandboxes.
