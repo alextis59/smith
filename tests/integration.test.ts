@@ -4047,6 +4047,117 @@ max_turns = 30
     expect(userMessages(provider.requests[3].body)).not.toContain("Finish rejected: a read-only test/spec patch failed");
   });
 
+  it("requires source compatibility work after a read-only test patch failure", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/app.js",
+            "@@",
+            "-module.exports = () => 'old';",
+            "+module.exports = () => 'new';",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: tests/readonly.test.js",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent" } },
+      {
+        name: "finish",
+        arguments: {
+          message: "Implemented and validated the source fix with the existing test suite."
+        }
+      },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/app.js",
+            "@@",
+            "-module.exports = () => 'new';",
+            "+module.exports = () => 'new';",
+            "+module.exports.compat = true;",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent" } },
+      {
+        name: "finish",
+        arguments: {
+          message: "Implemented and validated the source fix with the existing test suite."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-readonly-test-source-after-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "src", "app.js"), "module.exports = () => 'old';\n", "utf8");
+    writeFileSync(join(cwd, "tests", "readonly.test.js"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, "test.js"),
+      "if (require('./src/app')() !== 'new') process.exit(1);\nprocess.stdout.write('validated');\n",
+      "utf8"
+    );
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node test.js" } }), "utf8");
+    await execFileAsync("git", ["init"], { cwd });
+    await execFileAsync("git", ["add", "."], { cwd });
+    await execFileAsync("git", ["-c", "user.name=Smith Test", "-c", "user.email=smith@example.test", "commit", "-m", "init"], {
+      cwd
+    });
+    chmodSync(join(cwd, "tests", "readonly.test.js"), 0o444);
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "fix source compatibility"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Implemented and validated");
+    expect(userMessages(provider.requests[2].body)).toContain("The unwritable path appears to be a test or spec file");
+    expect(provider.requests).toHaveLength(7);
+    expect(readFileSync(join(cwd, "src", "app.js"), "utf8")).toBe(
+      "module.exports = () => 'new';\nmodule.exports.compat = true;\n"
+    );
+    expect(userMessages(provider.requests[3].body)).toContain("validated");
+    expect(userMessages(provider.requests[4].body)).toContain("Finish rejected: a read-only test/spec patch failed");
+    expect(userMessages(provider.requests[6].body)).toContain("validated");
+  });
+
   it("lets pending-validation guard handle narrow validation after a read-only test patch failure", async () => {
     const provider = await startFakeProvider([
       {

@@ -11317,3 +11317,78 @@ Cleanup:
   - `run-qrHvTR`: prior `010` verifier failure after read-only-test guard fix.
   - `run-fsxY37`: prior passing representative `091`.
 - `.smith-bench` size after cleanup: `7.0G`.
+
+## 2026-05-30 Worklog: Read-Only Test Compatibility Guard
+
+Hypothesis:
+
+- The latest `010-future-architect-vuls` trace showed a generic source-compatibility risk: Smith attempted to patch read-only test/spec behavior after an earlier source patch, then treated a passing public package validation as enough to finish.
+- That can be wrong for any user task where tests/specs are read-only existing behavior. If the agent tried to encode expected behavior in a read-only test, a validation command for source changes that happened before that failed test/spec patch does not prove the source now satisfies the intended existing behavior.
+- The fix should be runtime state handling only. No benchmark-specific prompt text, no task-specific names, no selected-test/scoring changes.
+
+Implementation:
+
+- Added `sourcePatchAfterReadOnlyTestPatchFailure` state in `src/loop.ts`.
+- On a read-only test/spec patch failure:
+  - keep `unresolvedReadOnlyTestPatchFailure = true`;
+  - reset `sourcePatchAfterReadOnlyTestPatchFailure = false`.
+- Only clear the unresolved read-only test/spec failure after a later source patch has occurred and that later patch receives non-narrow, non-cached, non-dirty passing validation.
+- Added integration test `requires source compatibility work after a read-only test patch failure`.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "requires source compatibility work after a read-only test patch failure"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed repo validation:
+
+- `npm run build`: passed.
+- Focused integration selector: passed `1` selected test.
+- Full integration file: passed `77` tests in `31567ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed in `111181ms`.
+  - Log: `/tmp/smith/2026-05-30T12-51-10-371Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-kG8O37/home/.smith/runs/2026-05-30T12-49-19-677Z.trace`.
+
+Target rerun:
+
+- `010-future-architect-vuls` failed in `956262ms`.
+  - Log: `/tmp/smith/2026-05-30T13-07-14-294Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-bbwPc4/home/.smith/runs/2026-05-30T12-51-18-993Z.trace`.
+
+Trace evidence:
+
+- Smith finished with an explicit blocker instead of claiming completion:
+
+```text
+Blocked on final validation of the Alpine scanner patch.
+```
+
+- It reported the source patch as implemented but not validated and noted that `go test ./scanner -run 'TestParseApkInfo|TestParseApkVersion' -count=1` timed out.
+- This is a behavior improvement over the previous `010` run, where Smith claimed broad validation and completion despite verifier failures.
+
+Verifier evidence:
+
+- `scanner` still failed to compile because compatibility methods were missing:
+
+```text
+(newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+(newAlpine(config.ServerInfo{})).parseApkIndex undefined
+(newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+```
+
+- `TestIsOvalDefAffected` still failed with `affected: true` and `fixedIn: 3.3.2-r0` where expected `affected: false` and empty `fixedIn`.
+
+Decision:
+
+- Keep the change as a generic guardrail. It reduces false completion claims when read-only tests/specs expose source behavior that still needs implementation.
+- Do not count `010` as recovered. Current strict targeted evidence remains `6/10`; no full SWE-bench Pro run.
+- Next generic direction: help Smith preserve or implement source-level compatibility APIs when task requirements imply new parser/helper methods but local public tests do not compile-check those names. This must remain generic; do not inspect hidden test source and do not add benchmark-specific prompt text.
+- Maintenance note: `.smith-bench` grew from `7.0G` after cleanup to `8.3G` after the latest representative and target runs. Clean stale run directories again after preserving `run-bbwPc4` and `run-kG8O37` if they are still needed as evidence.

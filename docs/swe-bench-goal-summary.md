@@ -2788,3 +2788,26 @@ Maintenance:
 - Pruned stale `.smith-bench/run-*` sandboxes after this milestone.
 - Preserved evidence runs: `run-Sn9qBP`, `run-FRxBg9`, `run-55NNLu`, `run-Tn9iHO`, `run-ZUFLnx`, `run-qrHvTR`, and `run-fsxY37`.
 - `.smith-bench` size after cleanup: `7.0G`.
+
+## 2026-05-30 Read-Only Test Compatibility Guard
+
+Change:
+
+- Tightened generic read-only test/spec handling in `src/loop.ts`.
+- After a failed attempt to patch a read-only test/spec file, Smith now requires a later source patch plus passing validation before it can claim completion. A validation run for a source patch that happened before the read-only test/spec failure no longer clears that unresolved compatibility risk.
+- Added integration coverage for the sequence: source patch, read-only test patch failure, passing validation, rejected premature completion, later source patch, passing validation, accepted completion.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "requires source compatibility work after a read-only test patch failure"`: passed `1` selected test.
+- `npm test -- tests/integration.test.ts`: passed `77` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `111181ms`, log `/tmp/smith/2026-05-30T12-51-10-371Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-kG8O37/home/.smith/runs/2026-05-30T12-49-19-677Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed in `956262ms`, log `/tmp/smith/2026-05-30T13-07-14-294Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-bbwPc4/home/.smith/runs/2026-05-30T12-51-18-993Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic correctness guard for tasks where tests/specs are read-only existing behavior and must be satisfied through source changes.
+- Do not count `010` as recovered. Smith now finished honestly with a blocker instead of claiming success, but verifier still failed on missing Alpine parser methods and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `8.3G` after the new representative and target runs. Prune stale sandboxes periodically, preserving the latest evidence runs before cleanup.

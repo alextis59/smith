@@ -176,6 +176,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let pendingValidationFiles = new Set<string>();
   let noOpValidationSinceLastCheck = false;
   let unresolvedReadOnlyTestPatchFailure = false;
+  let sourcePatchAfterReadOnlyTestPatchFailure = false;
   const runStartedAt = Date.now();
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
   const providerDebugJson =
@@ -336,6 +337,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           const hadUnvalidatedTaskPatch = unvalidatedTaskPatch;
           if (action.readOnlyTestPatchFailed) {
             unresolvedReadOnlyTestPatchFailure = true;
+            sourcePatchAfterReadOnlyTestPatchFailure = false;
           }
           if (madeTaskPatch && subAgentTurnLimitFailures < 2) {
             unsafeRunEditRejectionsSincePatch = 0;
@@ -379,15 +381,24 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           }
           if (madeTaskPatch) {
             unvalidatedTaskPatch = true;
+            if (unresolvedReadOnlyTestPatchFailure) {
+              sourcePatchAfterReadOnlyTestPatchFailure = true;
+            }
             for (const changedFile of action.changedFiles ?? []) {
               if (!isRootSmithMemoryFile(changedFile)) pendingValidationFiles.add(changedFile);
             }
           } else if (action.validationRunExecuted) {
             unvalidatedTaskPatch = false;
             pendingValidationFiles = new Set();
-            if (hadUnvalidatedTaskPatch) unresolvedReadOnlyTestPatchFailure = false;
+            if (hadUnvalidatedTaskPatch && sourcePatchAfterReadOnlyTestPatchFailure) {
+              unresolvedReadOnlyTestPatchFailure = false;
+              sourcePatchAfterReadOnlyTestPatchFailure = false;
+            }
           } else if (action.sourcePatchValidationEvidence && hadUnvalidatedTaskPatch) {
-            unresolvedReadOnlyTestPatchFailure = false;
+            if (sourcePatchAfterReadOnlyTestPatchFailure) {
+              unresolvedReadOnlyTestPatchFailure = false;
+              sourcePatchAfterReadOnlyTestPatchFailure = false;
+            }
           }
           if (action.noOpValidationRun) {
             noOpValidationSinceLastCheck = true;
