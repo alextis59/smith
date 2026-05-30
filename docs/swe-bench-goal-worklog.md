@@ -11643,3 +11643,75 @@ Decision:
   - Prefer `005` or another Codex-passed failed task over deep tuning for flawed/Codex-failed tasks.
   - For `010`, only revisit if pursuing a generic improvement that helps Smith preserve/implement compatibility methods after reading test names or compile failures.
   - Continue pruning `.smith-bench` periodically. It is currently about `12G`; keep current evidence sandboxes such as `run-LBN82N`, `run-pGQ1X3`, and the latest `005`/`091` runs, and delete stale older run directories before they accumulate further.
+
+## 2026-05-30 Worklog: No-Changed-Files Finish Guard
+
+Context:
+
+- User reiterated that SWE-specific prompt edits are cheating; this change stays in generic loop behavior.
+- Current high-value failed tasks remain Codex-passed unrecovered tasks, especially `005` and `010`; this iteration targeted `005`.
+- Fresh current-branch `005` diagnostic before the change failed after verifier in `773416ms`:
+  - Log: `/tmp/smith/2026-05-30T16-02-33-146Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-JtqDNd/home/.smith/runs/2026-05-30T15-49-47-457Z.trace`.
+  - Sandbox: `.smith-bench/run-JtqDNd`.
+  - Smith stdout reported no files changed, but the retained sandbox had a changed `lib/kube/proxy/forwarder_test.go`.
+  - Verifier failed because restored tests referenced missing `Forwarder` fields/methods: `cfg`, `clientCredentials`, and related accessors.
+
+Hypothesis:
+
+- Smith should not accept a finish message that says no files/code changed while the workspace has modified or untracked test files, even when the user's prompt allowed test edits.
+- Smith should also reject no-files-changed reports while any task patch remains pending validation. That is generic accounting, not benchmark-specific behavior.
+
+Implementation:
+
+- Split dirty test detection into:
+  - `dirtyUnrequestedTestFiles()`: used for the existing guard that rejects completion/validation claims when unrequested tests are dirty.
+  - `dirtyTestFiles()`: used for no-files-changed contradictions regardless of whether test edits were requested.
+- Updated the no-files-changed finish guard to:
+  - reject when any test file is dirty or untracked;
+  - reject when `unvalidatedTaskPatch` is still true;
+  - allow honest pending-validation/blocker finishes that account for changed files.
+- Updated the sub-agent edit tracking integration test so parent Smith rejects a contradictory `Blocked: no files were changed.` report after a child changed `tests/example.test.js`.
+- Added a focused integration test where the prompt explicitly asks to update tests and source, Smith adds `tests/new.test.js`, then tries to finish with `No files were changed.`
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "no-changed-files finishes|completion finishes while unrequested test files are dirty|allows unvalidated patch finish"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused integration selector: passed `3` selected tests.
+- Full integration file first failed because the existing sub-agent edit tracking test still expected Smith to accept a contradictory no-files-changed parent finish. After updating that expectation, `npm test -- tests/integration.test.ts` passed `83` tests in `32906ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed:
+  - Duration: `171128ms`.
+  - Log: `/tmp/smith/2026-05-30T16-13-40-623Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-DUUK2Z/home/.smith/runs/2026-05-30T16-10-49-949Z.trace`.
+
+Target rerun:
+
+- `005-gravitational-teleport` failed by outer Docker timeout:
+  - Duration: `912434ms`.
+  - Log: `/tmp/smith/2026-05-30T16-29-00-414Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-RILdnu/home/.smith/runs/2026-05-30T16-13-55-120Z.trace`.
+  - Sandbox: `.smith-bench/run-RILdnu`.
+  - Retained workspace status: modified `lib/kube/proxy/forwarder.go`, `lib/kube/proxy/server.go`, and `lib/service/kubernetes.go`.
+  - Diff stat: `117 insertions(+), 23 deletions(-)`.
+  - Trace evidence: Smith made source patches, ran validation, and validation failed with nil-pointer panics in `Forwarder.newClusterSessionSameCluster`, `Forwarder.requestCertificate`, and `Forwarder.authenticate`.
+  - Late trace ended after a denied post-deadline inspection attempt; no verifier evidence was produced.
+
+Decision:
+
+- Keep the change because it improves generic finish honesty and sub-agent changed-file accounting.
+- Do not count `005` as recovered. The latest run did not repeat the prior dirty-test/no-files finish issue, but it still timed out after incomplete source work and failing validation.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Maintenance note: `.smith-bench` is now about `15G` with `16` retained `run-*` directories. Before more long SWE reruns, preserve current evidence (`run-RILdnu`, `run-DUUK2Z`, and any still-needed prior milestone sandboxes) and prune stale retained sandboxes so the folder does not grow by several GB per iteration.

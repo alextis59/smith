@@ -576,6 +576,7 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
       );
     }
     const dirtyFinishTestFiles = await dirtyUnrequestedTestFiles(parentContext);
+    const dirtyFinishChangedTestFiles = await dirtyTestFiles(parentContext);
     if (
       dirtyFinishTestFiles.length > 0 &&
       (finishClaimsComplete(message) || finishClaimsValidationSuccess(message)) &&
@@ -588,15 +589,14 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
       );
     }
     if (
-      (dirtyFinishTestFiles.length > 0 || parentContext.unvalidatedTaskPatch) &&
-      finishClaimsNoChangedFiles(message) &&
-      !finishAcknowledgesPendingValidation(message)
+      (dirtyFinishChangedTestFiles.length > 0 || parentContext.unvalidatedTaskPatch) &&
+      finishClaimsNoChangedFiles(message)
     ) {
       return appendToolObservation(
         parentContext,
         callId,
-        dirtyFinishTestFiles.length > 0
-          ? `Finish rejected: test files are currently modified or untracked (${formatChangedFiles(dirtyFinishTestFiles)}), but the finish message says no files or code changed. Restore unrequested test edits, preserve compatibility with existing tests, or finish with an explicit pending-validation/blocker report that accounts for the dirty test files.`
+        dirtyFinishChangedTestFiles.length > 0
+          ? `Finish rejected: test files are currently modified or untracked (${formatChangedFiles(dirtyFinishChangedTestFiles)}), but the finish message says no files or code changed. Account for the changed test files, restore unintended edits, or finish with an explicit pending-validation/blocker report.`
           : "Finish rejected: a task patch is still pending validation, but the finish message says no files or code changed. Continue validation, restore the changes, or finish with an explicit pending-validation/blocker report that accounts for the changed files."
       );
     }
@@ -1431,6 +1431,11 @@ function shouldRejectNoOpValidationClaimFinish(message: string, context: ToolCal
 
 async function dirtyUnrequestedTestFiles(context: ToolCallContext): Promise<string[]> {
   if (context.options.runtime.readOnly || promptExplicitlyRequestsTestEdits(context.options.prompt)) return [];
+  return dirtyTestFiles(context);
+}
+
+async function dirtyTestFiles(context: ToolCallContext): Promise<string[]> {
+  if (context.options.runtime.readOnly) return [];
   return changedTrackedTestFiles(await trackedGitChangeSet(context.options.cwd, { includeUntracked: true }));
 }
 

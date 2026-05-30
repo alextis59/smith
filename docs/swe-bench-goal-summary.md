@@ -2890,3 +2890,26 @@ Decision:
 - The final `010` rerun improved from outer timeout to verifier evidence, but it did not recover the task. Verifier failed because Alpine parser compatibility methods were missing (`parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`) and `TestIsOvalDefAffected` failed.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `12G` after this milestone. Continue pruning stale retained sandboxes periodically; preserve only current evidence runs before cleanup so the folder does not keep growing by several GB per iteration.
+
+## 2026-05-30 No-Changed-Files Finish Guard
+
+Change:
+
+- Tightened generic finish handling so Smith rejects "no files/code changed" reports when any test file is modified or untracked, even if the user's prompt explicitly asked to update tests.
+- Also rejects "no files/code changed" reports while any task patch is still pending validation.
+- Updated sub-agent edit tracking coverage so a parent run must account for child-edited test files instead of accepting a contradictory no-files-changed blocker.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for no-changed-files/test-dirty and unvalidated-patch finish behavior: passed `3` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `83` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `171128ms`, log `/tmp/smith/2026-05-30T16-13-40-623Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-DUUK2Z/home/.smith/runs/2026-05-30T16-10-49-949Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed by outer Docker timeout in `912434ms`, log `/tmp/smith/2026-05-30T16-29-00-414Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-RILdnu/home/.smith/runs/2026-05-30T16-13-55-120Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic honesty/accounting guard for ordinary Smith tasks and sub-agent edits.
+- Do not count `005` as recovered. The latest trace shows real source edits in `lib/kube/proxy/forwarder.go`, `lib/kube/proxy/server.go`, and `lib/service/kubernetes.go`; validation still failed with nil-pointer panics in `Forwarder.newClusterSessionSameCluster`, `Forwarder.requestCertificate`, and `Forwarder.authenticate`, then the outer Docker run timed out before verifier.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `15G` with `16` retained `run-*` directories. Prune stale retained sandboxes before more long SWE reruns, preserving current evidence such as `run-RILdnu`, `run-DUUK2Z`, and any still-needed prior milestone runs.
