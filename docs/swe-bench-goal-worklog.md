@@ -12143,3 +12143,85 @@ Decision:
 - Strict current evidence remains `6/10`; no full SWE-bench Pro run.
 - Next direction: `005` still exposes the same missing compatibility fields. A possible generic direction is stronger handling of build failures caused by removed or renamed fields, but avoid task-specific field names in Smith code or prompts.
 - Maintenance note: `.smith-bench` is about `26G`. Clean stale retained sandboxes before more long target runs; preserve `run-b7ZWSj`, `run-tonPvU`, `run-4nnb4L`, and `run-l50Jrb` until their evidence is no longer needed.
+
+## 2026-05-30 Worklog: Missing-Field Validation Guidance
+
+Context:
+
+- `005-gravitational-teleport` has repeatedly failed after local source edits removed or renamed fields while restored/selected tests still referenced those fields.
+- The recurring verifier shape is generic: build output reports unknown fields in keyed literals and missing fields or methods on receiver values.
+- This is not a benchmark-specific rule. Ordinary refactors in Go, TypeScript, Rust, C++, Swift, and similar languages often need compatibility aliases, accessors, or complete call-site updates when fields are renamed.
+
+Hypothesis:
+
+- When validation fails with missing-field errors after a source patch, Smith should get a concise generic reminder to inspect type definitions plus keyed literals/direct field access before declaring the patch done.
+- This may help ordinary tasks where a refactor changes public or package-visible struct/object fields and validation output points to stale constructors or call sites.
+
+Implementation:
+
+- Added `failedValidationReportsMissingFields()` to detect generic missing-field/compiler wording such as:
+  - `unknown field`
+  - `no field or method`
+  - `has no field`
+  - `has no member`
+  - `no member named`
+- Added a failed-validation annotation when:
+  - There is an unvalidated task patch.
+  - Changed files include source files.
+  - Validation output matches the missing-field detector.
+- The annotation says to inspect referenced type definitions, keyed literals, and direct field access, then restore legacy fields/accessors or update constructors and callers consistently.
+- Added integration coverage for a Go-style struct field rename that produces `unknown field 'cfg'` and `has no field or method cfg` validation output.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "missing fields|missing declarations|signature mismatches"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused integration selector: passed `3` selected tests.
+- Full integration file: passed `90` tests in `39957ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed:
+  - Duration: `104003ms`.
+  - Log: `/tmp/smith/2026-05-30T19-15-16-278Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-oBuBpa/home/.smith/runs/2026-05-30T19-13-32-801Z.trace`.
+
+Target rerun:
+
+- `005-gravitational-teleport` reached verifier and failed:
+  - Duration: `833135ms`.
+  - Log: `/tmp/smith/2026-05-30T19-29-20-817Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-7lnBwh/home/.smith/runs/2026-05-30T19-15-35-854Z.trace`.
+  - Sandbox: `.smith-bench/run-7lnBwh`.
+  - Retained sandbox status: `lib/kube/proxy/forwarder.go` modified and `lib/kube/proxy/forwarder_test.go` modified/staged.
+  - Source diff stat: `lib/kube/proxy/forwarder.go | 39 +++++++++++++++++++++++++++++++++++----`.
+  - Final stdout blocker reported a partially applied `ForwarderConfig` refactor and said exact current-line inspection was no longer reliably available after post-deadline patch-context failures.
+  - Verifier still failed `lib/kube/proxy` build with missing compatibility fields/methods:
+    - `unknown field 'cfg' in struct literal of type Forwarder`.
+    - `f.cfg undefined`.
+    - `unknown field 'clientCredentials' in struct literal of type Forwarder`.
+    - `f.clientCredentials undefined`.
+
+Trace checks:
+
+- `rg 'Compatibility hint: validation reports unknown or missing fields' .smith-bench/run-7lnBwh/...trace` returned no matches.
+- Patch-context/post-deadline search found:
+  - `Patch context did not match the current file. Before retrying, inspect the exact current lines and send a smaller patch anchored to that output.`
+  - The final `finish` blocker about no reliable inspection path in post-deadline mode.
+
+Decision:
+
+- Keep the change because it improves generic validation feedback for ordinary source refactors.
+- Do not count `005` as recovered. The new hint did not influence this rerun, and the verifier still failed on the same compatibility-field shape.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Next direction: inspect whether the post-deadline patch-context recovery path can generically reject premature blockers when a short inspection slot is still available. Avoid adding any task-specific instruction or field names.
+- Maintenance note: `.smith-bench` is about `28G`. Before more long target runs, clean stale retained sandboxes after copying needed evidence into these logs. Preserve `run-7lnBwh`, `run-oBuBpa`, `run-b7ZWSj`, and `run-tonPvU` until their traces are no longer needed, but do not let old run directories accumulate into another several-GB increase.

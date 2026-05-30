@@ -1082,6 +1082,12 @@ async function runShellCommandTool(
     if (
       parentContext.unvalidatedTaskPatch &&
       changedSourceFiles(parentContext.pendingValidationFiles).length > 0 &&
+      failedValidationReportsMissingFields(rawTerminalOutput)
+    ) {
+      annotatedTerminalOutput = `${annotatedTerminalOutput}\nCompatibility hint: validation reports unknown or missing fields after source changes. Inspect the referenced type definitions plus keyed literals and direct field access, then restore legacy fields/accessors or update all constructors and callers consistently before treating the patch as complete.`;
+    } else if (
+      parentContext.unvalidatedTaskPatch &&
+      changedSourceFiles(parentContext.pendingValidationFiles).length > 0 &&
       failedValidationReportsMissingDeclarations(rawTerminalOutput)
     ) {
       annotatedTerminalOutput = `${annotatedTerminalOutput}\nCompatibility hint: validation reports missing declarations, fields, methods, or symbols after source changes. Search for the referenced names and existing callers, then add or restore source declarations or compatibility wrappers when appropriate.`;
@@ -1264,6 +1270,12 @@ function isCachedValidationOutput(command: string, output: string): boolean {
 
 function failedValidationReportsMissingDeclarations(output: string): boolean {
   return /\b(?:undefined|not defined|is not defined|cannot find name|cannot find symbol|unresolved reference|unresolved symbol|symbol not found|no field or method|no member named|has no member|does not exist|unknown field|undefined:)\b/i.test(
+    output
+  );
+}
+
+function failedValidationReportsMissingFields(output: string): boolean {
+  return /\b(?:unknown field|no field or method|has no field|has no member|no member named|undefined \(type [^)\n]+ has no field|undefined: [A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*)\b/i.test(
     output
   );
 }

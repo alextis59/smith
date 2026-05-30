@@ -3053,3 +3053,27 @@ Decision:
 - Trace evidence: this rerun no longer ended on the approval-only breaking-refactor blocker. It later ended on a post-deadline no-inspection/no-validation-tool blocker, and verifier still failed selected tests.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `26G`. Cleanup is increasingly due; preserve latest evidence (`run-b7ZWSj`, `run-tonPvU`, `run-4nnb4L`, `run-l50Jrb`) before pruning stale retained sandboxes.
+
+## 2026-05-30 Missing-Field Validation Guidance
+
+Change:
+
+- Added generic failed-validation guidance when compiler/test output reports unknown, missing, or renamed fields after source changes.
+- The guidance tells Smith to inspect referenced type definitions, keyed literals, and direct field access, then restore legacy fields/accessors or update constructors and callers consistently.
+- Added regression coverage for a Go-style refactor that removes a struct field while validation reports `unknown field` and `has no field or method`.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for missing fields, missing declarations, and signature mismatches: passed `3` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `90` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `104003ms`, log `/tmp/smith/2026-05-30T19-15-16-278Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-oBuBpa/home/.smith/runs/2026-05-30T19-13-32-801Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: reached verifier and failed in `833135ms`, log `/tmp/smith/2026-05-30T19-29-20-817Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-7lnBwh/home/.smith/runs/2026-05-30T19-15-35-854Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic compatibility-repair hint for ordinary refactors, not benchmark-specific behavior.
+- Do not count `005` as recovered. Verifier still failed with missing `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility errors.
+- Trace evidence: the new missing-field hint did not appear in this rerun; the failure path instead ended after a post-deadline patch-context mismatch and an accepted blocker about lack of reliable inspection path.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `28G`. Before another long SWE run, clean stale retained sandboxes after preserving the latest evidence (`run-7lnBwh`, `run-oBuBpa`, `run-b7ZWSj`, `run-tonPvU`) so the folder does not keep growing by several GB per iteration.

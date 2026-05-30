@@ -3173,6 +3173,70 @@ max_turns = 30
     );
   });
 
+  it("adds source compatibility guidance for missing fields in failed validation", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/forwarder.go",
+            "@@",
+            " type Forwarder struct {",
+            "-\tcfg Config",
+            "+\tConfig Config",
+            " }",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "run",
+        arguments: {
+          command: "test -e definitely-missing || (printf \"src/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder\\nsrc/forwarder_test.go:57:5: f.cfg undefined (type *Forwarder has no field or method cfg)\\n\" >&2; exit 1)",
+          timeout_ms: 5000
+        }
+      },
+      { name: "finish", arguments: { message: "blocked" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-missing-field-validation-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src", "forwarder.go"), "type Config struct{}\ntype Forwarder struct {\n\tcfg Config\n}\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("blocked");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[2].body)).toContain("Validation failed: any pending task patch is not validated");
+    expect(userMessages(provider.requests[2].body)).toContain(
+      "Compatibility hint: validation reports unknown or missing fields after source changes"
+    );
+    expect(userMessages(provider.requests[2].body)).toContain("restore legacy fields/accessors");
+  });
+
   it("adds source compatibility guidance for signature mismatches in failed validation", async () => {
     const provider = await startFakeProvider([
       {
