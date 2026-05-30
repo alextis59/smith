@@ -2643,3 +2643,26 @@ Decision:
 - Do not count `010` as recovered. The target improved across diagnostics from an unused-import verifier failure to source-only scanner work, but the latest run timed out while repairing scanner parsing/test compatibility and patch-context mismatches.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - `.smith-bench` is now about `9.0G` with `13` retained `run-*` directories after the new runs. Preserve `run-ib0Jjd`, `run-xFserO`, `run-mFbpeO`, and `run-CCZuQc` for this milestone; prune stale runs again before another long sequence.
+
+## 2026-05-30 Validation Timeout Floor
+
+Change:
+
+- Added a generic minimum timeout floor for validation commands after source changes.
+- The floor is bounded by the configured runtime timeout and still respects the existing post-deadline validation cap.
+- Added integration coverage for a model-provided validation command with an unrealistically tiny timeout; the command now completes and reports output instead of failing immediately.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "timeout floor"`: passed `1` selected test.
+- `npm test -- tests/integration.test.ts`: passed `71` tests.
+- Representative project benchmark `091-command-router-refactor`: first attempt failed due a provider request timeout before verifier; rerun passed in `163624ms`, log `/tmp/smith/2026-05-30T07-23-12-511Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-yuImMN/home/.smith/runs/2026-05-30T07-20-29-155Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed by outer Docker timeout after `905913ms`, log `/tmp/smith/2026-05-30T07-38-29-968Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-bnGI0D/home/.smith/runs/2026-05-30T07-23-24-716Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic runtime behavior for ordinary coding tasks and prevents premature validation failure from model-supplied tiny timeouts.
+- Do not count `010` as recovered. The target no longer died on short validation timeouts and a focused `go test` command passed, but Smith later timed out after finish rejections tied to an earlier read-only test/spec patch attempt.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: check `.smith-bench` size and retained `run-*` count after each committed milestone. Preserve only sandboxes needed for current evidence, then prune stale retained runs before the folder grows by several more GB.

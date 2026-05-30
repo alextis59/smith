@@ -37,6 +37,7 @@ const RUN_EDIT_REJECTION_PAUSE_THRESHOLD = 2;
 const RUN_DEADLINE_REMINDER_THRESHOLDS = [0.75, 0.9] as const;
 const POST_DEADLINE_VALIDATION_RUN_TIMEOUT_MS = 60_000;
 const POST_DEADLINE_INSPECTION_RUN_TIMEOUT_MS = 15_000;
+const VALIDATION_RUN_MIN_TIMEOUT_MS = 60_000;
 const RIPGREP_UNAVAILABLE_PROMPT_NOTE =
   "Environment note: the `rg` command is not available in this environment. Smith already checked at startup and, when allowed, attempted a straightforward install without confirming `rg` on PATH. Use grep, find, or language-specific tools instead, and do not spend task time trying to install `rg` unless the user explicitly asks.";
 
@@ -863,12 +864,18 @@ async function runShellCommandTool(
 
   const trackedChangesBefore = await trackedGitChangeSet(parentContext.options.cwd);
   const requestedTimeoutMs = timeoutFromToolCall(parentContext.toolCall.arguments, parentContext.options.runtime.timeoutMs);
+  const validationTimeoutFloorMs = validationCommand
+    ? Math.min(parentContext.options.runtime.timeoutMs, VALIDATION_RUN_MIN_TIMEOUT_MS)
+    : requestedTimeoutMs;
+  const effectiveRequestedTimeoutMs = validationCommand
+    ? Math.max(requestedTimeoutMs, validationTimeoutFloorMs)
+    : requestedTimeoutMs;
   const timeoutMs =
     postDeadlineInspectionRun && inspectionCommand && !validationCommand
-      ? Math.min(requestedTimeoutMs, POST_DEADLINE_INSPECTION_RUN_TIMEOUT_MS)
+      ? Math.min(effectiveRequestedTimeoutMs, POST_DEADLINE_INSPECTION_RUN_TIMEOUT_MS)
       : postDeadlineValidationRun && validationCommand
-        ? Math.min(requestedTimeoutMs, POST_DEADLINE_VALIDATION_RUN_TIMEOUT_MS)
-        : requestedTimeoutMs;
+        ? Math.min(effectiveRequestedTimeoutMs, POST_DEADLINE_VALIDATION_RUN_TIMEOUT_MS)
+        : effectiveRequestedTimeoutMs;
   const result = await parentContext.shell.run(command, timeoutMs);
   const trackedChangesAfter = await trackedGitChangeSet(parentContext.options.cwd);
   const allChangesAfter = await trackedGitChangeSet(parentContext.options.cwd, { includeUntracked: true });

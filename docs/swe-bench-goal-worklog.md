@@ -10846,3 +10846,86 @@ Decision:
 - Do not count `010` as recovered.
 - Strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Cleanup note: `.smith-bench` is now about `7.3G` with `8` retained `run-*` directories after adding `run-vvBMuM` and `run-JvD7C8`.
+
+## 2026-05-30 Worklog: Validation Timeout Floor
+
+Hypothesis:
+
+- The latest `010` trace reached source edits and then used model-supplied `go test` validation timeouts around `20s`.
+- Those short timeouts cut off validation with `^C`, which can leave Smith without reliable evidence even when the overall task runtime still has room.
+- A generic floor for validation-command timeouts should help ordinary coding tasks too: once source files have changed, validation commands should be given enough time to produce useful pass/fail evidence.
+
+Implementation:
+
+- Added `VALIDATION_RUN_MIN_TIMEOUT_MS = 60_000` in `src/loop.ts`.
+- For validation commands only, Smith now raises a too-small requested timeout to the lower of the configured runtime timeout and the validation floor.
+- Existing post-deadline behavior remains bounded: inspection commands keep the shorter inspection cap, and post-deadline validation commands keep the existing validation cap.
+- Added `uses a timeout floor for validation commands after patches` in `tests/integration.test.ts`.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "timeout floor"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- `npm run build`: passed.
+- Focused timeout-floor selector: passed `1` selected test.
+- Full integration file: passed `71` tests.
+- First representative `091-command-router-refactor` attempt failed in `217547ms` due provider timeout before verifier:
+  - Log: `/tmp/smith/2026-05-30T07-20-17-091Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-qOgG2x/home/.smith/runs/2026-05-30T07-16-39-784Z.trace`.
+- Representative rerun passed in `163624ms`:
+  - Log: `/tmp/smith/2026-05-30T07-23-12-511Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-yuImMN/home/.smith/runs/2026-05-30T07-20-29-155Z.trace`.
+
+Target rerun:
+
+- `010-future-architect-vuls` failed by outer Docker timeout after `905913ms`.
+- Log: `/tmp/smith/2026-05-30T07-38-29-968Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-bnGI0D/home/.smith/runs/2026-05-30T07-23-24-716Z.trace`.
+- Usage: `1399797` input tokens, `1074944` cached input tokens, `68541` output tokens, `58407` reasoning output tokens, `1468338` total tokens.
+- Retained workspace status:
+
+```text
+ M scanner/alpine.go
+```
+
+- Retained source diff:
+
+```text
+ scanner/alpine.go | 144 ++++++++++++++++++++++++++++++++++++++++++++++--------
+ 1 file changed, 123 insertions(+), 21 deletions(-)
+```
+
+Trace evidence:
+
+- The target no longer failed because of tiny validation timeouts.
+- It ran `go test ./scanner ./models ./oval -run 'TestParseApk|TestFindByBinName|Test.*Alpine'` with `timeout_ms: 120000`.
+- That command passed for the relevant package set:
+
+```text
+ok github.com/future-architect/vuls/scanner 0.318s
+ok github.com/future-architect/vuls/models (cached)
+ok github.com/future-architect/vuls/oval (cached) [no tests to run]
+```
+
+- Smith later rejected three finish attempts because an earlier attempt to patch read-only `scanner/alpine_test.go` remained in the finish-guard state.
+- The rejected read-only test patch was:
+
+```text
+patch failed: EROFS: read-only file system, open '/workspace/scanner/alpine_test.go'
+```
+
+Decision:
+
+- Keep the timeout-floor change because it is a generic validation reliability improvement with focused/full integration coverage and representative project validation.
+- Do not count `010` as recovered. The targeted run produced better evidence but timed out after stale read-only test/spec finish rejections; no verifier pass exists.
+- Strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Next generic hypothesis: a read-only test/spec patch failure should not permanently block completion after later source-only changes and relevant passing validation. Investigate the guard in `src/loop.ts` without adding benchmark-specific wording or behavior.
+- Maintenance note: check `.smith-bench` size and retained `run-*` count after each committed milestone. Keep only evidence sandboxes needed for current diagnosis, then prune stale runs before the directory grows by several more GB.
