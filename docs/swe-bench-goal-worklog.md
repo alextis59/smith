@@ -11080,3 +11080,72 @@ Decision:
 - Do not count `005` as recovered. The final Smith answer was partial, required work remained incomplete, and the benchmark did not reach verifier.
 - Strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Next generic hypothesis: benchmark runs should reserve internal Smith runtime headroom before the outer Docker timeout so a late Smith finish has time to exit cleanly and allow verifier execution.
+
+## 2026-05-30 Worklog: Benchmark Runtime Headroom
+
+Hypothesis:
+
+- The previous `005-gravitational-teleport` run accepted Smith's final blocker report, but the final `finish` happened after Smith's configured max run time had already elapsed and too close to the outer Docker timeout.
+- Because the benchmark runner injected `--max-run-ms` at `85%` of the benchmark timeout, long-running tasks could still lose logs or verifier execution when Smith spent extra time finishing, cleaning up, or writing retained trace/session state.
+- Desired generic behavior: Smith should receive a smaller internal runtime budget inside benchmark sandboxes so normal exit and verifier execution have enough headroom before the outer task timeout kills the process.
+
+Implementation:
+
+- Changed `BENCHMARK_SMITH_MAX_RUN_RATIO` in `src/benchmark/runner.ts` from `0.85` to `0.75`.
+- Added a short source comment that the ratio reserves time for Smith shutdown and benchmark verifier execution.
+- Updated `tests/benchmark.test.ts` to expect `--max-run-ms 75000` for a `100000ms` benchmark timeout.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/benchmark.test.ts -t "max run deadline"
+npm test -- tests/benchmark.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed repo validation:
+
+- `npm run build`: passed.
+- Focused benchmark selector: passed `1` selected test.
+- Full benchmark test file: passed `22` tests.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed in `212282ms`.
+- Log: `/tmp/smith/2026-05-30T11-15-51-500Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-jkwAbH/home/.smith/runs/2026-05-30T11-12-19-456Z.trace`.
+
+Target rerun:
+
+- `005-gravitational-teleport` exited before the Docker timeout and reached benchmark verifier.
+- Failed verifier in `593857ms`.
+- Log: `/tmp/smith/2026-05-30T11-25-52-674Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-ZUFLnx/home/.smith/runs/2026-05-30T11-16-05-705Z.trace`.
+- This is an improvement over the prior run's `docker timed out after 900000ms` because the harness now gets a concrete verifier payload.
+
+Verifier evidence:
+
+- `lib/kube/proxy` failed to compile after an incomplete refactor:
+
+```text
+lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:114:3: unknown field 'cfg' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:357:5: f.cfg undefined (type *Forwarder has no field or method cfg)
+lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder
+lib/kube/proxy/forwarder_test.go:574:12: f.clientCredentials undefined (type *Forwarder has no field or method clientCredentials)
+```
+
+Smith output evidence:
+
+- Smith truthfully reported most checklist items incomplete or partial.
+- It also reported two patch attempts failed due context mismatches and that no completed-fix tests were run.
+
+Decision:
+
+- Keep the ratio change because it is generic benchmark harness behavior and improves evidence quality without changing task prompts, selected tests, scoring, verifier logic, or benchmark result parsing.
+- Do not count `005` as recovered. The failure class is now an incomplete broad refactor and stale patch context problem, not a harness timeout.
+- Strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Next generic direction: improve Smith's ability to do broad, multi-file refactors without losing patch context, likely through smaller source reads/patches or better stale-context recovery. Avoid any instruction tailored to SWE-bench, Teleport, or benchmark-specific task wording.
+- Maintenance note: after this run `.smith-bench` is about `8.2G` with `9` retained `run-*` directories: `run-hKlpEQ`, `run-ZUFLnx`, `run-pHfcsJ`, `run-qrHvTR`, `run-dCnj9o`, `run-pbVQuJ`, `run-jkwAbH`, `run-TA29B0`, and `run-8z0A50`. Before another long iteration sequence, preserve only evidence still needed for current decisions and prune stale sandboxes so `.smith-bench` does not grow by several GB unnoticed.

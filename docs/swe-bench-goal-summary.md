@@ -2714,3 +2714,26 @@ Decision:
 - Do not count `005` as recovered. Smith finished too close to the Docker timeout, no verifier ran, and the final report still said required Kubernetes service startup work was incomplete.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - New generic follow-up: leave an internal runtime buffer before the benchmark Docker timeout so Smith can finish and the harness can run verifier instead of losing a late finish to the outer timeout.
+
+## 2026-05-30 Benchmark Runtime Headroom
+
+Change:
+
+- Reduced the benchmark-injected Smith `--max-run-ms` ratio from `0.85` to `0.75`.
+- This is a generic harness reliability change: benchmark runs now reserve more time for Smith shutdown, retained-log writing, and verifier execution before the outer sandbox timeout.
+- Added a source comment explaining that the buffer protects normal task finalization and verifier execution.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/benchmark.test.ts -t "max run deadline"`: passed `1` selected test.
+- `npm test -- tests/benchmark.test.ts`: passed `22` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `212282ms`, log `/tmp/smith/2026-05-30T11-15-51-500Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-jkwAbH/home/.smith/runs/2026-05-30T11-12-19-456Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: exited before the Docker timeout and reached verifier, but failed in `593857ms`, log `/tmp/smith/2026-05-30T11-25-52-674Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-ZUFLnx/home/.smith/runs/2026-05-30T11-16-05-705Z.trace`.
+
+Decision:
+
+- Keep the change because it converted the previous `005` outer Docker timeout into a real verifier result without changing scoring, selected tests, task prompts, or runtime instructions.
+- Do not count `005` as recovered. The verifier failed because `lib/kube/proxy` did not compile after an incomplete refactor; strict targeted evidence remains `6/10`.
+- Full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `8.2G` with `9` retained `run-*` directories after this validation. Clean stale retained sandboxes periodically, preserving only runs still needed for current evidence, so the directory does not grow to several GB again unnoticed.

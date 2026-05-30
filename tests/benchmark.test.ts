@@ -229,7 +229,7 @@ total_tokens: 320
       "--model",
       "fake",
       "--max-run-ms",
-      "85000",
+      "75000",
       "--provider-timeout-ms",
       "30000"
     ]);
