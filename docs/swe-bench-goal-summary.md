@@ -2859,3 +2859,34 @@ Decision:
 - Do not count `005` as recovered. Smith continued into incomplete follow-up work and the outer Docker run timed out; no verifier pass exists.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `16G` after these retained reruns. Cleanup is due before more long SWE runs, preserving only the latest evidence sandboxes needed for current decisions.
+
+## 2026-05-30 Provider Patch Redaction and Validation-Blocker Guard
+
+Change:
+
+- Made the chatgpt-codex provider's compacted patch-body placeholder explicitly say it is not a valid patch.
+- Added generic patch-tool recovery when a provider-history patch placeholder is reused as a new patch argument.
+- Broadened the generic finish guard for validation-unavailable claims to catch session-scoped phrasing such as "I cannot run the required build/tests in this session" when `run` is currently available for validation.
+- Added integration/provider coverage for placeholder recovery and session-scoped validation execution blockers.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/providers.test.ts`: passed `15` tests.
+- Focused integration tests:
+  - `provider-history patch placeholders`: passed.
+  - `session-scoped validation execution blockers`: passed after rebuilding `dist`.
+- `npm test -- tests/integration.test.ts`: passed `82` tests.
+- Representative project benchmark `091-command-router-refactor`: passed twice after the changes.
+  - First pass: `219052ms`, log `/tmp/smith/2026-05-30T15-10-39-214Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-voKmlP/home/.smith/runs/2026-05-30T15-07-00-616Z.trace`.
+  - Final pass after the validation-blocker guard: `164555ms`, log `/tmp/smith/2026-05-30T15-31-34-709Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-pGQ1X3/home/.smith/runs/2026-05-30T15-28-50-648Z.trace`.
+- Target SWE reruns `010-future-architect-vuls`:
+  - Placeholder recovery milestone rerun failed by Docker timeout in `906029ms`, log `/tmp/smith/2026-05-30T15-25-53-396Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-UZpJnh/home/.smith/runs/2026-05-30T15-10-48-227Z.trace`.
+  - Final rerun reached verifier and failed selected tests in `817385ms`, log `/tmp/smith/2026-05-30T15-45-20-149Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-LBN82N/home/.smith/runs/2026-05-30T15-31-43-545Z.trace`.
+
+Decision:
+
+- Keep the changes because they are generic loop/provider improvements for ordinary Smith tasks: redacted patch history should not look reusable, and validation-unavailable finish claims should be rejected when a validation run is actually available.
+- The final `010` rerun improved from outer timeout to verifier evidence, but it did not recover the task. Verifier failed because Alpine parser compatibility methods were missing (`parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`) and `TestIsOvalDefAffected` failed.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `12G` after this milestone. Continue pruning stale retained sandboxes periodically; preserve only current evidence runs before cleanup so the folder does not keep growing by several GB per iteration.

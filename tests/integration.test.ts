@@ -1040,6 +1040,78 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).not.toContain("Post-deadline run is reserved");
   });
 
+  it("rejects provider-history patch placeholders with actionable recovery guidance", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "patch",
+        arguments: {
+          patch:
+            "[smith omitted previous patch body from provider history; this placeholder is not a valid patch. Write a fresh Smith patch that starts with *** Begin Patch.]"
+        }
+      },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-new",
+            "+final",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "patched with a fresh patch; validation is pending." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-patch-placeholder-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch note"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("patched with a fresh patch");
+    expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("final\n");
+    expect(provider.requests).toHaveLength(4);
+    expect(userMessages(provider.requests[2].body)).toContain("reused a previous-patch placeholder");
+    expect(userMessages(provider.requests[2].body)).toContain("Reconstruct a fresh Smith patch");
+  });
+
   it("keeps post-deadline inspection available after inspection has been paused", async () => {
     const provider = await startFakeProvider([
       ...Array.from({ length: 36 }, (_, index) => ({
@@ -3647,6 +3719,51 @@ max_turns = 30
     servers.push(provider.server);
 
     const cwd = mkdtempSync(join(tmpdir(), "smith-validation-unavailable-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "printf checked" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "run validation"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("validated");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[1].body)).toContain("Finish rejected: run is currently available");
+    expect(userMessages(provider.requests[2].body)).toContain("checked");
+  });
+
+  it("rejects session-scoped validation execution blockers when run is available", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "finish",
+        arguments: {
+          message: "Blocked: I cannot run the required build/tests in this session to verify the patch."
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "validated" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-session-validation-blocker-"));
     const home = mkdtempSync(join(tmpdir(), "smith-home-"));
     mkdirSync(join(cwd, ".smith"), { recursive: true });
     writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "printf checked" } }), "utf8");

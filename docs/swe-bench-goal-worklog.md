@@ -11554,3 +11554,92 @@ Decision:
 - Do not count `005` as recovered. No verifier pass exists and strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Next generic direction: target `005` is still spending too much late time after partial/narrow validation and broad unfinished requirements. Consider a generic way to accept truthful partial blockers earlier when only implementation work remains and the run is already past deadline, without allowing false completion claims.
 - Maintenance note: `.smith-bench` is about `16G` after these retained runs. Cleanup is due before more long target runs; preserve `run-YUMV3t`, `run-42VCID`, and other current evidence before pruning stale sandboxes.
+
+## 2026-05-30 Worklog: Provider Patch Redaction and Validation-Blocker Guard
+
+Context and user constraint:
+
+- User explicitly clarified that SWE-specific prompt edits are cheating. This iteration stayed in generic provider/loop behavior.
+- User also asked to leave notes about cleaning `.smith-bench` from time to time to avoid several-GB growth; maintenance notes now explicitly call this out.
+
+Evidence before change:
+
+- Fresh current-branch diagnostic for `010-future-architect-vuls` before this milestone:
+  - Failed by Docker timeout after `907779ms`.
+  - Log: `/tmp/smith/2026-05-30T14-59-58-522Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-XYt7i7/home/.smith/runs/2026-05-30T14-44-52-354Z.trace`.
+  - Retained workspace changed only `scanner/alpine.go`.
+  - The final trace showed repeated patch/validation churn and ended after `patch failed: patch must start with *** Begin Patch`.
+- `.smith-bench` had grown to `16G` with 17 retained runs. I pruned stale sandboxes and kept current evidence runs, reducing it to `9.6G`. After later reruns it grew again to about `12G`.
+
+Hypotheses:
+
+- The trace displayed provider-history patch placeholders such as `[smith omitted previous patch body from provider history]` in patch-call history. If a model copies that redacted history into a new patch call, Smith needs a direct recovery message rather than a generic parse failure.
+- A later `010` rerun showed a different generic issue: after a late task patch, `run` was available for bounded validation, but Smith's finish message said it could not run required build/tests in the session. The existing validation-unavailable guard did not catch that wording, so a less helpful explicit-requirements guard fired instead.
+
+Implementation:
+
+- Added `OMITTED_PATCH_BODY_MARKER` and `OMITTED_PATCH_BODY_PLACEHOLDER` in `src/providers/tools.ts`.
+- Updated `src/providers/chatgpt-codex.ts` to use the clearer placeholder: it says the placeholder is not a valid patch and a fresh Smith patch must be written.
+- Updated `runPatchTool()` in `src/loop.ts` to detect reused provider-history patch placeholders before danger review or parsing, returning actionable guidance to reconstruct a fresh patch from current file contents.
+- Broadened `shouldRejectUnsupportedValidationUnavailableFinish()` to catch session-scoped validation execution blockers when `run` accepts validation, for example "I cannot run the required build/tests in this session".
+- Added tests:
+  - `tests/providers.test.ts` placeholder expectation.
+  - `rejects provider-history patch placeholders with actionable recovery guidance`.
+  - `rejects session-scoped validation execution blockers when run is available`.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/providers.test.ts
+npm test -- tests/integration.test.ts --testNamePattern "provider-history patch placeholders"
+npm test -- tests/integration.test.ts --testNamePattern "session-scoped validation execution blockers"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed repo validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/providers.test.ts`: passed `15` tests.
+- Focused placeholder integration selector: passed `1` selected test.
+- Focused session-scoped validation blocker selector: passed `1` selected test after rebuilding `dist`. An earlier parallel attempt failed because the integration test used stale `dist` while build was still running.
+- Full integration file: passed `82` tests in `33359ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed after placeholder recovery change:
+  - Duration: `219052ms`.
+  - Log: `/tmp/smith/2026-05-30T15-10-39-214Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-voKmlP/home/.smith/runs/2026-05-30T15-07-00-616Z.trace`.
+- `091-command-router-refactor` passed again after session-scoped validation blocker guard:
+  - Duration: `164555ms`.
+  - Log: `/tmp/smith/2026-05-30T15-31-34-709Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-pGQ1X3/home/.smith/runs/2026-05-30T15-28-50-648Z.trace`.
+
+Target reruns:
+
+- `010-future-architect-vuls` after placeholder recovery failed by Docker timeout:
+  - Duration: `906029ms`.
+  - Log: `/tmp/smith/2026-05-30T15-25-53-396Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-UZpJnh/home/.smith/runs/2026-05-30T15-10-48-227Z.trace`.
+  - Evidence: lower usage than the prior `010` timeout (`992310` total tokens vs. `2385422`), but still no verifier.
+- `010-future-architect-vuls` after session-scoped validation blocker guard reached verifier and failed:
+  - Duration: `817385ms`.
+  - Log: `/tmp/smith/2026-05-30T15-45-20-149Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-LBN82N/home/.smith/runs/2026-05-30T15-31-43-545Z.trace`.
+  - Verifier selected tests failed because `scanner/alpine_test.go` referenced missing methods: `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`.
+  - `TestIsOvalDefAffected` also failed (`expected false`, `actual true`, fixedIn unexpectedly `3.3.2-r0`).
+  - The final Smith stdout honestly reported patched-but-unvalidated status; verifier evidence confirmed the patch was incomplete.
+
+Decision:
+
+- Keep this milestone. It is generic and applicable to normal user tasks.
+- Do not count `010` as recovered. Reaching verifier is progress over outer timeout, but the task still fails selected tests.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Next candidates:
+  - Prefer `005` or another Codex-passed failed task over deep tuning for flawed/Codex-failed tasks.
+  - For `010`, only revisit if pursuing a generic improvement that helps Smith preserve/implement compatibility methods after reading test names or compile failures.
+  - Continue pruning `.smith-bench` periodically. It is currently about `12G`; keep current evidence sandboxes such as `run-LBN82N`, `run-pGQ1X3`, and the latest `005`/`091` runs, and delete stale older run directories before they accumulate further.

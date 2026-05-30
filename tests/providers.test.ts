@@ -12,7 +12,7 @@ import {
 import { extractGeminiText, extractGeminiToolCalls } from "../src/providers/gemini.js";
 import { extractOpenAiChatText, extractOpenAiChatToolCalls } from "../src/providers/openai-chat.js";
 import { extractOpenAiResponsesText, extractOpenAiResponsesToolCalls } from "../src/providers/openai-responses.js";
-import { SMITH_TOOLS } from "../src/providers/tools.js";
+import { OMITTED_PATCH_BODY_PLACEHOLDER, SMITH_TOOLS } from "../src/providers/tools.js";
 import type { ProviderFetch, SmithModelRequest } from "../src/providers/types.js";
 
 describe("provider adapters", () => {
@@ -333,7 +333,7 @@ describe("provider adapters", () => {
     const preservedArgs = JSON.parse(String(parsed.outputItems[0].arguments));
     expect(preservedArgs).toEqual({
       reason: "apply note",
-      patch: "[smith omitted previous patch body from provider history]"
+      patch: OMITTED_PATCH_BODY_PLACEHOLDER
     });
     expect(JSON.stringify(parsed.outputItems)).not.toContain("secret patch body");
   });

@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import type { ProfileConfig } from "../config.js";
 import type { ProviderAdapter, ProviderCompleteOptions, SmithMessage, SmithModelRequest, SmithModelResponse, SmithToolCall } from "./types.js";
 import { isRecord, joinUrl, numberValue, ProviderError, requireText, textValue } from "./types.js";
-import { parseToolArguments, toolCallSummary } from "./tools.js";
+import { OMITTED_PATCH_BODY_PLACEHOLDER, parseToolArguments, toolCallSummary } from "./tools.js";
 
 type CodexAuthJson = {
   auth_mode?: string;
@@ -296,7 +296,7 @@ function compactPreservedResponseInputItem(item: Record<string, unknown>): Recor
     ...item,
     arguments: JSON.stringify({
       ...(typeof args.reason === "string" ? { reason: args.reason } : {}),
-      patch: "[smith omitted previous patch body from provider history]"
+      patch: OMITTED_PATCH_BODY_PLACEHOLDER
     })
   };
 }

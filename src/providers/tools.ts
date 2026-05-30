@@ -1,6 +1,10 @@
 import type { SmithToolCall, SmithToolDefinition } from "./types.js";
 import { isRecord, textValue } from "./types.js";
 
+export const OMITTED_PATCH_BODY_MARKER = "[smith omitted previous patch body from provider history";
+export const OMITTED_PATCH_BODY_PLACEHOLDER =
+  "[smith omitted previous patch body from provider history; this placeholder is not a valid patch. Write a fresh Smith patch that starts with *** Begin Patch.]";
+
 export const SMITH_TOOLS: SmithToolDefinition[] = [
   {
     name: "run",

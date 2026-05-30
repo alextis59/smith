@@ -9,7 +9,14 @@ import { reviewDangerousCommand } from "./danger-review.js";
 import { applySmithPatch } from "./patch.js";
 import { createProviderDebugJsonLogger } from "./provider-debug.js";
 import { completeWithProfile, ProviderError, type ProviderFetch } from "./providers/index.js";
-import { smithToolName, SMITH_TOOLS, toolBooleanArgument, toolReason, toolTextArgument } from "./providers/tools.js";
+import {
+  OMITTED_PATCH_BODY_MARKER,
+  smithToolName,
+  SMITH_TOOLS,
+  toolBooleanArgument,
+  toolReason,
+  toolTextArgument
+} from "./providers/tools.js";
 import type { SmithModelResponse, SmithProviderState, SmithToolCall } from "./providers/types.js";
 import { PtyShellRunner, type ShellRunner } from "./pty.js";
 import { summarizeProviderEvents } from "./session-log.js";
@@ -651,6 +658,17 @@ async function runPatchTool(
   callId: string | undefined,
   rawPatch: string
 ): Promise<ToolActionResult> {
+  if (rawPatch.includes(OMITTED_PATCH_BODY_MARKER)) {
+    const output =
+      "patch failed: the patch argument reused a previous-patch placeholder from provider history. That placeholder is not a patch and cannot be applied. Reconstruct a fresh Smith patch from the current file contents, beginning with *** Begin Patch and ending with *** End Patch, or finish with the concrete blocker if recovery is not practical.";
+    const transcript = appendTerminalTurn(parentContext.transcript, "patch", output);
+    const providerMessages = appendProviderTerminalTurn(parentContext.providerMessages, "patch", output);
+    const responsesInputItems = appendResponsesTerminalOutput(parentContext.responsesInputItems, callId, output);
+    parentContext.options.trace?.write("tool output", output);
+    parentContext.options.onTerminalOutput?.(output);
+    return { transcript, providerMessages, responsesInputItems, toolOutput: output, totalUsage: parentContext.totalUsage };
+  }
+
   const review = await reviewDangerousCommand({
     command: "smith_patch",
     cwd: parentContext.options.cwd,
@@ -1369,6 +1387,8 @@ function shouldRejectUnsupportedValidationUnavailableFinish(
   ) || /\b(?:validation|test|build|lint|typecheck|check|verify)\s+(?:commands?|tooling)\s+(?:were|are|is|was)?\s*unavailable\b/i.test(
     message
   ) || /\b(?:tool access|tools?|(?:inspection\s*\/\s*)?validation\s+steps?|(?:inspection\s*\/\s*)?validation\s+tools?)\b[\s\S]{0,240}\b(?:unavailable|not available|no longer available|not currently available|disabled|exhausted)\b/i.test(
+    message
+  ) || /\b(?:not able|unable|cannot|can't|could not|couldn't|wasn'?t able)\s+(?:run|execute|perform)\b[\s\S]{0,160}\b(?:validat\w*|verif\w*|tests?|build|lint|typecheck|checks?)\b[\s\S]{0,160}\b(?:in this session|available session|here|now|currently)\b/i.test(
     message
   );
 }
