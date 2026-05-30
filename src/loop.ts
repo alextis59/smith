@@ -350,7 +350,9 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           }
           if (madeTaskPatch && subAgentTurnLimitFailures < 2) {
             unsafeRunEditRejectionsSincePatch = 0;
-            toolAvailabilityState = availabilityAfterTaskPatch(retainPersistentToolAvailability(toolAvailabilityState));
+            toolAvailabilityState = availabilityAfterTaskPatch(retainPersistentToolAvailability(toolAvailabilityState), {
+              compatibilityInspection: Boolean(action.declarationCompatibilityChanged)
+            });
           } else if (action.subAgentTurnLimitFailure) {
             subAgentTurnLimitFailures += 1;
             toolAvailabilityState = {
@@ -362,7 +364,10 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             };
           } else if (madeTaskPatch) {
             unsafeRunEditRejectionsSincePatch = 0;
-            toolAvailabilityState = availabilityAfterTaskPatch({ ...toolAvailabilityState, inspectionDisabledReason: undefined });
+            toolAvailabilityState = availabilityAfterTaskPatch(
+              { ...toolAvailabilityState, inspectionDisabledReason: undefined },
+              { compatibilityInspection: Boolean(action.declarationCompatibilityChanged) }
+            );
           } else if (action.postDeadlineValidationRunConsumed) {
             toolAvailabilityState = {
               ...toolAvailabilityState,
@@ -999,7 +1004,7 @@ async function runShellCommandTool(
     return appendToolObservation(
       parentContext,
       callId,
-      "Post-deadline run is reserved for validation commands such as test, build, lint, typecheck, check, or verify, or for one short inspection command after a failed validation. Use patch for a known final edit or finish with the current result."
+      "Post-deadline run is reserved for validation commands such as test, build, lint, typecheck, check, or verify, or for one short inspection command after a failed validation, patch context mismatch, or compatibility-warning patch. Use patch for a known final edit or finish with the current result."
     );
   }
   if (isLikelyHeredocFileWrite(command)) {
@@ -1970,12 +1975,21 @@ function retainPersistentToolAvailability(availability: ToolAvailabilityState): 
   };
 }
 
-function availabilityAfterTaskPatch(availability: ToolAvailabilityState): ToolAvailabilityState {
+function availabilityAfterTaskPatch(
+  availability: ToolAvailabilityState,
+  options: { compatibilityInspection?: boolean } = {}
+): ToolAvailabilityState {
   if (!availability.deadlineFinalizationReason) return availability;
   const rest = { ...availability };
   delete rest.postDeadlineInspectionRunReason;
   return {
     ...rest,
+    ...(options.compatibilityInspection
+      ? {
+          postDeadlineInspectionRunReason:
+            "A post-deadline task patch changed declarations, so run is available for one short inspection command to check existing callers or signatures before validation or finalizing."
+        }
+      : {}),
     postDeadlineValidationRunReason:
       "A task patch was applied after the configured max run time elapsed, so run is available for one bounded validation command before finalizing."
   };

@@ -2633,6 +2633,71 @@ max_run_ms = 1
     expect(toolNames(provider.requests[2].body)).toEqual(["patch", "finish"]);
   });
 
+  it("allows one short inspection after a post-deadline compatibility-warning patch", async () => {
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "sleep 0.02; printf ready" } },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.js",
+            "@@",
+            "-function greet(name) {",
+            "+function greet(name, suffix = \"\") {",
+            "-  return `hi ${name}`;",
+            "+  return `hi ${name}${suffix}`;",
+            " }",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "grep -n \"function greet\" note.js", timeout_ms: 5000 } },
+      { name: "run", arguments: { command: "npm test --silent", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-post-deadline-compat-inspection-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, "note.js"),
+      ["function greet(name) {", "  return `hi ${name}`;", "}", "", "module.exports = { greet };", ""].join("\n"),
+      "utf8"
+    );
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node -e \"require('./note').greet('a')\"" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "finish near deadline"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(5);
+    expect(systemMessage(provider.requests[2].body)).toContain("post-deadline task patch changed declarations");
+    expect(userMessages(provider.requests[3].body)).toContain("function greet");
+    expect(userMessages(provider.requests[3].body)).not.toContain("Post-deadline run is reserved");
+    expect(userMessages(provider.requests[4].body)).toContain("exit_status: 0");
+    expect(readFileSync(join(cwd, "note.js"), "utf8")).toContain("function greet(name, suffix = \"\")");
+  });
+
   it("does not classify printf-labeled inspection pipelines as validation", async () => {
     const provider = await startFakeProvider([
       {

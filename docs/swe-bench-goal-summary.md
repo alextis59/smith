@@ -2,6 +2,8 @@
 
 Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex CLI `gpt-5.4` high score in `LeaderBoard.md`: target `>=7/10`, without benchmark cheating.
 
+Alternative success path added by user on 2026-05-30: if Smith `gpt-5.5` high reaches the same `swe-bench-pro` result as Codex CLI `gpt-5.5` high, that is also enough. As of the current `LeaderBoard.md`, no Codex CLI `gpt-5.5` high SWE-bench Pro row is recorded, so this path needs an authoritative leaderboard target before it can prove completion.
+
 ## Current Baseline
 
 - Target score: `>=7/10`.
@@ -18,6 +20,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - User reinforcement on 2026-05-23: prompt or runtime instructions written specifically for SWE-bench Pro are cheating for this goal. Treat the older SWE-specific prompt sections below as rejected historical experiments only; do not count their scores, reintroduce their wording, or use them as design direction.
 - User reinforcement on 2026-05-24: benchmark-shaped prompt edits are cheating even when they look like general benchmark guidance. Future changes must be ordinary Smith improvements that would be appropriate for user tasks outside SWE-bench Pro.
 - User reinforcement on 2026-05-24: anything done specifically for the SWE benchmark, including prompt edits or runtime instructions tuned to benchmark shape, must be discarded. Valid work must be generic Smith behavior that would be appropriate for ordinary user tasks.
+- User directive on 2026-05-30: matching the Codex CLI `gpt-5.5` high SWE-bench Pro score with Smith `gpt-5.5` high is sufficient if/when that Codex target is recorded in `LeaderBoard.md`. Keep the same no-cheating constraints.
 
 ## Maintenance Notes
 
@@ -3154,3 +3157,30 @@ Decision:
 - Do not count `010` as recovered. It ended by timeout with modified `scanner/alpine.go` and untracked `scanner/alpine_extra_test.go` in the retained sandbox.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `36G`. Cleanup is overdue; preserve current evidence (`run-HBcDtu`, `run-TOlkI5`, `run-KStwc8`, `run-VH4k4x`, and `run-sFmHyX`) until logged evidence is no longer needed, then prune stale retained sandboxes before more long runs.
+
+## 2026-05-30 Post-Deadline Compatibility Inspection Slot
+
+Change:
+
+- When a task patch is applied after the configured max run time and Smith's patch analysis reports declaration/signature compatibility risk, preserve one short post-deadline inspection slot in addition to the bounded validation slot.
+- Updated the post-deadline run rejection wording to mention failed validation, patch context mismatch, and compatibility-warning patch inspection cases.
+- Added integration coverage for a post-deadline signature-changing patch that inspects the changed declaration before final validation.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for post-deadline compatibility/task-patch/failed-validation cases: passed `5` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `95` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `137920ms`, log `/tmp/smith/2026-05-30T21-38-43-377Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-EQWVQD/home/.smith/runs/2026-05-30T21-36-25-922Z.trace`.
+
+Target evidence:
+
+- Target SWE rerun `010-future-architect-vuls`: failed by Docker timeout in `906032ms`, log `/tmp/smith/2026-05-30T21-54-01-217Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-jUDIdK/home/.smith/runs/2026-05-30T21-38-55-963Z.trace`.
+- Retained target sandbox status: `scanner/alpine.go` modified and `SMITH.TASK.md` untracked; source diff stat `scanner/alpine.go | 221 +++++++++++++++++++++++++++++++++++++++++++++++-------`.
+- Trace evidence: the run still reached post-deadline validation failure and finish-rejection loops around Alpine parser compatibility/test validation. It did not recover `010`.
+
+Decision:
+
+- Keep the change because it is a generic runtime improvement for ordinary coding tasks: if Smith itself warns that a post-deadline patch changed declarations, a short caller/signature inspection is useful before final validation or final reporting.
+- Do not count `010` as recovered. Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `37G` after the latest retained runs. Preserve `run-jUDIdK`, `run-EQWVQD`, and the prior current evidence dirs before pruning stale sandboxes.

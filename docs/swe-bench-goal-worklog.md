@@ -33,6 +33,7 @@ Integrity correction recorded after user clarification:
 - Stricter follow-up: SWE-bench Pro now receives raw task text only. It does not inherit the generic Smith benchmark wrapper used for local `benchmarks/` tasks.
 - User reinforcement on 2026-05-23: prompt or runtime instructions written specifically for SWE-bench Pro are cheating for this goal. Treat the older SWE-specific prompt sections as rejected historical experiments only; do not count their scores, reintroduce their wording, or use them as design direction.
 - User reinforcement on 2026-05-24: anything done specifically for the SWE benchmark, including benchmark-shaped prompt edits and runtime instructions, is cheating for this goal. Future changes must be generic Smith improvements that apply to ordinary user tasks as well.
+- User directive on 2026-05-30: if Smith `gpt-5.5` high can reach the same SWE-bench Pro result as Codex CLI `gpt-5.5` high, that is sufficient for the goal. Current `LeaderBoard.md` has no Codex CLI `gpt-5.5` high SWE-bench Pro row, so that alternate target cannot be verified yet.
 - Current strict targeted evidence: baseline full-run passes `002`, `004`, `007`, plus recovered `001`, `003`, and `008` under the raw-prompt path, for `6/10` evidence. Because `003` is a Codex `gpt-5.4` failed task, prioritize Codex-passed Smith failures rather than overfocusing on flawed tasks.
 
 Existing code context:
@@ -12482,3 +12483,67 @@ Decision:
 - Strict current evidence remains `6/10`; no full SWE-bench Pro run.
 - Next direction: do not keep grinding `010` unless there is a fresh generic runtime issue. Consider pruning `.smith-bench` first, then either inspect another unrecovered Codex-passed target path or re-evaluate whether a broader generic patching/validation improvement exists.
 - Maintenance note: `.smith-bench` is about `36G`. Cleanup is overdue. Preserve `run-HBcDtu`, `run-TOlkI5`, `run-KStwc8`, `run-VH4k4x`, and `run-sFmHyX` for current evidence, then prune stale retained sandboxes before more long runs.
+
+## 2026-05-30 Worklog: Post-Deadline Compatibility Inspection Slot
+
+Context:
+
+- The latest `010` trace showed a generic runtime pattern: after a final source patch produced a compatibility warning, Smith attempted a short inspection to check signatures/callers but the post-deadline gate rejected it unless the slot came from failed validation or patch context mismatch.
+- This is not SWE-specific. It applies to any coding task where Smith changes declarations near a configured max run time and needs one bounded inspection before final validation or final reporting.
+
+Implementation:
+
+- `src/loop.ts`: `availabilityAfterTaskPatch` now accepts a `compatibilityInspection` option. If a post-deadline task patch changed declarations/signatures, it preserves one short post-deadline inspection slot while still preserving the bounded validation slot.
+- `src/loop.ts`: updated the post-deadline run rejection text to include compatibility-warning patches as one of the permitted short-inspection reasons.
+- `tests/integration.test.ts`: added `allows one short inspection after a post-deadline compatibility-warning patch`.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "post-deadline compatibility-warning patch|post-deadline task patch|failed post-deadline validation"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- First focused selector failed because the assertion expected the phrase `compatibility-warning patch` while the actual system note said `post-deadline task patch changed declarations`; after correcting the test assertion, the focused selector passed `5` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `95` tests in `35746ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor`: passed in `137920ms`.
+- Log: `/tmp/smith/2026-05-30T21-38-43-377Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-EQWVQD/home/.smith/runs/2026-05-30T21-36-25-922Z.trace`.
+- Sandbox: `.smith-bench/run-EQWVQD`.
+
+Target rerun:
+
+- `010-future-architect-vuls`: failed by Docker timeout in `906032ms`.
+- Log: `/tmp/smith/2026-05-30T21-54-01-217Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-jUDIdK/home/.smith/runs/2026-05-30T21-38-55-963Z.trace`.
+- Sandbox: `.smith-bench/run-jUDIdK`.
+- Result JSON reported `stderr: "docker timed out after 900000ms"`.
+- Retained sandbox status:
+  - `scanner/alpine.go` modified.
+  - `SMITH.TASK.md` untracked.
+  - Diff stat: `scanner/alpine.go | 221 +++++++++++++++++++++++++++++++++++++++++++++++-------`.
+
+Trace notes:
+
+- The target still did not recover. It reached Alpine parser work, compatibility/test validation failures, and then repeated finish rejections after post-deadline tool narrowing.
+- Evidence examples:
+  - `Validation failed: any pending task patch is not validated as complete`.
+  - `Compatibility hint: validation reports argument, assignment, or return-value mismatches after source changes`.
+  - `Post-deadline run is reserved for validation commands... or for one short inspection command after a failed validation, patch context mismatch, or compatibility-warning patch`.
+  - Finish rejections included read-only test/spec failure handling and incomplete explicit requirements.
+
+Decision:
+
+- Keep the change. It is a generic runtime quality improvement and passed local + representative validation.
+- Do not count `010` as recovered; current strict evidence remains `6/10`.
+- The alternate `gpt-5.5` success path is noted, but current `LeaderBoard.md` has no Codex `gpt-5.5` high row to match.
+- `.smith-bench` is now about `37G`. Preserve `run-jUDIdK`, `run-EQWVQD`, and the prior current evidence dirs before cleanup.
