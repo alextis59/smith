@@ -12068,3 +12068,78 @@ Decision:
 - Strict current evidence remains `6/10`; no full SWE-bench Pro run.
 - Next direction: move away from `010`; it has produced enough evidence for now and still fails on task-specific Alpine method/API details. Prefer another Codex-passed unrecovered task or a broader generic runtime issue.
 - Maintenance note: `.smith-bench` is about `24G`. Clean stale retained sandboxes before additional long runs to avoid another several-GB increase; preserve current evidence directories such as `run-4nnb4L`, `run-l50Jrb`, `run-Jy72K1`, and `run-RCjiIk` until their data is no longer needed.
+
+## 2026-05-30 Worklog: Approval-Only Breaking Refactor Blocker Guard
+
+Context:
+
+- The latest useful `005-gravitational-teleport` trace repeatedly showed Smith stopping on messages such as:
+  - "I need explicit approval to make that API break before I proceed further."
+  - "Please approve the breaking ForwarderConfig rename and cache-model change, and I can continue."
+- The benchmark task itself asked for the implementation. More generally, if a user asks for a refactor with explicit requirements, asking for approval to do that refactor is self-imposed unless there is a real missing permission, tool, data, or design decision.
+- Existing `finishReportsConcreteBlocker()` treated `requires user` / approval-like blockers as concrete, so the incomplete-requirements guard could be bypassed.
+
+Hypothesis:
+
+- A generic guard should reject approval-only blockers for breaking API/refactor/compatibility changes when the prompt has explicit implementation requirements and `patch` is still available.
+- This should keep Smith working on the smallest safe implementation path instead of punting requested refactors back to the user.
+
+Implementation:
+
+- Added `shouldRejectSelfImposedApprovalBlockerFinish()`.
+- Conditions:
+  - Prompt has explicit requirements.
+  - `patch` is available.
+  - Finish message reports incomplete requested work.
+  - Finish message asks for approval/confirmation/permission.
+  - Finish message frames the remaining work as breaking/API/refactor/compatibility work.
+  - No read-only/permission evidence exists in the transcript.
+- Added a finish rejection telling Smith not to stop only to request approval for a breaking API, compatibility, or refactor change when that change is part of the requested work.
+- Added integration coverage for this pattern while preserving a real missing-build-tool blocker as acceptable.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "approval-only blockers|non-external blockers|missing local command output samples"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused integration selector: passed `3` selected tests.
+- Full integration file: passed `89` tests in `35595ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed:
+  - Duration: `123664ms`.
+  - Log: `/tmp/smith/2026-05-30T18-52-18-651Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-tonPvU/home/.smith/runs/2026-05-30T18-50-15-462Z.trace`.
+
+Target rerun:
+
+- `005-gravitational-teleport` reached verifier and failed:
+  - Duration: `951091ms`.
+  - Log: `/tmp/smith/2026-05-30T19-08-18-889Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-b7ZWSj/home/.smith/runs/2026-05-30T18-52-37-099Z.trace`.
+  - Sandbox: `.smith-bench/run-b7ZWSj`.
+  - Final stdout blocker: Smith reported the current run only had `patch`/`finish` available and no further inspection/validation tool access, after validating `go test ./lib/service ./lib/kube/proxy`.
+  - Verifier failure remained:
+    - `unknown field 'cfg' in struct literal of type Forwarder`.
+    - `f.cfg undefined`.
+    - `unknown field 'clientCredentials' in struct literal of type Forwarder`.
+    - `f.clientCredentials undefined`.
+  - Retained sandbox status: `lib/kube/proxy/forwarder_test.go` staged/modified and `lib/service/kubernetes.go` modified. Source diff only showed `lib/service/kubernetes.go`, so test edits remain a validation-integrity smell.
+  - Trace check: no `Finish rejected: patch is available...` match in this rerun. The old approval-only finish wording also did not appear; the final blocker shifted to post-deadline tool availability.
+
+Decision:
+
+- Keep the change because it directly addresses a generic self-imposed blocker pattern with tests.
+- Do not count `005` as recovered. It still fails selected verifier tests.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Next direction: `005` still exposes the same missing compatibility fields. A possible generic direction is stronger handling of build failures caused by removed or renamed fields, but avoid task-specific field names in Smith code or prompts.
+- Maintenance note: `.smith-bench` is about `26G`. Clean stale retained sandboxes before more long target runs; preserve `run-b7ZWSj`, `run-tonPvU`, `run-4nnb4L`, and `run-l50Jrb` until their evidence is no longer needed.

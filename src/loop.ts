@@ -632,6 +632,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: a task patch is still not validated as complete, but the finish message claims successful validation. Finish with an explicit pending-validation or blocker report, or continue if tools are available."
       );
     }
+    if (shouldRejectSelfImposedApprovalBlockerFinish(message, parentContext, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: patch is available and the prompt has explicit implementation requirements. Do not stop only to request approval for a breaking API, compatibility, or refactor change when that change is part of the requested work. Continue with the smallest safe implementation path, or finish with a concrete external blocker such as missing permissions, tools, data, or user-provided design information."
+      );
+    }
     if (shouldRejectIncompleteRequirementsFinish(message, parentContext, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -1598,6 +1605,21 @@ function shouldRejectIncompleteRequirementsFinish(
   if (finishReportsConcreteBlocker(message)) return false;
   if (finishReportsPatchContextOrTimeBlocker(message) && transcriptHasPatchContextFailure(context.transcript)) return false;
   return true;
+}
+
+function shouldRejectSelfImposedApprovalBlockerFinish(
+  message: string,
+  context: ToolCallContext,
+  availableToolNames: string[]
+): boolean {
+  if (!promptHasExplicitRequirements(context.options.prompt)) return false;
+  if (!availableToolNames.includes("patch")) return false;
+  if (!finishReportsIncompleteRequirements(message)) return false;
+  if (!/\b(?:approval|approve|confirm|permission)\b/i.test(message)) return false;
+  if (!/\b(?:breaking|break(?:ing)?\s+(?:change|changes|compatibility|api)|backwards? compatibility|public api|internal api|api refactor|refactor)\b/i.test(message)) {
+    return false;
+  }
+  return !transcriptHasReadOnlyEvidence(context.transcript);
 }
 
 function finishReportsIncompleteRequirements(message: string): boolean {

@@ -3029,3 +3029,27 @@ Decision:
 - Trace evidence: the new changed-test caveat guard did not fire in this target run; other finish guards fired earlier, and the final accepted path still reached verifier with source-only diff plus verifier-selected test failures.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `24G`. Prune stale retained sandboxes before more long runs; preserve latest evidence (`run-4nnb4L`, `run-l50Jrb`, `run-Jy72K1`, `run-RCjiIk`) until their traces are no longer needed.
+
+## 2026-05-30 Approval-Only Breaking Refactor Blocker Guard
+
+Change:
+
+- Added a generic finish guard that rejects approval-only blockers for breaking API/refactor/compatibility changes when the prompt has explicit implementation requirements and `patch` is available.
+- The guard keeps real external blockers available, but prevents Smith from stopping only to ask whether it may do a requested breaking refactor.
+- Added integration coverage for explicit requirements where the model first asks for approval to make a breaking API change, then reports a real missing-tool blocker.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for approval-only blockers, non-external blockers, and missing local output samples: passed `3` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `89` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `123664ms`, log `/tmp/smith/2026-05-30T18-52-18-651Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-tonPvU/home/.smith/runs/2026-05-30T18-50-15-462Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: reached verifier and failed in `951091ms`, log `/tmp/smith/2026-05-30T19-08-18-889Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-b7ZWSj/home/.smith/runs/2026-05-30T18-52-37-099Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic loop improvement for ordinary explicit-refactor tasks.
+- Do not count `005` as recovered. Verifier still failed `lib/kube/proxy` build errors for missing `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility fields.
+- Trace evidence: this rerun no longer ended on the approval-only breaking-refactor blocker. It later ended on a post-deadline no-inspection/no-validation-tool blocker, and verifier still failed selected tests.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `26G`. Cleanup is increasingly due; preserve latest evidence (`run-b7ZWSj`, `run-tonPvU`, `run-4nnb4L`, `run-l50Jrb`) before pruning stale retained sandboxes.

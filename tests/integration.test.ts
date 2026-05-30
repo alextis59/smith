@@ -224,6 +224,69 @@ max_turns = 30
     );
   });
 
+  it("rejects approval-only blockers for requested breaking refactors", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "finish",
+        arguments: {
+          message: [
+            "Blocker:",
+            "The remaining requirements need a breaking API refactor across the adapter and call sites.",
+            "Please approve the breaking compatibility change and I can continue."
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Cannot continue because the required build tool is missing from this environment."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-explicit-requirements-approval-blocker-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const prompt = [
+      "Refactor the adapter API.",
+      "",
+      "## Requirements",
+      "",
+      "- Rename the adapter config fields.",
+      "- Update all call sites.",
+      "- Preserve compatibility where practical."
+    ].join("\n");
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, prompt], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Cannot continue");
+    expect(provider.requests).toHaveLength(2);
+    expect(userMessages(provider.requests[1].body)).toContain(
+      "Finish rejected: patch is available and the prompt has explicit implementation requirements"
+    );
+    expect(userMessages(provider.requests[1].body)).toContain("Do not stop only to request approval");
+  });
+
   it("allows explicit-requirement blockers for missing local command output samples", async () => {
     const provider = await startFakeProvider([
       {
