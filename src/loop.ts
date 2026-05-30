@@ -1593,8 +1593,8 @@ function shouldRejectUnvalidatedTaskPatchFinish(
 
 function shouldRejectUnvalidatedTaskPatchValidationClaimFinish(message: string, unvalidatedTaskPatch: boolean): boolean {
   if (!unvalidatedTaskPatch) return false;
-  if (finishAcknowledgesPendingValidation(message)) return false;
-  return finishClaimsValidationSuccess(message);
+  if (!finishClaimsValidationSuccess(message)) return false;
+  return !finishAcknowledgesPatchValidationStillPending(message);
 }
 
 function finishClaimsValidationSuccess(message: string): boolean {
@@ -1603,6 +1603,17 @@ function finishClaimsValidationSuccess(message: string): boolean {
   ) || /\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b[\s\S]{0,120}\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b/i.test(
     message
   );
+}
+
+function finishAcknowledgesPatchValidationStillPending(message: string): boolean {
+  const pendingValidation =
+    "(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)";
+  const pendingThenScopeValidation =
+    "(?:validation (?:is |remains )?pending|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)";
+  const patchScope =
+    "(?:patch|task patch|source patch|source|changes?|changed files?|broader validation|project validation|full validation|complete validation|narrow|selected|subset|no tests?|cached|dirty|modified tests?|uncovered)";
+  return new RegExp(`\\b${patchScope}\\b[\\s\\S]{0,160}\\b${pendingValidation}\\b`, "i").test(message) ||
+    new RegExp(`\\b${pendingThenScopeValidation}\\b[\\s\\S]{0,160}\\b${patchScope}\\b`, "i").test(message);
 }
 
 function finishClaimsNoChangedFiles(message: string): boolean {

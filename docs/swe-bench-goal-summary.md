@@ -3100,3 +3100,27 @@ Decision:
 - Trace evidence: this specific target rerun did not hit the new inspection-path rejection. It instead repeatedly hit the existing incomplete-requirements and no-op-validation finish guards before accepting a locally validated but externally pending report.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `30G`. Cleanup is overdue before more long target runs; preserve latest evidence (`run-xaHdOj`, `run-kNZCbH`, `run-7lnBwh`, `run-oBuBpa`) before pruning stale retained sandboxes.
+
+## 2026-05-30 Patch-Scoped Validation Claim Guard
+
+Change:
+
+- Tightened the unvalidated-patch finish guard so a validation-success claim is rejected unless the pending-validation caveat is tied to the patch/source/broader validation gap.
+- This prevents messages that say local/package tests passed or the implementation is locally validated from escaping only by mentioning unrelated external or end-to-end validation.
+- Added regression coverage for a narrow selected-test pass followed by a finish that claims local validation while only external validation is pending.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for validation-success, external-validation, and selected-test validation paths: passed `4` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `92` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `284253ms`, log `/tmp/smith/2026-05-30T20-10-14-668Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-ji1bMb/home/.smith/runs/2026-05-30T20-05-30-863Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: reached verifier and failed in `815879ms`, log `/tmp/smith/2026-05-30T20-24-00-068Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-z84DKa/home/.smith/runs/2026-05-30T20-10-31-593Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic validation accounting for ordinary coding tasks with partial/narrow checks.
+- Do not count `005` as recovered. Verifier still failed on missing `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility fields/methods.
+- Trace evidence: the new validation-success rejection fired before Smith accepted a more explicit partial blocker listing remaining incomplete forwarder work.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `32G`. Prune stale retained sandboxes before further long target runs; preserve latest evidence (`run-z84DKa`, `run-ji1bMb`, `run-xaHdOj`, `run-kNZCbH`) until their traces/logs are no longer needed.

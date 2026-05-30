@@ -12303,3 +12303,91 @@ Decision:
 - Strict current evidence remains `6/10`; no full SWE-bench Pro run.
 - Next direction: move away from additional prompt-like guidance. The target now exposes a broader generic issue around narrow/local validation and compatibility with external/restored tests, but changes must stay generic and avoid benchmark-specific verifier behavior.
 - Maintenance note: `.smith-bench` is about `30G`. Before another long target run, prune stale retained sandboxes after preserving current evidence (`run-xaHdOj`, `run-kNZCbH`, `run-7lnBwh`, `run-oBuBpa`) so the directory does not continue growing several GB per iteration.
+
+## 2026-05-30 Worklog: Patch-Scoped Validation Claim Guard
+
+Context:
+
+- The previous `005-gravitational-teleport` run ended with a final report claiming relevant local package tests passed and the implementation was locally validated, while only external end-to-end validation was marked pending.
+- The same run still failed external verifier build because source compatibility with existing/restored tests was not complete.
+- Existing unvalidated-patch finish logic allowed validation-success claims when the message acknowledged pending validation in any form. That was too broad: "pending external validation" can coexist with an unvalidated or narrowly validated source patch.
+
+Hypothesis:
+
+- If a task patch is still unvalidated and the finish message claims validation success, Smith should only accept the finish when the pending-validation caveat is scoped to the patch/source/broader validation gap.
+- This is a generic final-answer integrity rule for ordinary coding tasks; it does not reference benchmark tasks, hidden tests, selected tests, verifiers, scoring, or task-specific fields.
+
+Implementation:
+
+- Changed `shouldRejectUnvalidatedTaskPatchValidationClaimFinish()`:
+  - Before: any `finishAcknowledgesPendingValidation()` wording bypassed the rejection.
+  - After: a validation-success claim is rejected unless `finishAcknowledgesPatchValidationStillPending()` says the pending validation is tied to patch/source/broader/narrow/cached/dirty/uncovered validation scope.
+- Added `finishAcknowledgesPatchValidationStillPending()` with scoped proximity checks so generic headings like `pending validation report` do not accidentally excuse a local validation-success claim.
+- Added integration coverage for:
+  - a source patch;
+  - a narrow selected validation command;
+  - a finish claiming local package tests passed and only external validation pending;
+  - a later accepted finish that explicitly says patch validation remains pending after only a narrow selected check.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "validation success claims|external validation|selected test validation"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused selector initially failed twice while the scoped pending-validation matcher was too broad:
+  - first because a generic `pending validation report` plus `package tests` anywhere in the message still matched;
+  - then because `pending validation report` plus `selected` later in the message still matched.
+- After tightening the matcher, the focused selector passed `4` selected tests.
+- Full integration file passed `92` tests in `34886ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed:
+  - Duration: `284253ms`.
+  - Log: `/tmp/smith/2026-05-30T20-10-14-668Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-ji1bMb/home/.smith/runs/2026-05-30T20-05-30-863Z.trace`.
+
+Target rerun:
+
+- `005-gravitational-teleport` reached verifier and failed:
+  - Duration: `815879ms`.
+  - Log: `/tmp/smith/2026-05-30T20-24-00-068Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-z84DKa/home/.smith/runs/2026-05-30T20-10-31-593Z.trace`.
+  - Sandbox: `.smith-bench/run-z84DKa`.
+  - Final Smith report became a clearer partial blocker:
+    - implemented Kubernetes service uploader initialization;
+    - implemented `Forwarder.ServeHTTP`;
+    - implemented audit context changes;
+    - explicitly listed incomplete ForwarderConfig cleanup, credential TTL cache, clusterSession caching cleanup, and local/remote auth/dialing API refactor.
+  - Verifier still failed `lib/kube/proxy` build:
+    - `unknown field 'cfg' in struct literal of type Forwarder`.
+    - `f.cfg undefined`.
+    - `unknown field 'clientCredentials' in struct literal of type Forwarder`.
+    - `f.clientCredentials undefined`.
+  - Retained sandbox status after verifier:
+    - `lib/kube/proxy/forwarder.go` modified.
+    - `lib/service/kubernetes.go` modified.
+    - `lib/kube/proxy/forwarder_test.go` staged/modified by verifier/restored-test state.
+    - `SMITH.md` untracked inside the sandbox.
+  - Source diff stat: `lib/kube/proxy/forwarder.go | 87 ++++++++++++++++++++++++++++++++++-----------`; `lib/service/kubernetes.go | 24 +++++++++++++`.
+
+Trace checks:
+
+- `rg 'Finish rejected: a task patch is still not validated as complete' .smith-bench/run-z84DKa/...trace` found the new rejection before the final partial blocker.
+- The final accepted report no longer claimed only external validation was pending; it listed the concrete incomplete source work.
+
+Decision:
+
+- Keep the change because it improves generic final-answer honesty after narrow or incomplete validation.
+- Do not count `005` as recovered. The task still fails verifier on the same compatibility surface.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Next direction: stop iterating heavily on `005` unless a clearly generic implementation-quality issue appears. Consider another Codex-passed unrecovered target, but avoid Codex-failed/flawed tasks and avoid any benchmark-specific prompt or harness shortcut.
+- Maintenance note: `.smith-bench` is about `32G`. Cleanup is overdue; preserve `run-z84DKa`, `run-ji1bMb`, `run-xaHdOj`, and `run-kNZCbH` for current evidence, then prune stale retained sandboxes before more long runs.
