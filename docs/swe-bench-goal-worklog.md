@@ -11931,3 +11931,74 @@ Decision:
 - Strict current evidence remains `6/10`; no full SWE-bench Pro run.
 - Next direction: avoid over-investing in `010` unless a stronger generic runtime improvement is identified. Prioritize Codex-passed unrecovered tasks and generic failure classes.
 - Maintenance note: `.smith-bench` is about `21G`. Before more long SWE reruns, think about cleaning stale retained sandboxes from time to time so this folder does not grow by several GB. Preserve current evidence directories such as `run-CcFNvW`, `run-75tIvv`, `run-nnfGIf`, and `run-HHKi3P` until their traces/logs are no longer needed.
+
+## 2026-05-30 Worklog: Structural Field Note Precision
+
+Context:
+
+- The previous `010` trace showed the struct/object field compatibility note firing for ordinary local variables introduced in a Go function: `r`, `listCmd`, `listRes`, `indexRes`, `srcPackages`, `flush`, `current`, and `scanner`.
+- That note was intended for source compatibility risks such as renamed struct fields, embedded fields, object type properties, and keyed callers.
+- False positives add noise in ordinary tasks and can send Smith toward irrelevant compatibility searches.
+
+Hypothesis:
+
+- The detector should only report field compatibility risks when changed lines occur inside a structural field block.
+- This is a generic signal-quality improvement, not a benchmark-specific instruction.
+
+Implementation:
+
+- Updated `changedStructFieldNamesFromPatch()` to track whether the current patch line is inside a structural block before calling `structFieldNameFromLine()`.
+- Added `startsStructuralFieldBlock()` for:
+  - Go `type X struct {`.
+  - Go `type X interface {`.
+  - TypeScript `interface X {`.
+  - TypeScript `type X = {`.
+  - Class declarations.
+- Added `braceDelta()` to leave the structural block when closing braces are reached.
+- Added an integration test proving local variable rewrites do not emit the struct/object field compatibility note.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "patch changes struct fields|only changes local variables|patch changes declaration signatures"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused integration selector: passed `3` selected tests.
+- Full integration file: passed `87` tests in `33701ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed:
+  - Duration: `116063ms`.
+  - Log: `/tmp/smith/2026-05-30T18-07-04-003Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-RCjiIk/home/.smith/runs/2026-05-30T18-05-08-410Z.trace`.
+
+Target rerun:
+
+- `010-future-architect-vuls` reached verifier and failed:
+  - Duration: `705477ms`.
+  - Log: `/tmp/smith/2026-05-30T18-18-56-650Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-Jy72K1/home/.smith/runs/2026-05-30T18-07-11-950Z.trace`.
+  - Sandbox: `.smith-bench/run-Jy72K1`.
+  - Verifier failures:
+    - `(newAlpine(config.ServerInfo{})).parseApkInstalledList undefined`.
+    - `(newAlpine(config.ServerInfo{})).parseApkIndex` returned `2` values while selected tests expected `3`.
+    - `(newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined`.
+    - `TestIsOvalDefAffected` case `[85]` expected unaffected but got affected with `fixedIn` `3.3.2-r0`.
+  - Retained sandbox status: `oval/util_test.go` and `scanner/alpine_test.go` were staged/modified, and `scanner/alpine.go` was modified. This remains a validation-integrity concern for future generic work.
+  - Trace check: `rg "changes struct or object fields" .smith-bench/run-Jy72K1/...trace` returned no matches, confirming the noisy local-variable note was removed.
+
+Decision:
+
+- Keep the change because it improves the precision of a generic compatibility hint and is covered by focused and full integration tests.
+- Do not count `010` as recovered. It still fails verifier, though the run now reaches verifier instead of timing out.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Next direction: move away from `010` unless using it for a clearly generic validation-integrity failure. The latest retained sandbox again shows modified tests, so future work may focus on preventing validation-success finishes after dirty test edits or on restoring unrequested test changes before finish.
+- Maintenance note: `.smith-bench` is about `23G`. Think about cleaning stale retained sandboxes before additional long SWE runs so the folder does not grow several GB more; preserve current evidence directories such as `run-Jy72K1`, `run-RCjiIk`, `run-CcFNvW`, and `run-75tIvv` until their traces are no longer needed.

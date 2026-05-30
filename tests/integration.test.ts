@@ -835,6 +835,59 @@ timeout_ms = 5000
     expect(messages(provider.requests[1].body)[4].content).toContain("embedded-field callers");
   });
 
+  it("does not warn when a patch only changes local variables", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: forwarder.go",
+            "@@",
+            " func build() error {",
+            "-\tr := run()",
+            "+\tresult := run()",
+            "-\tlistCmd := command()",
+            "+\tindexRes := command()",
+            " \treturn nil",
+            " }",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "patched; validation pending" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-compat-local-vars-patch-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "forwarder.go"), "func build() error {\n\tr := run()\n\tlistCmd := command()\n\treturn nil\n}\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "change locals"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("patched");
+    expect(messages(provider.requests[1].body)[4].content).not.toContain("changes struct or object fields");
+  });
+
   it("applies tab-indented patch tool calls without shell tab completion", async () => {
     const provider = await startFakeProvider([
       {

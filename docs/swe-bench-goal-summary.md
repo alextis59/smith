@@ -2982,3 +2982,26 @@ Decision:
 - Do not count `010` as recovered. The latest rerun timed out without verifier output. Trace evidence shows the new dirty-test guard was not the deciding path this time: the retained sandbox had only `scanner/alpine.go` modified plus Smith memory files, and the run got stuck after post-deadline validation/finish restrictions.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `21G`. Before additional long SWE reruns, think about pruning stale retained sandboxes so this folder does not grow by several GB per iteration. Preserve current evidence runs such as `run-CcFNvW`, `run-75tIvv`, `run-nnfGIf`, and `run-HHKi3P` until their data is no longer needed.
+
+## 2026-05-30 Structural Field Note Precision
+
+Change:
+
+- Tightened the generic struct/object field compatibility detector so it only fires for changed lines inside structural field blocks such as Go `struct`/`interface`, TypeScript `interface`/object type aliases, and classes.
+- Added regression coverage that local variable rewrites such as `r :=`, `listCmd :=`, and `indexRes :=` do not trigger the struct-field compatibility note.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for struct-field notes, local-variable no-warning, and signature notes: passed `3` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `87` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `116063ms`, log `/tmp/smith/2026-05-30T18-07-04-003Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-RCjiIk/home/.smith/runs/2026-05-30T18-05-08-410Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: reached verifier and failed in `705477ms`, log `/tmp/smith/2026-05-30T18-18-56-650Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-Jy72K1/home/.smith/runs/2026-05-30T18-07-11-950Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic signal-quality improvement. The previous trace showed local variables being reported as struct fields, which is noisy for normal refactors.
+- The `010` rerun improved from outer timeout to verifier evidence, but did not recover the task. Verifier still failed missing Alpine parser compatibility methods (`parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`) and `TestIsOvalDefAffected`.
+- Trace check: the refined run did not emit the struct/object field compatibility note for local variable changes.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `23G`. Cleanup should be considered before further long SWE reruns; preserve latest evidence (`run-Jy72K1`, `run-RCjiIk`, `run-CcFNvW`, `run-75tIvv`) and prune stale sandboxes when no longer needed.

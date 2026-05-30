@@ -793,18 +793,47 @@ function changedDeclarationSignatureNamesFromPatch(patch: string): string[] {
 function changedStructFieldNamesFromPatch(patch: string): string[] {
   const removed = new Set<string>();
   const added = new Set<string>();
+  let structuralBlockDepth = 0;
   for (const line of patch.split("\n")) {
     if (line.startsWith("---") || line.startsWith("+++")) continue;
     const marker = line[0];
-    if (marker !== "-" && marker !== "+") continue;
-    const field = structFieldNameFromLine(line.slice(1));
-    if (!field) continue;
-    if (marker === "-") removed.add(field);
-    else added.add(field);
+    if (marker !== "-" && marker !== "+" && marker !== " ") continue;
+    const content = line.slice(1);
+    if (marker !== " " && structuralBlockDepth > 0) {
+      const field = structFieldNameFromLine(content);
+      if (field) {
+        if (marker === "-") removed.add(field);
+        else added.add(field);
+      }
+    }
+    if (startsStructuralFieldBlock(content)) {
+      structuralBlockDepth = Math.max(1, structuralBlockDepth + braceDelta(content));
+      continue;
+    }
+    if (structuralBlockDepth > 0) {
+      structuralBlockDepth += braceDelta(content);
+      if (structuralBlockDepth <= 0) structuralBlockDepth = 0;
+    }
   }
   return [...new Set([...removed, ...added])]
     .filter((name) => removed.has(name) !== added.has(name))
     .slice(0, 8);
+}
+
+function startsStructuralFieldBlock(line: string): boolean {
+  const trimmed = line.trim();
+  return /^(?:type\s+[A-Za-z_]\w*\s+(?:struct|interface)\s*\{|(?:export\s+)?interface\s+[A-Za-z_$][\w$]*(?:\s+extends\s+[^{]+)?\s*\{|(?:export\s+)?type\s+[A-Za-z_$][\w$]*\s*=\s*\{|(?:export\s+)?class\s+[A-Za-z_$][\w$]*(?:\s+extends\s+[^{]+)?\s*\{)/.test(
+    trimmed
+  );
+}
+
+function braceDelta(line: string): number {
+  let delta = 0;
+  for (const char of line) {
+    if (char === "{") delta += 1;
+    else if (char === "}") delta -= 1;
+  }
+  return delta;
 }
 
 function structFieldNameFromLine(line: string): string | undefined {
