@@ -11231,3 +11231,76 @@ Decision:
 - Strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Next generic direction: avoid broad all-or-nothing patches after long inspection. Potential non-prompt implementation ideas include detecting very large failed atomic patches and allowing another bounded inspection or encouraging smaller independent patch units through tool feedback. Any change must remain generic and not mention SWE-bench, Teleport, or task-specific requirements.
 - Maintenance note: `.smith-bench` is about `9.7G` with `12` retained `run-*` directories: `run-fsxY37`, `run-hKlpEQ`, `run-ZUFLnx`, `run-pHfcsJ`, `run-qrHvTR`, `run-Tn9iHO`, `run-dCnj9o`, `run-pbVQuJ`, `run-jkwAbH`, `run-TA29B0`, `run-8z0A50`, and `run-9F2k0z`. Prune stale sandboxes after preserving the latest evidence needed for current decisions.
+
+## 2026-05-30 Worklog: Missing Sample Blocker Acceptance
+
+Hypothesis:
+
+- Fresh `010-future-architect-vuls` baseline on current Smith timed out after `907678ms`.
+- Trace showed repeated finish rejections after Smith reported a concrete blocker: local `apk` tooling was unavailable and the repo had no real `apk index` output sample, so it could not safely verify the package-index format.
+- The explicit-requirements guard recognized missing dependencies/tools, but not "workspace has no command" or missing samples/output data. That created a generic false-rejection loop for tasks requiring unavailable local data or command output.
+
+Implementation:
+
+- Expanded `finishReportsConcreteBlocker()` in `src/loop.ts` to recognize:
+  - missing samples, fixtures, examples, output, and data;
+  - unavailable/not installed/not found commands, binaries, or tools;
+  - workspace/environment/repo containing no command/binary/tool/sample/output/data;
+  - inability to verify/derive/inspect/determine a format/schema from missing local evidence.
+- Added integration test `allows explicit-requirement blockers for missing local command output samples`.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "explicit-requirement|explicit requirements|missing local command"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed repo validation:
+
+- `npm run build`: passed.
+- Focused explicit-requirements selector: passed `5` selected tests.
+- Full integration file: passed `76` tests in `30768ms`.
+
+Representative project validation:
+
+- First `091-command-router-refactor` attempt failed by `max_turns` after `260572ms`.
+  - Log: `/tmp/smith/2026-05-30T12-22-30-091Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-eca2jp/home/.smith/runs/2026-05-30T12-18-10-006Z.trace`.
+  - Treated as a bad trajectory rather than a blocker-classifier regression.
+- Rerun passed in `152971ms`.
+  - Log: `/tmp/smith/2026-05-30T12-25-17-125Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-55NNLu/home/.smith/runs/2026-05-30T12-22-44-391Z.trace`.
+
+Target reruns:
+
+- Fresh pre-change `010` baseline failed by outer Docker timeout after `907678ms`.
+  - Log: `/tmp/smith/2026-05-30T12-15-34-644Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-FRxBg9/home/.smith/runs/2026-05-30T12-00-28-731Z.trace`.
+  - Evidence: repeated finish rejections for an incomplete package-index mapping blocker based on missing `apk` command/output sample.
+- Post-change `010` rerun exited cleanly and reached verifier in `777871ms`.
+  - Log: `/tmp/smith/2026-05-30T12-38-29-272Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-Sn9qBP/home/.smith/runs/2026-05-30T12-25-32-205Z.trace`.
+
+Verifier evidence:
+
+- `scanner` failed to compile because compatibility methods were still missing:
+
+```text
+(newAlpine(config.ServerInfo{})).parseApkInstalledList undefined
+(newAlpine(config.ServerInfo{})).parseApkIndex undefined
+(newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined
+```
+
+- `TestIsOvalDefAffected` still failed with `affected: true` and `fixedIn: 3.3.2-r0` where expected `affected: false` and empty `fixedIn`.
+
+Decision:
+
+- Keep the change because it fixes a generic false-rejection loop and turned the target from outer timeout into verifier evidence.
+- Do not count `010` as recovered. The current failure is implementation correctness/compatibility, not harness timeout.
+- Strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Next generic direction: improve source-compatibility preservation when Smith changes or removes helper methods that tests/callers still use. Existing patch feedback already warns on signature changes; the issue may be that validation was too narrow or that compatibility wrappers were omitted despite the warning.
+- Maintenance note: `.smith-bench` is about `13G`; cleanup is due before more long benchmark runs. Preserve current evidence runs for `010` (`run-FRxBg9`, `run-Sn9qBP`) and latest representative validation (`run-55NNLu`) before pruning stale sandboxes.

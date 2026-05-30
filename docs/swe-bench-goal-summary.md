@@ -2760,3 +2760,25 @@ Decision:
 - Do not count `005` as recovered. Smith still ended with an incomplete broad refactor, and verifier failed because `lib/kube/proxy` did not compile after removed/renamed fields were not carried through tests and callers.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `9.7G` with `12` retained `run-*` directories. Prune stale sandboxes after preserving the latest evidence runs needed for current decisions.
+
+## 2026-05-30 Missing Sample Blocker Acceptance
+
+Change:
+
+- Expanded the explicit-requirements blocker classifier to recognize missing local commands/binaries and missing samples, fixtures, examples, output, or data as concrete blockers.
+- Added integration coverage for an incomplete explicit-requirements finish blocked by a missing local command and missing output sample.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "explicit-requirement|explicit requirements|missing local command"`: passed `5` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `76` tests.
+- Representative project benchmark `091-command-router-refactor`: first run failed by `max_turns` after `260572ms`, log `/tmp/smith/2026-05-30T12-22-30-091Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-eca2jp/home/.smith/runs/2026-05-30T12-18-10-006Z.trace`; rerun passed in `152971ms`, log `/tmp/smith/2026-05-30T12-25-17-125Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-55NNLu/home/.smith/runs/2026-05-30T12-22-44-391Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: exited cleanly and reached verifier in `777871ms`, log `/tmp/smith/2026-05-30T12-38-29-272Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-Sn9qBP/home/.smith/runs/2026-05-30T12-25-32-205Z.trace`.
+
+Decision:
+
+- Keep the change because the previous fresh `010` baseline timed out after repeated rejected blocker finishes, while this rerun reached verifier.
+- Do not count `010` as recovered. Verifier still failed on missing Alpine parser compatibility methods and `TestIsOvalDefAffected`.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `13G`; cleanup is due before more long runs, preserving only current evidence sandboxes needed for decisions.

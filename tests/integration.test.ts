@@ -224,6 +224,61 @@ max_turns = 30
     );
   });
 
+  it("allows explicit-requirement blockers for missing local command output samples", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "finish",
+        arguments: {
+          message: [
+            "Blocked partial report:",
+            "- Implemented: installed package parsing.",
+            "- Incomplete: package index mapping.",
+            "",
+            "Concrete blocker:",
+            "- This workspace has no apk command and no real apk index output sample, so I cannot verify the exact package-index format safely."
+          ].join("\n")
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-explicit-requirements-missing-sample-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const prompt = [
+      "Update the package parser.",
+      "",
+      "## Requirements",
+      "",
+      "- Parse installed package output.",
+      "- Parse package index mapping."
+    ].join("\n");
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, prompt], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Blocked partial report");
+    expect(provider.requests).toHaveLength(1);
+  });
+
   it("allows incomplete explicit-requirement reports after a patch context blocker", async () => {
     const provider = await startFakeProvider([
       {
