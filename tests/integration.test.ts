@@ -4897,6 +4897,85 @@ max_run_ms = 1
     expect(userMessages(provider.requests[2].body)).not.toContain("Finish rejected: the prompt has explicit requirements");
   });
 
+  it("rejects optional continuation finishes when a source implementation path remains", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message:
+            "Blocked/incomplete items:\n- Existing caller compatibility is still missing.\n\nIf you want, I can continue by adding compatibility wrappers for the existing callers."
+        }
+      },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-new",
+            "+new",
+            "+compat",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent" } },
+      {
+        name: "finish",
+        arguments: {
+          message: "Implemented and validated the requested compatibility update."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-deferred-source-path-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "printf checked" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "Requirements:\n- Change note.txt.\n- Preserve compatibility."], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Implemented and validated");
+    expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("new\ncompat\n");
+    expect(provider.requests).toHaveLength(5);
+    expect(userMessages(provider.requests[2].body)).toContain("Finish rejected: patch is available and the finish message says an implementation path remains");
+  });
+
   it("allows read-only finish claims when transcript evidence supports them", async () => {
     const provider = await startFakeProvider([
       {

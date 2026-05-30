@@ -12620,3 +12620,74 @@ Decision:
 - Do not count `010` as recovered. Strict evidence remains `6/10`.
 - Do not continue grinding `010` unless a fresh generic Smith issue appears. The current verifier failures are now concrete task implementation misses, not a Smith runtime blocker.
 - `.smith-bench` is about `39G`. Preserve `run-I2G7TZ`, `run-LSDhek`, and recent evidence dirs before cleanup.
+
+## 2026-05-31 Worklog: Deferred Implementation Path Guard And 006 Diagnostic
+
+Context:
+
+- User added an alternate success path: Smith `gpt-5.5` high matching Codex CLI `gpt-5.5` high is sufficient. Current `LeaderBoard.md` has no Codex CLI `gpt-5.5` SWE-bench Pro row, so this path remains pending an authoritative target.
+- User also clarified that SWE-specific prompt/runtime instructions are cheating. This change is not a prompt edit and is not benchmark-specific; it is a generic finish-control guard for ordinary coding tasks with explicit requirements.
+- Cleanup was performed before more long runs: `.smith-bench` was pruned from about `39G` to `7.1G`, preserving current evidence directories. After the latest retained runs, `.smith-bench` is about `9.1G`.
+- A fresh current-branch `006-navidrome` diagnostic before this change failed in `742422ms`, log `/tmp/smith/2026-05-30T22-34-03-281Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`, trace `.smith-bench/run-Q6Nu5z/home/.smith/runs/2026-05-30T22-22-05-313Z.trace`.
+- The pre-change `006` finish reported incomplete source work and said: `If you want, I can continue by adding temporary compatibility wrappers...`. That is a generic Smith failure mode: deferring an available source implementation path behind optional continuation wording.
+
+Implementation:
+
+- `src/loop.ts`: added `shouldRejectDeferredImplementationPathFinish`.
+- The guard only applies when:
+  - the original prompt has explicit requirements;
+  - `patch` is available;
+  - the finish reports incomplete requirements;
+  - the finish uses optional continuation wording for a remaining implementation path;
+  - the special honest post-deadline partial-finish case does not apply.
+- `tests/integration.test.ts`: added `rejects optional continuation finishes when a source implementation path remains`.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "optional continuation|honest partial explicit-requirement|self-imposed|read-only test"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused selector: passed `8` selected tests in `2050ms`.
+- `npm test -- tests/integration.test.ts`: passed `97` tests in `36130ms`.
+- Representative project benchmark `091-command-router-refactor`: passed in `163565ms`.
+  - Log: `/tmp/smith/2026-05-30T22-41-26-434Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-yJ7ypB/home/.smith/runs/2026-05-30T22-38-43-361Z.trace`.
+  - Sandbox: `.smith-bench/run-yJ7ypB`.
+
+Target diagnostic:
+
+- `006-navidrome`: passed in `841188ms`.
+  - Log: `/tmp/smith/2026-05-30T22-55-35-425Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`.
+  - Trace: `.smith-bench/run-LRnuEJ/home/.smith/runs/2026-05-30T22-41-44-100Z.trace`.
+  - Sandbox: `.smith-bench/run-LRnuEJ`.
+  - Usage: `2020115` input tokens, `1640576` cached input tokens, `80939` output tokens, `62558` reasoning output tokens, `2101054` total tokens.
+- Verifier selected tests:
+  - `TestLastFM`: passed `50/50` specs.
+  - `TestListenBrainz`: passed `22/22` specs.
+  - `TestSpotify`: passed `8/8` specs.
+  - Final verifier reported `{"passed": 3}` and exit code `0`.
+- Smith final said compatibility was accounted for by keeping agent-level public entry points unchanged and using package-local test-only compatibility shims for in-package tests.
+
+Trace notes:
+
+- The new deferred-implementation guard did not appear as the decisive trace rejection in the passing `006` run.
+- Existing generic guards did fire:
+  - read-only test/spec patch blocker rejection;
+  - task-patch pending validation rejection;
+  - compatibility hints after missing declarations.
+- The run eventually continued into source/test-shim compatibility work and passed the verifier. This is useful evidence for the general finish-control direction, but not clean evidence that the new guard alone recovered the task.
+
+Decision:
+
+- Keep the guard because it is generic, covered by focused regression tests, and full integration plus representative project validation passed.
+- Count `006` only as diagnostic/plausibility evidence because Codex `gpt-5.4` high also failed it and the user warned that some Codex-failed tasks may be flawed.
+- Combined targeted evidence now plausibly reaches `7/10`: baseline `002`, `004`, `007`; targeted recoveries `001`, `003`, `006`, `008`. Because `003` and `006` are Codex-failed, this is not a clean claim of superiority, but it is enough to justify one full SWE-bench Pro run after committing.
+- Maintenance note: `.smith-bench` is about `9.1G`; preserve `run-LRnuEJ`, `run-yJ7ypB`, `run-I2G7TZ`, and `run-LSDhek` for current evidence before any further cleanup.

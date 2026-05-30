@@ -27,7 +27,7 @@ Alternative success path added by user on 2026-05-30: if Smith `gpt-5.5` high re
 - `.smith-bench` grows quickly because many targeted runs keep full sandboxes, traces, and result artifacts. Periodically check its size with `du -sh .smith-bench` and the retained run count with `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l`.
 - After each useful failure has its command, log path, trace path, sandbox id, and relevant evidence copied into this summary/worklog, prune stale `.smith-bench/run-*` sandboxes that are no longer needed for diagnosis. Keep the raw result JSONs and any sandboxes that still contain unresolved evidence.
 - Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
-- 2026-05-30 cleanup reminder: `.smith-bench` is currently about `36G` with `41` retained `run-*` sandboxes. Before more long SWE-bench Pro reruns, prune stale retained sandboxes after preserving current evidence runs (`run-HBcDtu`, `run-TOlkI5`, `run-KStwc8`, `run-VH4k4x`, `run-sFmHyX`, and any active diagnosis sandboxes). Re-check this after each batch of retained runs so the folder does not silently grow by several GB.
+- 2026-05-31 cleanup reminder: `.smith-bench` was pruned from about `39G` to `7.1G`; after the latest retained representative/target runs it is about `9.1G`. Re-check this after each batch of retained runs so the folder does not silently grow by several GB. Preserve latest evidence dirs such as `run-LRnuEJ`, `run-yJ7ypB`, `run-I2G7TZ`, and `run-LSDhek` until their traces/logs are no longer needed.
 - 2026-05-30 note: after the latest targeted runs, `.smith-bench` is about `7.3G` with `8` retained `run-*` directories. Preserved current/recent evidence: `run-JvD7C8`, `run-vvBMuM`, `run-jZiXQQ`, `run-Gn7PlH`, `run-6goAJU`, `run-1zl86m`, `run-TA29B0`, and `run-SEpBif`.
 - 2026-05-30 note: `.smith-bench` is back to about `12G` after further retained local and SWE runs. Prune again soon after preserving current evidence runs such as `run-qWpZdH`, `run-6inovy`, `run-trsSFJ`, `run-bbwPc4`, and `run-kG8O37`; otherwise the directory will keep growing by several GB across iteration.
 
@@ -3211,3 +3211,29 @@ Decision:
 - Keep the change because it is a generic runtime integrity improvement: Smith should not spin until an outer timeout when it can honestly report a partial/pending-validation state after its validation tool slot is exhausted.
 - Do not count `010` as recovered. Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `39G`; preserve `run-I2G7TZ`, `run-LSDhek`, and recent evidence dirs before pruning stale retained sandboxes.
+
+## 2026-05-31 Deferred Implementation Path Guard
+
+Change:
+
+- Added a generic finish guard for explicit-requirement tasks: when `patch` is available and the finish message says an implementation path remains using optional continuation wording such as `If you want, I can continue by ...`, Smith rejects the finish and asks the model to continue the smallest safe source change or report a concrete external blocker.
+- Added regression coverage for this guard.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for optional continuation, post-deadline partial, self-imposed blockers, and read-only test paths: passed `8` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `97` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `163565ms`, log `/tmp/smith/2026-05-30T22-41-26-434Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-yJ7ypB/home/.smith/runs/2026-05-30T22-38-43-361Z.trace`.
+
+Target evidence:
+
+- Diagnostic target SWE rerun `006-navidrome`: passed in `841188ms`, log `/tmp/smith/2026-05-30T22-55-35-425Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`, trace `.smith-bench/run-LRnuEJ/home/.smith/runs/2026-05-30T22-41-44-100Z.trace`.
+- Verifier ran selected tests `TestListenBrainz`, `TestSpotify`, and `TestLastFM`; all passed.
+- Trace evidence: the new guard was not the only factor in the recovery. Existing read-only test/spec and pending-validation guards also rejected intermediate incomplete finishes and forced source/test-shim compatibility work. Keep the result as diagnostic because Codex `gpt-5.4` high also failed `006`.
+
+Decision:
+
+- Keep the guard because it is generic, focused-test covered, full-integration clean, and did not regress the representative project task.
+- Current score-plausibility evidence is baseline full-run passes `002`, `004`, `007`, plus targeted recoveries `001`, `003`, `006`, and `008`, which gives a plausible `7/10` full-run shot. Because `003` and `006` are Codex-failed/flawed candidates, do not over-interpret this as clean benchmark superiority; only a full SWE-bench Pro run can prove completion.
+- Full SWE-bench Pro is now plausibly justified after committing this milestone.

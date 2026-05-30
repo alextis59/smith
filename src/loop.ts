@@ -658,6 +658,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: the prompt asks to preserve interface/API compatibility, and earlier source patches changed declaration signatures or removed declarations. Before claiming completion, continue compatibility work or explicitly account for existing callers, old signatures, wrappers/adapters, or the unchanged public interface."
       );
     }
+    if (shouldRejectDeferredImplementationPathFinish(message, parentContext, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: patch is available and the finish message says an implementation path remains. Do not defer source edits behind optional continuation wording when the prompt has explicit requirements. Continue with the smallest safe source change, or finish with a concrete external blocker if no source path exists."
+      );
+    }
     if (shouldRejectSelfImposedApprovalBlockerFinish(message, parentContext, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -1712,6 +1719,31 @@ function shouldRejectSelfImposedApprovalBlockerFinish(
     return false;
   }
   return !transcriptHasReadOnlyEvidence(context.transcript);
+}
+
+function shouldRejectDeferredImplementationPathFinish(
+  message: string,
+  context: ToolCallContext,
+  availableToolNames: string[]
+): boolean {
+  if (!promptHasExplicitRequirements(context.options.prompt)) return false;
+  if (!availableToolNames.includes("patch")) return false;
+  if (isPostDeadlinePatchOnlyPartialFinish(message, context, availableToolNames)) return false;
+  if (!finishReportsIncompleteRequirements(message)) return false;
+  return finishDefersKnownImplementationPath(message);
+}
+
+function finishDefersKnownImplementationPath(message: string): boolean {
+  const implementationVerb =
+    "(?:add(?:ing)?|adapt(?:ing)?|chang(?:e|ing)|creat(?:e|ing)|implement(?:ing)?|keep(?:ing)?|migrat(?:e|ing)|modif(?:y|ying)|patch(?:ing)?|refactor(?:ing)?|restor(?:e|ing)|shim(?:ming)?|updat(?:e|ing)|wir(?:e|ing)|wrap(?:ping)?)";
+  return new RegExp(
+    `\\b(?:if you want|if you'd like|if desired|optionally)\\b[\\s\\S]{0,180}\\b(?:I|we) can (?:continue|proceed|go ahead|follow up)\\b[\\s\\S]{0,180}\\b${implementationVerb}\\b`,
+    "i"
+  ).test(message) ||
+    new RegExp(
+      `\\b(?:I|we) can (?:continue|proceed|go ahead|follow up) by\\b[\\s\\S]{0,180}\\b${implementationVerb}\\b`,
+      "i"
+    ).test(message);
 }
 
 function finishReportsIncompleteRequirements(message: string): boolean {
