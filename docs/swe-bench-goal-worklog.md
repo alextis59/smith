@@ -10778,3 +10778,71 @@ find .smith-bench -maxdepth 1 -type d -name 'run-*' ! -name 'run-jZiXQQ' ! -name
   - `run-1zl86m`: pre-heredoc-guard `010` diagnostic with PTY heredoc corruption evidence.
   - `run-TA29B0`: latest retained `005` target evidence from dirty-test finish milestone.
   - `run-SEpBif`: representative `091` project benchmark for heredoc guard milestone.
+
+## 2026-05-30 Worklog: Clarify Truncated Tool Output
+
+Diagnostic:
+
+- Latest `010` trace `.smith-bench/run-jZiXQQ/home/.smith/runs/2026-05-29T20-31-25-205Z.trace` showed a broad module-cache search that produced `[smith truncated tool output: 39631 chars exceeded max_tool_output_chars=12000; showing head and tail]`.
+- Hypothesis: the old marker made truncation visible but did not explicitly tell Smith that omitted middle content may contain the relevant lines. A generic cue to rerun narrower commands should improve evidence handling on any large-output task.
+
+Implementation:
+
+- Updated `limitToolOutput()` in `src/loop.ts` so the truncation marker now says: `omitted content may contain relevant lines, so rerun a narrower command if needed`.
+- Updated existing truncation tests for direct `run` output and sub-agent output to assert the new cue.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "truncates oversized"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+```
+
+Observed:
+
+- `npm run build`: passed.
+- Focused truncation selector: passed `2` selected tests.
+- Full integration file: passed `70` tests in `27033ms`.
+- Representative `091-command-router-refactor`: passed in `205366ms`.
+- Representative log: `/tmp/smith/2026-05-30T06-56-14-491Z-smith-091-command-router-refactor.json`.
+- Representative trace: `.smith-bench/run-vvBMuM/home/.smith/runs/2026-05-30T06-52-49-587Z.trace`.
+
+Target rerun:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed by Docker timeout after `906564ms`.
+- Log: `/tmp/smith/2026-05-30T07-11-32-587Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-JvD7C8/home/.smith/runs/2026-05-30T06-56-26-790Z.trace`.
+- Trace search count for `smith truncated tool output|rerun a narrower command if needed`: `33`, including provider-history repetitions.
+- Retained workspace status:
+
+```text
+ M scanner/alpine.go
+?? SMITH.TASK.md
+```
+
+- Retained source diff:
+
+```text
+ scanner/alpine.go | 270 ++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 262 insertions(+), 8 deletions(-)
+```
+
+- Failure evidence:
+  - The run still failed by outer Docker timeout.
+  - It reached a larger source patch and task memory, then final `go test` validation commands timed out after `20s` with `^C`.
+  - No passing verifier evidence exists, and the retained task-memory file is task-local sandbox output only.
+
+Decision:
+
+- Keep the change because it is generic, small, and covered by focused/full integration plus representative project validation.
+- Do not count `010` as recovered.
+- Strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Cleanup note: `.smith-bench` is now about `7.3G` with `8` retained `run-*` directories after adding `run-vvBMuM` and `run-JvD7C8`.

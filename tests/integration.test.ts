@@ -1488,8 +1488,9 @@ max_tool_output_chars = 180
     const replayedOutput = messages(provider.requests[1].body).at(-1)?.content ?? "";
     expect(stdout).toContain("smith truncated tool output");
     expect(replayedOutput).toContain("smith truncated tool output");
+    expect(replayedOutput).toContain("rerun a narrower command if needed");
     expect(replayedOutput).toContain("omitted");
-    expect(replayedOutput.length).toBeLessThan(230);
+    expect(replayedOutput.length).toBeLessThan(330);
     expect(replayedOutput).not.toContain("A".repeat(250));
   });
 
@@ -1567,8 +1568,9 @@ max_tool_output_chars = 180
     const replayedOutput = messages(provider.requests[2].body).at(-1)?.content ?? "";
     expect(stdout).toContain("parent done");
     expect(replayedOutput).toContain("smith truncated tool output");
+    expect(replayedOutput).toContain("rerun a narrower command if needed");
     expect(replayedOutput).toContain("omitted");
-    expect(replayedOutput.length).toBeLessThan(230);
+    expect(replayedOutput.length).toBeLessThan(330);
     expect(replayedOutput).not.toContain("B".repeat(250));
   });
 

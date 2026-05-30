@@ -24,7 +24,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - `.smith-bench` grows quickly because many targeted runs keep full sandboxes, traces, and result artifacts. Periodically check its size with `du -sh .smith-bench` and the retained run count with `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l`.
 - After each useful failure has its command, log path, trace path, sandbox id, and relevant evidence copied into this summary/worklog, prune stale `.smith-bench/run-*` sandboxes that are no longer needed for diagnosis. Keep the raw result JSONs and any sandboxes that still contain unresolved evidence.
 - Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
-- 2026-05-29 note: after pruning stale retained sandboxes, `.smith-bench` is about `6.1G` with `6` retained `run-*` directories. Preserved current/recent evidence: `run-jZiXQQ`, `run-Gn7PlH`, `run-6goAJU`, `run-1zl86m`, `run-TA29B0`, and `run-SEpBif`.
+- 2026-05-30 note: after the latest targeted runs, `.smith-bench` is about `7.3G` with `8` retained `run-*` directories. Preserved current/recent evidence: `run-JvD7C8`, `run-vvBMuM`, `run-jZiXQQ`, `run-Gn7PlH`, `run-6goAJU`, `run-1zl86m`, `run-TA29B0`, and `run-SEpBif`.
 
 ## 2026-05-29 Milestone: Require External Blockers For Incomplete Requirement Finishes
 
@@ -182,6 +182,38 @@ Decision:
 - Keep the change because it is a generic loop-control fix with focused regression coverage, full integration coverage, build validation, and representative project benchmark validation.
 - Do not count `010` as recovered. Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Cleanup note: `.smith-bench` is now about `21G` with `25` retained `run-*` directories. Preserve `run-Gn7PlH` and `run-jZiXQQ` for this milestone, plus unresolved recent evidence runs, then prune stale older sandboxes before more expensive reruns.
+
+## 2026-05-30 Milestone: Clarify Truncated Tool Output
+
+Problem found:
+
+- Target `010` used broad searches that produced truncated output. The old marker said only that Smith was showing head and tail, which can hide relevant lines in the omitted middle.
+- This is generic: when tool output is truncated, Smith should treat it as incomplete evidence and rerun a narrower command when the omitted middle may matter.
+
+Change:
+
+- Updated the generic truncation marker in `src/loop.ts` to say omitted content may contain relevant lines and to rerun a narrower command if needed.
+- Updated existing run-output and sub-agent-output truncation tests to assert the narrower-command cue.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "truncates oversized"`: passed `2` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `70` tests.
+- Project benchmark `benchmarks/091-command-router-refactor`: passed in `205366ms`, log `/tmp/smith/2026-05-30T06-56-14-491Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-vvBMuM/home/.smith/runs/2026-05-30T06-52-49-587Z.trace`.
+
+Target evidence:
+
+- Target `010` failed by Docker timeout after `906564ms`, log `/tmp/smith/2026-05-30T07-11-32-587Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-JvD7C8/home/.smith/runs/2026-05-30T06-56-26-790Z.trace`.
+- Trace search found the new `rerun a narrower command if needed` truncation cue.
+- Retained workspace had `scanner/alpine.go` modified and `SMITH.TASK.md` created; retained diff was `270` changed lines in `scanner/alpine.go`.
+- The run still timed out. The final validation commands timed out after `20s` with `^C`, so no passing verifier evidence exists.
+
+Decision:
+
+- Keep the change because it is a small generic evidence-quality improvement covered by tests and representative benchmark validation.
+- Do not count `010` as recovered. Current strict evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Cleanup note: `.smith-bench` is now about `7.3G` with `8` retained `run-*` directories after the latest local and target runs.
 
 ## 2026-05-23 Milestone: Bounded SWE Docker Timeouts
 

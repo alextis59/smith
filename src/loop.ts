@@ -1895,7 +1895,7 @@ function formatTerminalOutput(output: string, exitCode: number | undefined): str
 
 function limitToolOutput(output: string, maxChars: number): string {
   if (maxChars <= 0 || output.length <= maxChars) return output;
-  const marker = `[smith truncated tool output: ${output.length} chars exceeded max_tool_output_chars=${maxChars}; showing head and tail]`;
+  const marker = `[smith truncated tool output: ${output.length} chars exceeded max_tool_output_chars=${maxChars}; showing head and tail; omitted content may contain relevant lines, so rerun a narrower command if needed]`;
   const separator = (omitted: number) => `\n[... omitted ${omitted} chars ...]\n`;
   const overhead = marker.length + separator(0).length;
   const budget = Math.max(0, maxChars - overhead);
