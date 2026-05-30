@@ -3184,3 +3184,30 @@ Decision:
 - Keep the change because it is a generic runtime improvement for ordinary coding tasks: if Smith itself warns that a post-deadline patch changed declarations, a short caller/signature inspection is useful before final validation or final reporting.
 - Do not count `010` as recovered. Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `37G` after the latest retained runs. Preserve `run-jUDIdK`, `run-EQWVQD`, and the prior current evidence dirs before pruning stale sandboxes.
+
+## 2026-05-30 Honest Post-Deadline Partial Finish
+
+Change:
+
+- Allows an honest partial/pending-validation finish for explicit-requirement tasks once the configured max run time has elapsed and `run` is no longer available.
+- The finish is still rejected if it claims completion or successful validation; this only prevents endless `patch`/`finish` loops when validation cannot run anymore.
+- Added integration coverage for a post-deadline failed validation where the final answer reports a partial result and pending validation.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for honest partial explicit-requirement/unvalidated finish paths: passed `2` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `96` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `133613ms`, log `/tmp/smith/2026-05-30T22-01-50-756Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-LSDhek/home/.smith/runs/2026-05-30T21-59-37-491Z.trace`.
+
+Target evidence:
+
+- Target SWE rerun `010-future-architect-vuls`: reached verifier and failed in `963467ms`, log `/tmp/smith/2026-05-30T22-18-02-649Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-I2G7TZ/home/.smith/runs/2026-05-30T22-01-59-969Z.trace`.
+- This improved the failure mode from Docker timeout to external verifier evidence, but did not recover the task.
+- Verifier failed on missing restored-test-facing Alpine parser methods `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`, plus `TestIsOvalDefAffected` case `[85]` reporting `affected: true` and `fixedIn: 3.3.2-r0` instead of the expected unaffected result.
+
+Decision:
+
+- Keep the change because it is a generic runtime integrity improvement: Smith should not spin until an outer timeout when it can honestly report a partial/pending-validation state after its validation tool slot is exhausted.
+- Do not count `010` as recovered. Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `39G`; preserve `run-I2G7TZ`, `run-LSDhek`, and recent evidence dirs before pruning stale retained sandboxes.

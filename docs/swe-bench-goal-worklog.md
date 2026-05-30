@@ -12547,3 +12547,76 @@ Decision:
 - Do not count `010` as recovered; current strict evidence remains `6/10`.
 - The alternate `gpt-5.5` success path is noted, but current `LeaderBoard.md` has no Codex `gpt-5.5` high row to match.
 - `.smith-bench` is now about `37G`. Preserve `run-jUDIdK`, `run-EQWVQD`, and the prior current evidence dirs before cleanup.
+
+## 2026-05-30 Worklog: Honest Post-Deadline Partial Finish
+
+Context:
+
+- The prior `010` run still timed out after repeated finish rejections once tools narrowed to `patch` and `finish`.
+- This was a generic runtime issue: after the configured deadline, Smith may no longer have a runnable validation slot, but the explicit-requirements finish guard still rejected honest partial/pending-validation reports because `patch` remained available.
+- The goal is not to mark incomplete work complete. The goal is to avoid wasting the outer benchmark timeout when Smith can truthfully hand back a partial result for external verification or user review.
+
+Implementation:
+
+- `src/loop.ts`: added `isPostDeadlinePatchOnlyPartialFinish`.
+- `shouldRejectIncompleteRequirementsFinish` now allows a partial/pending-validation finish only when:
+  - the configured max run time has elapsed;
+  - `run` is not available;
+  - `patch` is still available;
+  - the finish does not claim completion;
+  - the finish does not claim successful validation;
+  - the finish explicitly acknowledges pending validation, a blocker, partial, or incomplete state.
+- `tests/integration.test.ts`: added coverage for a failed post-deadline validation where the final answer is partial and pending-validation, not complete.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "honest partial explicit-requirement|incomplete requirements|unvalidated patch finish|post-deadline run is unavailable"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused selector: passed `2` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `96` tests in `35724ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor`: passed in `133613ms`.
+- Log: `/tmp/smith/2026-05-30T22-01-50-756Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-LSDhek/home/.smith/runs/2026-05-30T21-59-37-491Z.trace`.
+- Sandbox: `.smith-bench/run-LSDhek`.
+
+Target rerun:
+
+- `010-future-architect-vuls`: reached external verifier and failed in `963467ms`.
+- Log: `/tmp/smith/2026-05-30T22-18-02-649Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-I2G7TZ/home/.smith/runs/2026-05-30T22-01-59-969Z.trace`.
+- Sandbox: `.smith-bench/run-I2G7TZ`.
+- Smith stdout included a finish after `53` turns claiming Alpine source/binary handling implemented and compatibility preserved. The external verifier then ran selected tests.
+- Retained sandbox status:
+  - `scanner/alpine.go` modified.
+  - `oval/util_test.go` and `scanner/alpine_test.go` modified/staged by verifier/restored-test state.
+  - Source diff stat: `scanner/alpine.go | 137 ++++++++++++++++++++++++++++++++++++++++++++----------`.
+
+Verifier failures:
+
+- Scanner build failed against restored selected tests:
+  - `(newAlpine(config.ServerInfo{})).parseApkInstalledList undefined`.
+  - `(newAlpine(config.ServerInfo{})).parseApkIndex undefined`.
+  - `(newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined`.
+- `oval` failed:
+  - `TestIsOvalDefAffected` case `[85]` expected `affected: false`, got `true`.
+  - case `[85]` expected empty `fixedIn`, got `3.3.2-r0`.
+- Missing/failed selected tests included `Test_alpine_parseApkInstalledList`, `Test_alpine_parseApkIndex`, and `Test_alpine_parseApkUpgradableList` variants.
+
+Decision:
+
+- Keep the change because it improves generic runtime behavior from timeout-loop to honest finish/verifier evidence without accepting completion claims.
+- Do not count `010` as recovered. Strict evidence remains `6/10`.
+- Do not continue grinding `010` unless a fresh generic Smith issue appears. The current verifier failures are now concrete task implementation misses, not a Smith runtime blocker.
+- `.smith-bench` is about `39G`. Preserve `run-I2G7TZ`, `run-LSDhek`, and recent evidence dirs before cleanup.

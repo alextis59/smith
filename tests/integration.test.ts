@@ -4837,6 +4837,66 @@ max_run_ms = 1
     expect(userMessages(provider.requests[1].body)).not.toContain("Finish rejected: run is currently available");
   });
 
+  it("allows honest partial explicit-requirement finishes after post-deadline run is unavailable", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent", timeout_ms: 5000 } },
+      {
+        name: "finish",
+        arguments: {
+          message:
+            "Partial result: the source patch is in place, but validation remains pending because the post-deadline validation run failed and no run tool remains available."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-post-deadline-partial-explicit-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "printf failed; exit 1" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "Change note.txt and validate it."], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Partial result");
+    expect(stdout).toContain("validation remains pending");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[2].body)).toContain("Validation failed: any pending task patch is not validated");
+    expect(userMessages(provider.requests[2].body)).not.toContain("Finish rejected: the prompt has explicit requirements");
+  });
+
   it("allows read-only finish claims when transcript evidence supports them", async () => {
     const provider = await startFakeProvider([
       {

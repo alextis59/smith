@@ -1681,9 +1681,22 @@ function shouldRejectIncompleteRequirementsFinish(
   if (!promptHasExplicitRequirements(context.options.prompt)) return false;
   if (!availableToolNames.some((toolName) => toolName === "run" || toolName === "patch")) return false;
   if (!finishReportsIncompleteRequirements(message)) return false;
+  if (isPostDeadlinePatchOnlyPartialFinish(message, context, availableToolNames)) return false;
   if (finishReportsConcreteBlocker(message)) return false;
   if (finishReportsPatchContextOrTimeBlocker(message) && transcriptHasPatchContextFailure(context.transcript)) return false;
   return true;
+}
+
+function isPostDeadlinePatchOnlyPartialFinish(
+  message: string,
+  context: ToolCallContext,
+  availableToolNames: string[]
+): boolean {
+  if (!context.toolAvailabilityState.deadlineFinalizationReason) return false;
+  if (availableToolNames.includes("run")) return false;
+  if (!availableToolNames.includes("patch")) return false;
+  if (finishClaimsComplete(message) || finishClaimsValidationSuccess(message)) return false;
+  return finishAcknowledgesPendingValidation(message);
 }
 
 function shouldRejectSelfImposedApprovalBlockerFinish(
