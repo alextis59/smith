@@ -547,14 +547,14 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: a read-only test/spec patch failed, but the user did not explicitly ask to edit tests. Treat read-only tests/specs as existing behavior to satisfy through source changes, or finish with the actual non-test blocker."
       );
     }
-    if (shouldRejectUnsupportedValidationUnavailableFinish(message, availableToolNames)) {
+    if (shouldRejectUnsupportedValidationUnavailableFinish(message, parentContext, availableToolNames)) {
       return appendToolObservation(
         parentContext,
         callId,
         "Finish rejected: run is currently available. Do not claim validation is impossible because only patch/finish or no run tool is available. Run a relevant validation command, or finish with the actual blocker."
       );
     }
-    if (shouldRejectActionableInspectionBlockerFinish(message, availableToolNames)) {
+    if (shouldRejectActionableInspectionBlockerFinish(message, parentContext, availableToolNames)) {
       return appendToolObservation(
         parentContext,
         callId,
@@ -1354,25 +1354,49 @@ function promptExplicitlyRequestsTestEdits(prompt: string): boolean {
   );
 }
 
-function shouldRejectUnsupportedValidationUnavailableFinish(message: string, availableToolNames: string[]): boolean {
-  if (!availableToolNames.includes("run")) return false;
+function shouldRejectUnsupportedValidationUnavailableFinish(
+  message: string,
+  context: ToolCallContext,
+  availableToolNames: string[]
+): boolean {
+  if (!runAcceptsValidation(context, availableToolNames)) return false;
   if (!/\b(?:validat\w*|test|build|lint|typecheck|check|verify)\b/i.test(message)) return false;
   if (!/\b(?:not able|unable|cannot|can't|could not|couldn't|wasn'?t able|blocked|impossible)\b/i.test(message)) {
     return false;
   }
   return /\b(?:only\s+(?:patch\s*(?:\/|,|\s+and\s+)\s*finish|finish\s*(?:\/|,|\s+and\s+)\s*patch)|no\s+(?:(?:inspection\s*\/\s*)?validation|run)\s+tools?|run\s+(?:is\s+)?unavailable|no further tool)\b/i.test(
     message
-  ) || /\b(?:validation|test|build|lint|typecheck|check|verify)\s+(?:commands?|tooling)\s+(?:were|are|is|was)?\s*unavailable\b/i.test(message);
+  ) || /\b(?:validation|test|build|lint|typecheck|check|verify)\s+(?:commands?|tooling)\s+(?:were|are|is|was)?\s*unavailable\b/i.test(
+    message
+  ) || /\b(?:tool access|tools?|(?:inspection\s*\/\s*)?validation\s+steps?|(?:inspection\s*\/\s*)?validation\s+tools?)\b[\s\S]{0,240}\b(?:unavailable|not available|no longer available|not currently available|disabled|exhausted)\b/i.test(
+    message
+  );
 }
 
-function shouldRejectActionableInspectionBlockerFinish(message: string, availableToolNames: string[]): boolean {
-  if (!availableToolNames.includes("run")) return false;
+function shouldRejectActionableInspectionBlockerFinish(
+  message: string,
+  context: ToolCallContext,
+  availableToolNames: string[]
+): boolean {
+  if (!runAcceptsInspection(context, availableToolNames)) return false;
   if (!/\b(?:need|needs|needed|must|should|would need|blocked)\b[\s\S]{0,160}\b(?:inspect|diagnose|read|check|look at|examine|review)\b/i.test(message)) {
     return false;
   }
   return /\b(?:failure|failed|failing|error|trace|log|file|script|test|before (?:I )?(?:can )?(?:safely )?(?:finish|complete|continue|proceed))\b/i.test(
     message
   );
+}
+
+function runAcceptsValidation(context: ToolCallContext, availableToolNames: string[]): boolean {
+  if (!availableToolNames.includes("run")) return false;
+  const availability = context.toolAvailabilityState;
+  return !availability.postDeadlineInspectionRunReason || Boolean(availability.postDeadlineValidationRunReason);
+}
+
+function runAcceptsInspection(context: ToolCallContext, availableToolNames: string[]): boolean {
+  if (!availableToolNames.includes("run")) return false;
+  const availability = context.toolAvailabilityState;
+  return !availability.postDeadlineValidationRunReason || Boolean(availability.postDeadlineInspectionRunReason);
 }
 
 function shouldRejectNoOpValidationClaimFinish(message: string, context: ToolCallContext): boolean {

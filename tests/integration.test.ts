@@ -3724,6 +3724,52 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).toContain("checked");
   });
 
+  it("rejects unavailable tool-access finish claims when run is available", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "finish",
+        arguments: {
+          message:
+            "Blocked: tool access for the inspection/validation steps needed to safely complete and verify the change is no longer available."
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "validated" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-tool-access-unavailable-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "printf checked" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "run validation"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("validated");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[1].body)).toContain("Finish rejected: run is currently available");
+    expect(userMessages(provider.requests[2].body)).toContain("checked");
+  });
+
   it("rejects actionable inspection blockers when run is available", async () => {
     const provider = await startFakeProvider([
       {
@@ -3766,6 +3812,63 @@ max_turns = 30
     expect(provider.requests).toHaveLength(3);
     expect(userMessages(provider.requests[1].body)).toContain("Finish rejected: run is currently available");
     expect(userMessages(provider.requests[2].body)).toContain("inspected");
+  });
+
+  it("allows inspection blockers when the post-deadline run slot only accepts validation", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message:
+            "Blocked: validation remains pending, but I need to inspect the syntax error before I can safely repair it."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-validation-slot-inspection-blocker-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch near deadline"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("validation remains pending");
+    expect(provider.requests).toHaveLength(2);
+    expect(systemMessage(provider.requests[1].body)).toContain("one bounded validation command");
+    expect(userMessages(provider.requests[1].body)).not.toContain("Finish rejected: run is currently available");
   });
 
   it("allows read-only finish claims when transcript evidence supports them", async () => {

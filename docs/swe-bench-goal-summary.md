@@ -2836,3 +2836,26 @@ Decision:
 - Do not count `005` as recovered. The run shifted from an inaccurate "no files changed" style failure to an explicit partial implementation/blocker, but the verifier still failed because `lib/kube/proxy/forwarder_test.go` referenced `Forwarder.cfg` and `Forwarder.clientCredentials` that the source did not provide.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `12G` after this validation. Clean stale retained sandboxes soon, preserving the latest current evidence before deletion.
+
+## 2026-05-30 Run-Slot-Aware Finish Guards
+
+Change:
+
+- Tightened generic finish rejection when Smith claims validation or tool access is unavailable while `run` can still execute a relevant command.
+- Made the inspection and validation finish guards aware of post-deadline run-slot mode: a validation-only run slot no longer causes Smith to reject an inspection-needed blocker by telling itself to run an inspection command that the runtime will reject, and vice versa.
+- Added integration coverage for unavailable tool-access finish claims and for inspection blockers when the post-deadline run slot only accepts validation.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "tool-access finish claims|validation-unavailable finish claims|inspection-validation unavailable|actionable inspection blockers|post-deadline run slot"`: passed `5` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `80` tests.
+- Representative project benchmark `091-command-router-refactor`: first run failed by `max_turns` in `287073ms`, log `/tmp/smith/2026-05-30T14-19-31-571Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-2aPla4/home/.smith/runs/2026-05-30T14-14-44-728Z.trace`; rerun passed in `177240ms`, log `/tmp/smith/2026-05-30T14-22-50-218Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-42VCID/home/.smith/runs/2026-05-30T14-19-53-309Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed by outer Docker timeout in `913015ms`, log `/tmp/smith/2026-05-30T14-39-23-092Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-YUMV3t/home/.smith/runs/2026-05-30T14-24-17-863Z.trace`.
+
+Decision:
+
+- Keep the change because the target trace shows the validation-unavailable finish guard fired, after which Smith ran a focused `go test ./lib/kube/proxy -run 'TestRequestCertificate|TestGetClusterSession|TestAuthenticate' -count=1` successfully instead of stopping on an inaccurate tool-access blocker.
+- Do not count `005` as recovered. Smith continued into incomplete follow-up work and the outer Docker run timed out; no verifier pass exists.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `16G` after these retained reruns. Cleanup is due before more long SWE runs, preserving only the latest evidence sandboxes needed for current decisions.

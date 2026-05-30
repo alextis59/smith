@@ -11475,3 +11475,82 @@ Decision:
 - Do not count `005` as recovered. Strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Next generic direction: stronger propagation from child changes into parent validation state may still be needed, especially if unrequested test edits are left by a sub-agent. Any future change must remain general and apply to normal user tasks.
 - Maintenance note: `.smith-bench` is about `12G` after this validation. Prune stale retained sandboxes soon after preserving current evidence runs such as `run-qWpZdH`, `run-6inovy`, `run-trsSFJ`, `run-bbwPc4`, and `run-kG8O37`.
+
+## 2026-05-30 Worklog: Run-Slot-Aware Finish Guards
+
+Hypothesis:
+
+- The latest `005` traces showed Smith sometimes claimed validation or tool access was unavailable while `run` was still exposed for a bounded validation command.
+- A follow-up trace also showed the opposite mismatch: a finish blocker needing inspection was rejected because `run` was nominally available, but the run tool then refused the inspection command because the only post-deadline slot was reserved for validation.
+- This is a generic runtime-state issue. Finish guards should reason about what kind of command the currently exposed run slot accepts, not just whether the tool name is visible.
+
+Implementation:
+
+- Broadened the generic unsupported-validation-unavailable finish guard to catch claims such as tool access for inspection/validation steps being no longer available when a relevant run slot still exists.
+- Added `runAcceptsValidation()` and `runAcceptsInspection()` helpers.
+- `shouldRejectUnsupportedValidationUnavailableFinish()` now rejects only when run can actually accept validation.
+- `shouldRejectActionableInspectionBlockerFinish()` now rejects only when run can actually accept inspection.
+- Added integration tests:
+  - `rejects unavailable tool-access finish claims when run is available`
+  - `allows inspection blockers when the post-deadline run slot only accepts validation`
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "tool-access finish claims|validation-unavailable finish claims|inspection-validation unavailable|actionable inspection blockers|post-deadline run slot"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed repo validation:
+
+- `npm run build`: passed.
+- Focused integration selector: passed `5` selected tests.
+- Full integration file: passed `80` tests in `32077ms`.
+
+Representative project validation:
+
+- First `091-command-router-refactor` attempt failed by `max_turns` after `287073ms`.
+  - Log: `/tmp/smith/2026-05-30T14-19-31-571Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-2aPla4/home/.smith/runs/2026-05-30T14-14-44-728Z.trace`.
+  - Classification: bad no-finish trajectory, not a verifier failure.
+- Rerun passed in `177240ms`.
+  - Log: `/tmp/smith/2026-05-30T14-22-50-218Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-42VCID/home/.smith/runs/2026-05-30T14-19-53-309Z.trace`.
+
+Target reruns:
+
+- Intermediate `005` after the tool-access phrase guard but before run-slot mode awareness failed by outer Docker timeout after `913652ms`.
+  - Log: `/tmp/smith/2026-05-30T14-11-48-488Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-Lazl3o/home/.smith/runs/2026-05-30T13-56-43-128Z.trace`.
+  - Evidence: Smith rejected a blocker that said inspection was needed, then the run tool rejected the inspection command because the post-deadline slot was reserved for validation. This motivated the run-slot mode fix.
+- Final `005` after the mode-aware guard failed by outer Docker timeout after `913015ms`.
+  - Log: `/tmp/smith/2026-05-30T14-39-23-092Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-YUMV3t/home/.smith/runs/2026-05-30T14-24-17-863Z.trace`.
+
+Trace evidence:
+
+- The final target trace rejected an inaccurate unavailable-validation finish:
+
+```text
+Finish rejected: run is currently available. Do not claim validation is impossible because only patch/finish or no run tool is available.
+```
+
+- Smith then ran:
+
+```sh
+go test ./lib/kube/proxy -run 'TestRequestCertificate|TestGetClusterSession|TestAuthenticate' -count=1
+```
+
+- That focused command passed, with Smith warning that it was narrow validation.
+- Smith later continued into incomplete follow-up edits and the outer Docker benchmark timed out before verifier evidence.
+- Retained workspace `.smith-bench/run-YUMV3t` ended with `lib/kube/proxy/forwarder.go` modified.
+
+Decision:
+
+- Keep the change because it fixes a real generic mismatch between finish-guard reasoning and run-slot availability.
+- Do not count `005` as recovered. No verifier pass exists and strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Next generic direction: target `005` is still spending too much late time after partial/narrow validation and broad unfinished requirements. Consider a generic way to accept truthful partial blockers earlier when only implementation work remains and the run is already past deadline, without allowing false completion claims.
+- Maintenance note: `.smith-bench` is about `16G` after these retained runs. Cleanup is due before more long target runs; preserve `run-YUMV3t`, `run-42VCID`, and other current evidence before pruning stale sandboxes.
