@@ -11869,3 +11869,65 @@ Decision:
 - Strict current evidence remains `6/10`; no full SWE-bench Pro run.
 - Next direction: move to another Codex-passed unrecovered task or find a stronger generic finish/validation behavior. The current `005` failure may need better generic handling of "approval for breaking API" blockers, but avoid task-specific or SWE-specific prompting.
 - Maintenance note: `.smith-bench` is about `19G` with `21` retained `run-*` directories. Preserve current evidence (`run-nnfGIf`, `run-HHKi3P`, `run-UeB6Zv`, `run-61fJqu`) and prune stale retained sandboxes before another sequence of long target runs.
+
+## 2026-05-30 Worklog: Dirty Test Validation-Success Finish Guard
+
+Context:
+
+- Fresh `010-future-architect-vuls` diagnostic before this change failed at verifier after Smith reported validation success from local checks.
+- The retained sandbox `.smith-bench/run-74nhKJ` showed staged or modified test files (`oval/util_test.go`, `scanner/alpine_test.go`) plus a source edit (`scanner/alpine.go`).
+- The final answer was a partial/blocker report but still said validation passed. Existing dirty-test finish handling allowed it because the message also acknowledged incomplete work.
+
+Hypothesis:
+
+- A generic finish guard should reject validation-success claims whenever unrequested test files are dirty, even if the final answer is framed as partial or blocked.
+- This should reduce misleading "validated" reports for normal user tasks where Smith edited tests without being asked, without adding benchmark-specific instructions.
+
+Implementation:
+
+- Added an early `dirtyUnrequestedTestFiles` finish check in `src/loop.ts`:
+  - If unrequested test files are dirty and the finish message claims validation success, reject the finish.
+  - The rejection asks Smith to restore unrelated test edits, preserve compatibility with existing tests, or report validation as pending/not fully verified.
+- Narrowed the older dirty-test completion guard back to completion claims, since validation-success claims now have a stricter unconditional path.
+- Added integration coverage for a partial/blocker finish that says validation passed while `tests/new.test.js` is dirty.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "validation-success partial finishes|completion finishes while unrequested test files are dirty|source validation runs with modified"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- First focused selector failed when run in parallel with `npm run build`, because the CLI integration used stale `dist`. After rebuilding, the same selector passed `3` selected tests.
+- Full integration file: passed `86` tests in `34766ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed:
+  - Duration: `136106ms`.
+  - Log: `/tmp/smith/2026-05-30T17-45-25-077Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-75tIvv/home/.smith/runs/2026-05-30T17-43-09-464Z.trace`.
+
+Target rerun:
+
+- `010-future-architect-vuls` failed by outer Docker timeout:
+  - Duration: `906208ms`.
+  - Log: `/tmp/smith/2026-05-30T18-00-38-397Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-CcFNvW/home/.smith/runs/2026-05-30T17-45-33-142Z.trace`.
+  - Sandbox: `.smith-bench/run-CcFNvW`.
+  - Retained sandbox status: `scanner/alpine.go` modified; `SMITH.TASK.md` and `SMITH.md` untracked; no dirty test files.
+  - Trace evidence: Smith hit post-deadline validation/finish restrictions and repeated finish rejections. The new dirty-test validation-success guard was not the deciding path for this rerun.
+
+Decision:
+
+- Keep the change because it is a general validation-integrity improvement with focused integration coverage and representative task validation.
+- Do not count `010` as recovered; no verifier evidence was produced.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Next direction: avoid over-investing in `010` unless a stronger generic runtime improvement is identified. Prioritize Codex-passed unrecovered tasks and generic failure classes.
+- Maintenance note: `.smith-bench` is about `21G`. Before more long SWE reruns, think about cleaning stale retained sandboxes from time to time so this folder does not grow by several GB. Preserve current evidence directories such as `run-CcFNvW`, `run-75tIvv`, `run-nnfGIf`, and `run-HHKi3P` until their traces/logs are no longer needed.

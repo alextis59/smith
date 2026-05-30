@@ -2959,3 +2959,26 @@ Decision:
 - Do not count `005` as recovered. The latest target rerun still failed verifier with the same missing `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility errors.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `19G` with `21` retained `run-*` directories. Cleanup should happen before more long target runs; preserve latest evidence (`run-nnfGIf`, `run-HHKi3P`, `run-UeB6Zv`, `run-61fJqu`) and prune stale sandboxes.
+
+## 2026-05-30 Dirty Test Validation-Success Finish Guard
+
+Change:
+
+- Tightened generic finish handling so Smith rejects validation-success finish reports when unrequested test files are modified or untracked.
+- This applies even to partial/blocker-style finishes, because local validation can be misleading when it ran against edited tests the user did not ask Smith to change.
+- Left ordinary pending-validation blocker reports available when they do not claim validation success.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for dirty-test validation-success, dirty-test completion, and source validation with modified tests: passed `3` selected tests after rebuilding.
+- `npm test -- tests/integration.test.ts`: passed `86` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `136106ms`, log `/tmp/smith/2026-05-30T17-45-25-077Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-75tIvv/home/.smith/runs/2026-05-30T17-43-09-464Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: failed by outer Docker timeout in `906208ms`, log `/tmp/smith/2026-05-30T18-00-38-397Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-CcFNvW/home/.smith/runs/2026-05-30T17-45-33-142Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic validation-integrity guard for ordinary Smith tasks.
+- Do not count `010` as recovered. The latest rerun timed out without verifier output. Trace evidence shows the new dirty-test guard was not the deciding path this time: the retained sandbox had only `scanner/alpine.go` modified plus Smith memory files, and the run got stuck after post-deadline validation/finish restrictions.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `21G`. Before additional long SWE reruns, think about pruning stale retained sandboxes so this folder does not grow by several GB per iteration. Preserve current evidence runs such as `run-CcFNvW`, `run-75tIvv`, `run-nnfGIf`, and `run-HHKi3P` until their data is no longer needed.

@@ -577,9 +577,16 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
     }
     const dirtyFinishTestFiles = await dirtyUnrequestedTestFiles(parentContext);
     const dirtyFinishChangedTestFiles = await dirtyTestFiles(parentContext);
+    if (dirtyFinishTestFiles.length > 0 && finishClaimsValidationSuccess(message)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        `Finish rejected: test files are currently modified or untracked (${formatChangedFiles(dirtyFinishTestFiles)}), but the user did not explicitly ask to edit tests and the finish message claims validation success. Restore unrelated test edits, preserve compatibility with existing tests, or report validation as pending/not fully verified because local results may include edited tests.`
+      );
+    }
     if (
       dirtyFinishTestFiles.length > 0 &&
-      (finishClaimsComplete(message) || finishClaimsValidationSuccess(message)) &&
+      finishClaimsComplete(message) &&
       !finishAcknowledgesPendingValidation(message)
     ) {
       return appendToolObservation(
