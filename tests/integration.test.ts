@@ -3777,6 +3777,186 @@ max_turns = 30
     );
   });
 
+  it("allows completion after a source patch validates a prior read-only test patch failure", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: tests/readonly.test.js",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/app.js",
+            "@@",
+            "-module.exports = () => 'old';",
+            "+module.exports = () => 'new';",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent" } },
+      {
+        name: "finish",
+        arguments: {
+          message: "Implemented and validated the source fix with the existing test suite."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-readonly-test-cleared-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "src", "app.js"), "module.exports = () => 'old';\n", "utf8");
+    writeFileSync(join(cwd, "tests", "readonly.test.js"), "old\n", "utf8");
+    chmodSync(join(cwd, "tests", "readonly.test.js"), 0o444);
+    writeFileSync(
+      join(cwd, "test.js"),
+      "if (require('./src/app')() !== 'new') process.exit(1);\nprocess.stdout.write('validated');\n",
+      "utf8"
+    );
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node test.js" } }), "utf8");
+    await execFileAsync("git", ["init"], { cwd });
+    await execFileAsync("git", ["add", "."], { cwd });
+    await execFileAsync("git", ["-c", "user.name=Smith Test", "-c", "user.email=smith@example.test", "commit", "-m", "init"], {
+      cwd
+    });
+    chmodSync(join(cwd, "tests", "readonly.test.js"), 0o444);
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "fix source compatibility"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Implemented and validated");
+    expect(readFileSync(join(cwd, "src", "app.js"), "utf8")).toBe("module.exports = () => 'new';\n");
+    expect(provider.requests).toHaveLength(4);
+    expect(userMessages(provider.requests[1].body)).toContain("The unwritable path appears to be a test or spec file");
+    expect(userMessages(provider.requests[3].body)).toContain("validated");
+    expect(userMessages(provider.requests[3].body)).not.toContain("Finish rejected: a read-only test/spec patch failed");
+  });
+
+  it("lets pending-validation guard handle narrow validation after a read-only test patch failure", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: tests/readonly.test.js",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/app.js",
+            "@@",
+            "-module.exports = () => 'old';",
+            "+module.exports = () => 'new';",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent -- --grep source" } },
+      {
+        name: "finish",
+        arguments: {
+          message: "Implemented and validated the source fix with the selected tests."
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Partial result: the source fix is in place, but broader validation remains pending."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-readonly-test-narrow-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "src", "app.js"), "module.exports = () => 'old';\n", "utf8");
+    writeFileSync(join(cwd, "tests", "readonly.test.js"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, "test.js"),
+      "if (require('./src/app')() !== 'new') process.exit(1);\nprocess.stdout.write('selected validation');\n",
+      "utf8"
+    );
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node test.js" } }), "utf8");
+    await execFileAsync("git", ["init"], { cwd });
+    await execFileAsync("git", ["add", "."], { cwd });
+    await execFileAsync("git", ["-c", "user.name=Smith Test", "-c", "user.email=smith@example.test", "commit", "-m", "init"], {
+      cwd
+    });
+    chmodSync(join(cwd, "tests", "readonly.test.js"), 0o444);
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "fix source compatibility"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("broader validation remains pending");
+    expect(provider.requests).toHaveLength(5);
+    expect(userMessages(provider.requests[4].body)).toContain("selected validation");
+    expect(userMessages(provider.requests[4].body)).toContain("Finish rejected: a task patch is still not validated as complete");
+    expect(userMessages(provider.requests[4].body)).not.toContain("Finish rejected: a read-only test/spec patch failed");
+  });
+
   it("remote prints only first finish message to stdout and supports resume", async () => {
     const provider = await startFakeProvider([
       { name: "finish", arguments: { message: "need info" } },

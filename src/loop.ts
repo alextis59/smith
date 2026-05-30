@@ -175,6 +175,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let unvalidatedTaskPatch = false;
   let pendingValidationFiles = new Set<string>();
   let noOpValidationSinceLastCheck = false;
+  let unresolvedReadOnlyTestPatchFailure = false;
   const runStartedAt = Date.now();
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
   const providerDebugJson =
@@ -321,7 +322,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             toolAvailabilityState,
             unvalidatedTaskPatch,
             pendingValidationFiles: [...pendingValidationFiles],
-            noOpValidationSinceLastCheck
+            noOpValidationSinceLastCheck,
+            unresolvedReadOnlyTestPatchFailure
           });
           totalUsage = action.totalUsage;
           transcript = action.transcript;
@@ -329,6 +331,10 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           nextResponsesInputItems = action.responsesInputItems;
           nextPendingOutput = [nextPendingOutput, action.toolOutput].filter(Boolean).join("\n");
           const madeTaskPatch = action.changedFiles !== undefined && !changedFilesAreOnlySmithMemory(action.changedFiles);
+          const hadUnvalidatedTaskPatch = unvalidatedTaskPatch;
+          if (action.readOnlyTestPatchFailed) {
+            unresolvedReadOnlyTestPatchFailure = true;
+          }
           if (madeTaskPatch && subAgentTurnLimitFailures < 2) {
             unsafeRunEditRejectionsSincePatch = 0;
             toolAvailabilityState = availabilityAfterTaskPatch(retainPersistentToolAvailability(toolAvailabilityState));
@@ -378,6 +384,9 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           } else if (action.validationRunExecuted) {
             unvalidatedTaskPatch = false;
             pendingValidationFiles = new Set();
+            if (hadUnvalidatedTaskPatch) unresolvedReadOnlyTestPatchFailure = false;
+          } else if (action.sourcePatchValidationEvidence && hadUnvalidatedTaskPatch) {
+            unresolvedReadOnlyTestPatchFailure = false;
           }
           if (action.noOpValidationRun) {
             noOpValidationSinceLastCheck = true;
@@ -457,6 +466,8 @@ type ToolActionResult = {
   noOpValidationRun?: boolean;
   nonNoOpValidationRun?: boolean;
   validationRunExecuted?: boolean;
+  sourcePatchValidationEvidence?: boolean;
+  readOnlyTestPatchFailed?: boolean;
 };
 
 type ToolCallContext = {
@@ -472,6 +483,7 @@ type ToolCallContext = {
   unvalidatedTaskPatch: boolean;
   pendingValidationFiles: string[];
   noOpValidationSinceLastCheck: boolean;
+  unresolvedReadOnlyTestPatchFailure: boolean;
 };
 
 async function handleToolCall(context: ToolCallContext): Promise<ToolActionResult> {
@@ -638,6 +650,7 @@ async function runPatchTool(
   let output: string;
   let changedFiles: string[] | undefined;
   let patchContextFailed = false;
+  let readOnlyTestPatchFailed = false;
   try {
     const result = applySmithPatch(patch, parentContext.options.cwd);
     changedFiles = result.changedFiles;
@@ -659,6 +672,7 @@ async function runPatchTool(
     }
   } catch (error) {
     patchContextFailed = isPatchContextMismatchError(error);
+    readOnlyTestPatchFailed = isReadOnlyTestPatchFailure(error);
     output = formatPatchFailure(error);
   }
   const transcript = appendTerminalTurn(parentContext.transcript, "patch", output);
@@ -673,7 +687,8 @@ async function runPatchTool(
     toolOutput: output,
     totalUsage,
     ...(changedFiles ? { changedFiles } : {}),
-    ...(patchContextFailed ? { patchContextFailed: true } : {})
+    ...(patchContextFailed ? { patchContextFailed: true } : {}),
+    ...(readOnlyTestPatchFailed ? { readOnlyTestPatchFailed: true } : {})
   };
 }
 
@@ -919,6 +934,14 @@ async function runShellCommandTool(
     !uncoveredValidation &&
     dirtyTestFiles.length > 0 &&
     !promptExplicitlyRequestsTestEdits(parentContext.options.prompt);
+  const sourcePatchValidationEvidence =
+    validationCommand &&
+    !noOpValidation &&
+    !failedValidation &&
+    !cachedValidation &&
+    !uncoveredValidation &&
+    !testModifiedValidation &&
+    !unrequestedTestModifiedValidation;
   let annotatedTerminalOutput = rawTerminalOutput;
   if (noOpValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command appears to have run no tests, so any pending task patch still needs a relevant validation command.`;
@@ -999,6 +1022,7 @@ async function runShellCommandTool(
     !unrequestedTestModifiedValidation
       ? { validationRunExecuted: true }
       : {}),
+    ...(sourcePatchValidationEvidence ? { sourcePatchValidationEvidence: true } : {}),
     ...(runChangedFiles.length > 0 ? { changedFiles: runChangedFiles } : {})
   };
 }
@@ -1252,7 +1276,7 @@ function shouldRejectCompletedReadOnlyTestPatchFinish(
   availableToolNames: string[]
 ): boolean {
   if (context.options.runtime.readOnly || !availableToolNames.includes("patch")) return false;
-  if (!transcriptHasReadOnlyTestPatchFailure(context.transcript)) return false;
+  if (!context.unresolvedReadOnlyTestPatchFailure) return false;
   if (finishAcknowledgesPendingValidation(message)) return false;
   return /\b(?:done|complete[sd]?|implemented|fixed|resolved|passes?|passing|validated|verified|compile[sd]?|builds?|works?)\b/i.test(
     message
@@ -1265,7 +1289,7 @@ function shouldRejectReadOnlyTestPatchBlockerFinish(
   availableToolNames: string[]
 ): boolean {
   if (context.options.runtime.readOnly || !availableToolNames.includes("patch")) return false;
-  if (!transcriptHasReadOnlyTestPatchFailure(context.transcript)) return false;
+  if (!context.unresolvedReadOnlyTestPatchFailure) return false;
   if (promptExplicitlyRequestsTestEdits(context.options.prompt)) return false;
   if (!/\b(?:read-only|readonly|not writable|permission denied|permission|EROFS)\b/i.test(message)) return false;
   if (!/\b(?:test|tests|spec|specs|_test|\.test|\.spec)\b/i.test(message)) return false;
@@ -1276,10 +1300,6 @@ function promptExplicitlyRequestsTestEdits(prompt: string): boolean {
   return /\b(?:add|write|create|update|modify|edit|change|fix|patch)\b[\s\S]{0,80}\b(?:tests?|specs?|test coverage|coverage)\b/i.test(
     prompt
   );
-}
-
-function transcriptHasReadOnlyTestPatchFailure(transcript: string): boolean {
-  return /The unwritable path appears to be a test or spec file/i.test(transcript);
 }
 
 function shouldRejectUnsupportedValidationUnavailableFinish(message: string, availableToolNames: string[]): boolean {
@@ -1436,6 +1456,11 @@ function formatPatchFailure(error: unknown): string {
       ? "Patch context did not match the current file. Before retrying, inspect the exact current lines and send a smaller patch anchored to that output."
     : "";
   return ["patch failed: " + message, guidance].filter(Boolean).join("\n");
+}
+
+function isReadOnlyTestPatchFailure(error: unknown): boolean {
+  const message = errorMessage(error);
+  return /\b(?:EACCES|EBUSY|EROFS|EPERM)\b|permission denied|read-only file system|resource busy or locked/i.test(message) && patchFailureMentionsLikelyTestPath(message);
 }
 
 function isPatchContextMismatchError(error: unknown): boolean {

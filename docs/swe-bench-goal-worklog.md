@@ -10929,3 +10929,73 @@ Decision:
 - Strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Next generic hypothesis: a read-only test/spec patch failure should not permanently block completion after later source-only changes and relevant passing validation. Investigate the guard in `src/loop.ts` without adding benchmark-specific wording or behavior.
 - Maintenance note: check `.smith-bench` size and retained `run-*` count after each committed milestone. Keep only evidence sandboxes needed for current diagnosis, then prune stale runs before the directory grows by several more GB.
+
+## 2026-05-30 Worklog: Clear Resolved Read-Only Test Patch Guard
+
+Hypothesis:
+
+- `010` showed a generic stale-state problem: after an early read-only test/spec patch failed, Smith later made source-only changes and got non-failing validation evidence, but every finish attempt remained blocked by the earlier read-only test/spec failure.
+- The guard was inferred from transcript text, so it could not distinguish an unresolved test-edit attempt from one that had been superseded by source compatibility work.
+- Desired generic behavior: keep the guard while no source validation evidence exists, but clear the read-only-test blocker after a later source patch receives non-failing validation evidence. Leave normal pending-validation checks to decide whether the validation was broad enough.
+
+Implementation:
+
+- Added explicit `unresolvedReadOnlyTestPatchFailure` state in `src/loop.ts`.
+- `runPatchTool()` now returns `readOnlyTestPatchFailed` when a non-writable patch failure mentions a likely test/spec path.
+- The run loop sets that state after such a failure.
+- The state clears after a later pending task patch gets:
+  - full validation via the existing `validationRunExecuted` path, or
+  - non-failing validation evidence that is not cached, uncovered, no-op, or polluted by modified/unrequested test files.
+- Narrow validation is allowed to clear only the read-only-test blocker; it does not clear `unvalidatedTaskPatch`, so overconfident completion still goes through the existing pending-validation guard.
+- Added tests:
+  - `allows completion after a source patch validates a prior read-only test patch failure`
+  - `lets pending-validation guard handle narrow validation after a read-only test patch failure`
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "read-only test"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed repo validation:
+
+- `npm run build`: passed.
+- Focused read-only-test selector after rebuild: passed `5` selected tests.
+- Full integration file: passed `73` tests in `27864ms`.
+
+Representative project validation:
+
+- First `091-command-router-refactor` attempt failed in `190462ms` from provider request timeout before verifier:
+  - Log: `/tmp/smith/2026-05-30T08-12-29-950Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-pHfcsJ/home/.smith/runs/2026-05-30T08-09-19-723Z.trace`.
+- Rerun passed in `187145ms`:
+  - Log: `/tmp/smith/2026-05-30T08-15-43-936Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-hKlpEQ/home/.smith/runs/2026-05-30T08-12-37-016Z.trace`.
+
+Target reruns:
+
+- Intermediate `010-future-architect-vuls` rerun with the first, stricter clear-only-on-full-validation version still timed out after `906149ms`:
+  - Log: `/tmp/smith/2026-05-30T08-06-22-978Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-pbVQuJ/home/.smith/runs/2026-05-30T07-51-17-583Z.trace`.
+  - Evidence: targeted `go test ./scanner -run 'TestParseApk|TestAlpine'` passed, but was marked narrow, so the read-only test/spec finish guard still rejected repeated finishes.
+- Final `010-future-architect-vuls` rerun after allowing narrow non-failing validation evidence to clear only the read-only-test blocker reached Smith finish and verifier:
+  - Failed verifier in `878784ms`.
+  - Log: `/tmp/smith/2026-05-30T08-30-44-298Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-qrHvTR/home/.smith/runs/2026-05-30T08-16-06-292Z.trace`.
+  - Smith output explicitly reported `broader project validation remains pending`.
+  - Verifier selected tests then failed with:
+    - missing Alpine parser helpers: `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`
+    - `TestIsOvalDefAffected` expected `affected: false` and empty `fixedIn`, but got `affected: true` and `fixedIn: 3.3.2-r0`
+  - Retained workspace diff: `scanner/alpine.go | 177 +++++++++++++++++++++++++++++++++++++++++++-----------`, `141 insertions(+), 36 deletions(-)`.
+
+Decision:
+
+- Keep the change because it fixes a generic stale-state completion failure while preserving the separate pending-validation guard.
+- Do not count `010` as recovered. The change improved outcome from timeout to verifier failure, but strict targeted evidence remains `6/10`.
+- No full SWE-bench Pro run.
+- Next high-value generic direction: investigate why Smith treated a selected scanner test pass as enough to finish with pending broader validation instead of using the available validation slot for broader package/project checks when verifier scope is likely wider. Keep any change generic and not tied to SWE task names.
+- Maintenance note: `.smith-bench` is about `12G` with `16` retained `run-*` directories. Before another long sequence, preserve current evidence (`run-hKlpEQ`, `run-pHfcsJ`, `run-pbVQuJ`, `run-qrHvTR`) plus any still-needed prior runs, then prune stale sandboxes.

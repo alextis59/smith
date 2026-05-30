@@ -2666,3 +2666,27 @@ Decision:
 - Do not count `010` as recovered. The target no longer died on short validation timeouts and a focused `go test` command passed, but Smith later timed out after finish rejections tied to an earlier read-only test/spec patch attempt.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: check `.smith-bench` size and retained `run-*` count after each committed milestone. Preserve only sandboxes needed for current evidence, then prune stale retained runs before the folder grows by several more GB.
+
+## 2026-05-30 Clear Resolved Read-Only Test Patch Guard
+
+Change:
+
+- Replaced the transcript-only read-only test/spec finish guard with explicit run state.
+- A read-only test/spec patch failure remains unresolved until Smith later applies a non-memory source patch and gets non-failing validation evidence for that pending patch.
+- Narrow validation can clear only the read-only-test blocker; the normal pending-validation guard still rejects overconfident completion claims until broader validation or an explicit pending-validation finish.
+- Added regression coverage for both the broad-validation completion path and the narrow-validation pending-validation path.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "read-only test"`: passed `5` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `73` tests.
+- Representative project benchmark `091-command-router-refactor`: first attempt failed due provider request timeout before verifier; rerun passed in `187145ms`, log `/tmp/smith/2026-05-30T08-15-43-936Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-hKlpEQ/home/.smith/runs/2026-05-30T08-12-37-016Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: reached Smith finish and the benchmark verifier instead of timing out. It failed verifier after `878784ms`, log `/tmp/smith/2026-05-30T08-30-44-298Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-qrHvTR/home/.smith/runs/2026-05-30T08-16-06-292Z.trace`.
+
+Decision:
+
+- Keep the change because it is generic completion-state behavior: an early failed attempt to edit an unwritable test/spec file should not permanently hide later source validation evidence.
+- Do not count `010` as recovered. The verifier ran and failed on missing Alpine parser helper methods plus an OVAL expectation failure; strict targeted evidence remains `6/10`.
+- Full SWE-bench Pro is still not justified.
+- `.smith-bench` is about `12G` with `16` retained `run-*` directories. Cleanup should happen after preserving the current evidence runs, especially `run-hKlpEQ`, `run-pHfcsJ`, `run-pbVQuJ`, and `run-qrHvTR`.
