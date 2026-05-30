@@ -2782,3 +2782,9 @@ Decision:
 - Do not count `010` as recovered. Verifier still failed on missing Alpine parser compatibility methods and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `13G`; cleanup is due before more long runs, preserving only current evidence sandboxes needed for decisions.
+
+Maintenance:
+
+- Pruned stale `.smith-bench/run-*` sandboxes after this milestone.
+- Preserved evidence runs: `run-Sn9qBP`, `run-FRxBg9`, `run-55NNLu`, `run-Tn9iHO`, `run-ZUFLnx`, `run-qrHvTR`, and `run-fsxY37`.
+- `.smith-bench` size after cleanup: `7.0G`.

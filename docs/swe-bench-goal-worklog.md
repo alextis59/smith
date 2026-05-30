@@ -11304,3 +11304,16 @@ Decision:
 - Strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Next generic direction: improve source-compatibility preservation when Smith changes or removes helper methods that tests/callers still use. Existing patch feedback already warns on signature changes; the issue may be that validation was too narrow or that compatibility wrappers were omitted despite the warning.
 - Maintenance note: `.smith-bench` is about `13G`; cleanup is due before more long benchmark runs. Preserve current evidence runs for `010` (`run-FRxBg9`, `run-Sn9qBP`) and latest representative validation (`run-55NNLu`) before pruning stale sandboxes.
+
+Cleanup:
+
+- Pruned stale `.smith-bench/run-*` sandboxes after committing `357c007`.
+- Preserved:
+  - `run-Sn9qBP`: post-change `010` verifier failure.
+  - `run-FRxBg9`: pre-change `010` Docker timeout / false blocker rejection loop.
+  - `run-55NNLu`: latest passing representative `091`.
+  - `run-Tn9iHO`: latest `005` verifier failure after paused patch-context recovery.
+  - `run-ZUFLnx`: prior `005` verifier failure after benchmark headroom.
+  - `run-qrHvTR`: prior `010` verifier failure after read-only-test guard fix.
+  - `run-fsxY37`: prior passing representative `091`.
+- `.smith-bench` size after cleanup: `7.0G`.
