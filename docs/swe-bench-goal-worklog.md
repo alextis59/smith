@@ -12002,3 +12002,69 @@ Decision:
 - Strict current evidence remains `6/10`; no full SWE-bench Pro run.
 - Next direction: move away from `010` unless using it for a clearly generic validation-integrity failure. The latest retained sandbox again shows modified tests, so future work may focus on preventing validation-success finishes after dirty test edits or on restoring unrequested test changes before finish.
 - Maintenance note: `.smith-bench` is about `23G`. Think about cleaning stale retained sandboxes before additional long SWE runs so the folder does not grow several GB more; preserve current evidence directories such as `run-Jy72K1`, `run-RCjiIk`, `run-CcFNvW`, and `run-75tIvv` until their traces are no longer needed.
+
+## 2026-05-30 Worklog: Changed-Test Validation Caveat Guard
+
+Context:
+
+- The latest `010` retained sandbox showed modified/staged test files after the run, while Smith still produced validation-success language.
+- The existing strict dirty-test validation guard only applied when the user did not request test edits.
+- For ordinary tasks, requested test edits are valid, but final validation reports should not imply a clean existing-test pass when validation ran with changed tests.
+
+Hypothesis:
+
+- When any test/spec file is dirty and the finish message claims validation success, Smith should either:
+  - restore tests and validate against the original test surface, or
+  - explicitly report that validation ran with changed tests.
+- This is a generic validation transparency rule, not a benchmark-specific instruction.
+
+Implementation:
+
+- Added `finishAcknowledgesChangedTestValidation()` to recognize explicit changed-test caveats.
+- Added a finish guard that rejects validation-success claims while `dirtyTestFiles()` is non-empty and the finish message lacks a changed-test caveat.
+- Kept the existing stricter unrequested-test guard first, so unrequested test edits still require restore/pending-validation behavior rather than a caveat-only final.
+- Added integration coverage where the prompt explicitly requests tests; the first validation-success finish without a caveat is rejected, and the next finish with a changed-test caveat is accepted.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "validation-success partial finishes|requested test files are dirty|completion finishes while unrequested test files are dirty|source validation runs with modified"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused integration selector: first failed because the new test had no validation command before a validation-success finish, so the existing unvalidated-patch guard correctly took precedence. After adding a real `npm test --silent` run to the fixture, the selector passed `5` selected tests.
+- Full integration file: passed `88` tests in `34092ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed:
+  - Duration: `189213ms`.
+  - Log: `/tmp/smith/2026-05-30T18-28-29-277Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-l50Jrb/home/.smith/runs/2026-05-30T18-25-20-434Z.trace`.
+
+Target rerun:
+
+- `010-future-architect-vuls` reached verifier and failed:
+  - Duration: `947083ms`.
+  - Log: `/tmp/smith/2026-05-30T18-44-24-497Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-4nnb4L/home/.smith/runs/2026-05-30T18-28-38-629Z.trace`.
+  - Sandbox: `.smith-bench/run-4nnb4L`.
+  - Verifier failures:
+    - `(newAlpine(config.ServerInfo{})).parseApkInstalledList undefined`.
+    - `(newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined`.
+    - `TestIsOvalDefAffected` case `[85]` expected unaffected but got affected with `fixedIn` `3.3.2-r0`.
+  - Trace evidence: `rg` found earlier finish rejections from read-only test patch and unvalidated-patch guards, but not the new changed-test caveat rejection. This target run therefore does not prove the new guard affects `010`.
+
+Decision:
+
+- Keep the change because it improves generic validation reporting when tests are edited, with focused coverage for requested test edits.
+- Do not count `010` as recovered. It still fails verifier.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Next direction: move away from `010`; it has produced enough evidence for now and still fails on task-specific Alpine method/API details. Prefer another Codex-passed unrecovered task or a broader generic runtime issue.
+- Maintenance note: `.smith-bench` is about `24G`. Clean stale retained sandboxes before additional long runs to avoid another several-GB increase; preserve current evidence directories such as `run-4nnb4L`, `run-l50Jrb`, `run-Jy72K1`, and `run-RCjiIk` until their data is no longer needed.

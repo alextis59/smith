@@ -585,6 +585,17 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
       );
     }
     if (
+      dirtyFinishChangedTestFiles.length > 0 &&
+      finishClaimsValidationSuccess(message) &&
+      !finishAcknowledgesChangedTestValidation(message)
+    ) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        `Finish rejected: test files are currently modified or untracked (${formatChangedFiles(dirtyFinishChangedTestFiles)}), and the finish message claims validation success without acknowledging that local validation ran with changed tests. Preserve existing test behavior, avoid weakening or replacing prior assertions unless explicitly requested, and either restore tests before final validation or report the changed-test validation caveat.`
+      );
+    }
+    if (
       dirtyFinishTestFiles.length > 0 &&
       finishClaimsComplete(message) &&
       !finishAcknowledgesPendingValidation(message)
@@ -1536,6 +1547,12 @@ function finishClaimsComplete(message: string): boolean {
 
 function finishAcknowledgesValidationNotPerformed(message: string): boolean {
   return /\b(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)\b/i.test(
+    message
+  );
+}
+
+function finishAcknowledgesChangedTestValidation(message: string): boolean {
+  return /\b(?:changed|modified|edited|dirty|updated|new)\s+(?:test|tests|test files?|spec|specs|spec files?)\b|\b(?:test|tests|test files?|spec|specs|spec files?)\s+(?:changed|modified|edited|dirty|updated|new)\b|\bvalidation\s+(?:ran|passed|succeeded)[^.\n]{0,120}\b(?:changed|modified|edited|dirty|updated|new)\s+(?:test|tests|test files?|spec|specs|spec files?)\b/i.test(
     message
   );
 }

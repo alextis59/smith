@@ -3796,6 +3796,80 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).toContain("tests/new.test.js");
   });
 
+  it("requires validation caveats when requested test files are dirty", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Add File: tests/new.test.js",
+            "+console.log('new test');",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent", timeout_ms: 5000 } },
+      {
+        name: "finish",
+        arguments: {
+          message: "Implemented the source and tests. Validation passed with npm test."
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: "Implemented the source and tests. Validation passed with npm test. Caveat: test files changed during validation."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-dirty-requested-test-validation-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+    await execFileAsync("git", ["init"], { cwd });
+    await execFileAsync("git", ["add", "."], { cwd });
+    await execFileAsync("git", ["-c", "user.name=Smith Test", "-c", "user.email=smith@example.test", "commit", "-m", "init"], {
+      cwd
+    });
+
+    const { stdout } = await execFileAsync(
+      "node",
+      [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "fix source behavior and add tests"],
+      {
+        env: { ...process.env, HOME: home },
+        timeout: 10_000
+      }
+    );
+
+    expect(stdout).toContain("test files changed during validation");
+    expect(provider.requests).toHaveLength(4);
+    expect(userMessages(provider.requests[1].body)).toContain("Test files changed: tests/new.test.js");
+    expect(userMessages(provider.requests[2].body)).toContain("Test files changed: tests/new.test.js");
+    expect(userMessages(provider.requests[3].body)).toContain("claims validation success without acknowledging");
+    expect(userMessages(provider.requests[3].body)).toContain("tests/new.test.js");
+  });
+
   it("rejects no-changed-files finishes while requested test files are dirty", async () => {
     const provider = await startFakeProvider([
       {

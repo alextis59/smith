@@ -3005,3 +3005,27 @@ Decision:
 - Trace check: the refined run did not emit the struct/object field compatibility note for local variable changes.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `23G`. Cleanup should be considered before further long SWE reruns; preserve latest evidence (`run-Jy72K1`, `run-RCjiIk`, `run-CcFNvW`, `run-75tIvv`) and prune stale sandboxes when no longer needed.
+
+## 2026-05-30 Changed-Test Validation Caveat Guard
+
+Change:
+
+- Added a generic finish guard for validation-success claims while any test/spec files are modified or untracked.
+- When tests are dirty, Smith must either restore tests before final validation or explicitly report the changed-test validation caveat.
+- Added integration coverage for prompts that explicitly request test edits, so the guard applies as transparency rather than a ban on requested test work.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for dirty-test finish paths: passed `5` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `88` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `189213ms`, log `/tmp/smith/2026-05-30T18-28-29-277Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-l50Jrb/home/.smith/runs/2026-05-30T18-25-20-434Z.trace`.
+- Target SWE rerun `010-future-architect-vuls`: reached verifier and failed in `947083ms`, log `/tmp/smith/2026-05-30T18-44-24-497Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-4nnb4L/home/.smith/runs/2026-05-30T18-28-38-629Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic validation transparency improvement for ordinary tasks where tests are edited.
+- Do not count `010` as recovered. Verifier still failed missing Alpine parser methods (`parseApkInstalledList`, `parseApkUpgradableList`) and `TestIsOvalDefAffected`.
+- Trace evidence: the new changed-test caveat guard did not fire in this target run; other finish guards fired earlier, and the final accepted path still reached verifier with source-only diff plus verifier-selected test failures.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `24G`. Prune stale retained sandboxes before more long runs; preserve latest evidence (`run-4nnb4L`, `run-l50Jrb`, `run-Jy72K1`, `run-RCjiIk`) until their traces are no longer needed.
