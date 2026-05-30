@@ -24,7 +24,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - `.smith-bench` grows quickly because many targeted runs keep full sandboxes, traces, and result artifacts. Periodically check its size with `du -sh .smith-bench` and the retained run count with `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l`.
 - After each useful failure has its command, log path, trace path, sandbox id, and relevant evidence copied into this summary/worklog, prune stale `.smith-bench/run-*` sandboxes that are no longer needed for diagnosis. Keep the raw result JSONs and any sandboxes that still contain unresolved evidence.
 - Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
-- 2026-05-29 note: after the latest targeted runs, `.smith-bench` is about `21G` with `25` retained `run-*` directories. Before starting another long target sequence, review and prune stale retained sandboxes whose evidence has already been copied into these logs.
+- 2026-05-29 note: after pruning stale retained sandboxes, `.smith-bench` is about `6.1G` with `6` retained `run-*` directories. Preserved current/recent evidence: `run-jZiXQQ`, `run-Gn7PlH`, `run-6goAJU`, `run-1zl86m`, `run-TA29B0`, and `run-SEpBif`.
 
 ## 2026-05-29 Milestone: Require External Blockers For Incomplete Requirement Finishes
 

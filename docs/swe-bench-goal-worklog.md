@@ -10762,3 +10762,19 @@ Decision:
 - Do not count `010` as recovered; the new path was not exercised in this target rerun.
 - Strict evidence remains `6/10`; no full SWE-bench Pro run.
 - Cleanup note: `.smith-bench` is now about `21G` with `25` retained `run-*` directories. Preserve `run-Gn7PlH` and `run-jZiXQQ` for this milestone along with unresolved recent evidence runs, then prune stale older sandboxes before another expensive sequence.
+
+Maintenance cleanup:
+
+- With approval, pruned stale `.smith-bench/run-*` sandboxes while preserving current/recent evidence:
+
+```sh
+find .smith-bench -maxdepth 1 -type d -name 'run-*' ! -name 'run-jZiXQQ' ! -name 'run-Gn7PlH' ! -name 'run-6goAJU' ! -name 'run-1zl86m' ! -name 'run-TA29B0' ! -name 'run-SEpBif' -exec rm -rf {} +
+```
+
+- `.smith-bench` is now about `6.1G` with `6` retained `run-*` directories:
+  - `run-jZiXQQ`: latest `010` target rerun for repeated unsafe edit rejection milestone.
+  - `run-Gn7PlH`: representative `091` project benchmark for the same milestone.
+  - `run-6goAJU`: previous `010` target rerun where heredoc rejection fired repeatedly.
+  - `run-1zl86m`: pre-heredoc-guard `010` diagnostic with PTY heredoc corruption evidence.
+  - `run-TA29B0`: latest retained `005` target evidence from dirty-test finish milestone.
+  - `run-SEpBif`: representative `091` project benchmark for heredoc guard milestone.
