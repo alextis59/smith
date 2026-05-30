@@ -2913,3 +2913,26 @@ Decision:
 - Do not count `005` as recovered. The latest trace shows real source edits in `lib/kube/proxy/forwarder.go`, `lib/kube/proxy/server.go`, and `lib/service/kubernetes.go`; validation still failed with nil-pointer panics in `Forwarder.newClusterSessionSameCluster`, `Forwarder.requestCertificate`, and `Forwarder.authenticate`, then the outer Docker run timed out before verifier.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `15G` with `16` retained `run-*` directories. Prune stale retained sandboxes before more long SWE reruns, preserving current evidence such as `run-RILdnu`, `run-DUUK2Z`, and any still-needed prior milestone runs.
+
+## 2026-05-30 Read-Only Python Inspection Classification
+
+Change:
+
+- Treat narrow read-only Python heredoc commands as inspection commands for post-deadline run-slot handling when they only read/print local files.
+- Keep explicit deny patterns for Python file writes, destructive filesystem calls, subprocess execution, `exec`, and `eval`.
+- Added integration coverage for a failed post-deadline validation followed by a read-only Python line/file inspection.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for failed post-deadline validation inspection paths: passed `3` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `84` tests.
+- Representative project benchmark `091-command-router-refactor`: first run failed in `268565ms` after deleting the required `## Verification` README section, log `/tmp/smith/2026-05-30T16-37-51-167Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-Ycp4Pr/home/.smith/runs/2026-05-30T16-33-23-085Z.trace`; rerun passed in `233091ms`, log `/tmp/smith/2026-05-30T16-42-52-993Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-61fJqu/home/.smith/runs/2026-05-30T16-39-00-126Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: reached verifier and failed in `812539ms`, log `/tmp/smith/2026-05-30T16-56-51-620Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-UeB6Zv/home/.smith/runs/2026-05-30T16-43-25-506Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic runtime classifier improvement for ordinary tasks that use short Python snippets to inspect failed validation locations.
+- The `005` run improved from outer timeout to verifier evidence, but it did not recover the task. Verifier failed because `lib/kube/proxy/forwarder_test.go` still expected `Forwarder.cfg` and `Forwarder.clientCredentials`.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `17G` with `19` retained `run-*` directories. Cleanup is due before another sequence of long SWE runs; preserve `run-UeB6Zv`, `run-61fJqu`, and other current evidence, then prune stale retained sandboxes.

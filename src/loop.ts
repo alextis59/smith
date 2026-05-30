@@ -1150,7 +1150,20 @@ function goPackageCoversDir(pkg: string, dir: string): boolean {
 }
 
 function isLikelyInspectionCommand(command: string): boolean {
-  return /^(?:env\s+)?(?:sed|cat|less|more|head|tail|grep|rg|find|ls|pwd|wc|nl|printf|echo)\b/i.test(command.trim());
+  const trimmed = command.trim();
+  return (
+    /^(?:env\s+)?(?:sed|cat|less|more|head|tail|grep|rg|find|ls|pwd|wc|nl|printf|echo)\b/i.test(trimmed) ||
+    isLikelyReadOnlyPythonInspectionCommand(trimmed)
+  );
+}
+
+function isLikelyReadOnlyPythonInspectionCommand(command: string): boolean {
+  if (!/^(?:env\s+)?python(?:3(?:\.\d+)?)?\s+-\s*<</i.test(command)) return false;
+  if (!/\b(?:print|read_text|read_bytes|readlines?|splitlines|Path|open)\b/i.test(command)) return false;
+  if (/\s(?:>|>>)\s/.test(command)) return false;
+  return !/\b(?:write_text|write_bytes|write|writelines|truncate|unlink|rename|replace|mkdir|rmdir|remove|removedirs|renames|makedirs|chmod|chown|utime|symlink|link|shutil\.|subprocess\.|os\.system|exec|eval)\s*\(/i.test(
+    command
+  ) && !/\bopen\s*\([^)\n]*(?:,\s*|\bmode\s*=\s*)["'][^"']*[wax+]/i.test(command);
 }
 
 function isNoOpValidationOutput(output: string): boolean {

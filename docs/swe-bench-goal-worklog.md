@@ -11715,3 +11715,79 @@ Decision:
 - Do not count `005` as recovered. The latest run did not repeat the prior dirty-test/no-files finish issue, but it still timed out after incomplete source work and failing validation.
 - Strict current evidence remains `6/10`; no full SWE-bench Pro run.
 - Maintenance note: `.smith-bench` is now about `15G` with `16` retained `run-*` directories. Before more long SWE reruns, preserve current evidence (`run-RILdnu`, `run-DUUK2Z`, and any still-needed prior milestone sandboxes) and prune stale retained sandboxes so the folder does not grow by several GB per iteration.
+
+## 2026-05-30 Worklog: Read-Only Python Inspection Classification
+
+Context:
+
+- The prior `005` trace (`run-RILdnu`) timed out after a failed validation run.
+- Near the end, Smith attempted a read-only Python snippet to print file context around nil-pointer failure locations, but the post-deadline run-slot gate rejected it because `python - <<'PY' ...` was not classified as inspection.
+- This is a generic runtime issue: agents often use short Python snippets to inspect file context after validation failures, especially when line lists are dynamic.
+
+Hypothesis:
+
+- Post-deadline inspection should allow tightly scoped Python heredoc commands that only read and print local files, while continuing to reject Python snippets that can write files, spawn processes, or run arbitrary eval/exec behavior.
+
+Implementation:
+
+- Extended `isLikelyInspectionCommand()` to call `isLikelyReadOnlyPythonInspectionCommand()`.
+- The Python classifier only accepts commands starting with `python - <<...`, requiring read/print indicators such as `print`, `Path`, `read_text`, `readlines`, `splitlines`, or `open`.
+- It rejects output redirection and denylisted write/execution APIs including `write_text`, `write_bytes`, `write`, `writelines`, `truncate`, `unlink`, `rename`, `replace`, `mkdir`, `rmdir`, `remove`, `chmod`, `chown`, `shutil.`, `subprocess.`, `os.system`, `exec`, and `eval`.
+- Added an integration test for a failed post-deadline validation followed by:
+
+```sh
+python - <<'PY'
+from pathlib import Path
+print(Path('note.txt').read_text())
+PY
+```
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "failed post-deadline validation command|read-only Python inspection|compound inspection"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused integration selector: passed `3` selected tests.
+- Full integration file: passed `84` tests in `33277ms`.
+
+Representative project validation:
+
+- First `091-command-router-refactor` run failed:
+  - Duration: `268565ms`.
+  - Log: `/tmp/smith/2026-05-30T16-37-51-167Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-Ycp4Pr/home/.smith/runs/2026-05-30T16-33-23-085Z.trace`.
+  - Evidence: Smith implemented the router, but rewrote `README.md` without the required `## Verification` section from `verify.sh`; `bash /task/verify.sh` failed silently because `grep -q "## Verification" README.md` failed.
+- Rerun `091-command-router-refactor` passed:
+  - Duration: `233091ms`.
+  - Log: `/tmp/smith/2026-05-30T16-42-52-993Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-61fJqu/home/.smith/runs/2026-05-30T16-39-00-126Z.trace`.
+
+Target rerun:
+
+- `005-gravitational-teleport` reached verifier and failed:
+  - Duration: `812539ms`.
+  - Log: `/tmp/smith/2026-05-30T16-56-51-620Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-UeB6Zv/home/.smith/runs/2026-05-30T16-43-25-506Z.trace`.
+  - Sandbox: `.smith-bench/run-UeB6Zv`.
+  - Smith finished with a truthful partial blocker instead of timing out. It reported a local validation pass for `go test ./lib/kube/proxy ./lib/service -count=1`, but the benchmark verifier restored selected tests and failed `lib/kube/proxy` at build time.
+  - Verifier stderr showed missing compatibility fields/methods:
+    - `unknown field 'cfg' in struct literal of type Forwarder`
+    - `f.cfg undefined`
+    - `unknown field 'clientCredentials' in struct literal of type Forwarder`
+    - `f.clientCredentials undefined`
+
+Decision:
+
+- Keep the change. It directly addresses the generic late-run classifier problem seen in the previous trace and converted `005` from outer timeout to verifier evidence.
+- Do not count `005` as recovered because selected tests still fail.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Next generic direction: improve source-compatibility preservation when validation or verifier errors mention missing struct fields or legacy fields. This should be generic, but avoid task-specific names or SWE-specific prompting.
+- Maintenance note: `.smith-bench` is about `17G` with `19` retained `run-*` directories. Cleanup should happen before more long SWE runs; preserve current evidence (`run-UeB6Zv`, `run-61fJqu`, and any still-needed prior milestone runs) and prune stale sandboxes.
