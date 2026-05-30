@@ -46,7 +46,8 @@ Artifact maintenance note:
 - `.smith-bench` can grow by several GB during targeted iteration because `--keep-sandbox` retains whole workspaces plus traces. Check `du -sh .smith-bench` and retained `run-*` count periodically.
 - Once a run's command, result JSON path, trace path, sandbox id, relevant diff snippets, and failure evidence are recorded here, mark it as eligible for pruning unless it is still needed for an active diagnosis.
 - Preserve benchmark result JSON files and any sandboxes cited by current leaderboard evidence, current milestone validation, or unresolved target-task hypotheses.
-- Current cleanup reminder: after the latest retained runs, `.smith-bench` is about `12G`. Before more long SWE runs, prune stale retained sandboxes after preserving the current evidence set and recording commands, result JSONs, trace paths, sandbox ids, diffs, and verifier errors here.
+- Current cleanup reminder: `.smith-bench` is about `36G` with `41` retained `run-*` sandboxes as of 2026-05-30. Before more long SWE runs, prune stale retained sandboxes after preserving the current evidence set and recording commands, result JSONs, trace paths, sandbox ids, diffs, and verifier errors here.
+- Current evidence to preserve before pruning: `run-HBcDtu`, `run-TOlkI5`, `run-KStwc8`, `run-VH4k4x`, `run-sFmHyX`, plus any active diagnosis sandbox from the next target run. Older sandboxes can be pruned once their relevant evidence is copied into this worklog and the summary.
 
 ## 2026-05-23 Evidence: NodeBB 001 Inconclusive Failure
 
