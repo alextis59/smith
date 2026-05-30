@@ -25,6 +25,7 @@ Goal: improve Smith `gpt-5.4-mini` high on `swe-bench-pro` to at least the Codex
 - After each useful failure has its command, log path, trace path, sandbox id, and relevant evidence copied into this summary/worklog, prune stale `.smith-bench/run-*` sandboxes that are no longer needed for diagnosis. Keep the raw result JSONs and any sandboxes that still contain unresolved evidence.
 - Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
 - 2026-05-30 note: after the latest targeted runs, `.smith-bench` is about `7.3G` with `8` retained `run-*` directories. Preserved current/recent evidence: `run-JvD7C8`, `run-vvBMuM`, `run-jZiXQQ`, `run-Gn7PlH`, `run-6goAJU`, `run-1zl86m`, `run-TA29B0`, and `run-SEpBif`.
+- 2026-05-30 note: `.smith-bench` is back to about `12G` after further retained local and SWE runs. Prune again soon after preserving current evidence runs such as `run-qWpZdH`, `run-6inovy`, `run-trsSFJ`, `run-bbwPc4`, and `run-kG8O37`; otherwise the directory will keep growing by several GB across iteration.
 
 ## 2026-05-29 Milestone: Require External Blockers For Incomplete Requirement Finishes
 
@@ -2811,3 +2812,27 @@ Decision:
 - Do not count `010` as recovered. Smith now finished honestly with a blocker instead of claiming success, but verifier still failed on missing Alpine parser methods and `TestIsOvalDefAffected`.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `8.3G` after the new representative and target runs. Prune stale sandboxes periodically, preserving the latest evidence runs before cleanup.
+
+## 2026-05-30 Sub-Agent Change Visibility
+
+Change:
+
+- Sub-agent tool results now report tracked workspace files changed by the child run back to the parent turn.
+- When a sub-agent changes source or test files, the parent sees a generic pending-validation note and the changed file list.
+- Finish handling also rejects "no files changed" reports when dirty tests or an unvalidated task patch are still known.
+- Added integration coverage for a child agent changing a tracked test fixture and the parent receiving the changed-file annotation.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "reports sub_agent edits as pending parent validation"`: passed `1` selected test.
+- `npm test -- tests/integration.test.ts`: passed `78` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `122380ms`, log `/tmp/smith/2026-05-30T13-33-04-395Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-6inovy/home/.smith/runs/2026-05-30T13-31-02-464Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed in `753849ms`, log `/tmp/smith/2026-05-30T13-45-52-178Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-trsSFJ/home/.smith/runs/2026-05-30T13-33-27-476Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic parent/child workspace-accounting improvement for ordinary Smith tasks.
+- Do not count `005` as recovered. The run shifted from an inaccurate "no files changed" style failure to an explicit partial implementation/blocker, but the verifier still failed because `lib/kube/proxy/forwarder_test.go` referenced `Forwarder.cfg` and `Forwarder.clientCredentials` that the source did not provide.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `12G` after this validation. Clean stale retained sandboxes soon, preserving the latest current evidence before deletion.

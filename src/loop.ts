@@ -580,6 +580,19 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         `Finish rejected: test files are currently modified or untracked (${formatChangedFiles(dirtyFinishTestFiles)}), but the user did not explicitly ask to edit tests and the finish message claims completion or validation. Restore unrelated test edits, preserve compatibility with existing tests, or finish with an explicit pending-validation/blocker report.`
       );
     }
+    if (
+      (dirtyFinishTestFiles.length > 0 || parentContext.unvalidatedTaskPatch) &&
+      finishClaimsNoChangedFiles(message) &&
+      !finishAcknowledgesPendingValidation(message)
+    ) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        dirtyFinishTestFiles.length > 0
+          ? `Finish rejected: test files are currently modified or untracked (${formatChangedFiles(dirtyFinishTestFiles)}), but the finish message says no files or code changed. Restore unrequested test edits, preserve compatibility with existing tests, or finish with an explicit pending-validation/blocker report that accounts for the dirty test files.`
+          : "Finish rejected: a task patch is still pending validation, but the finish message says no files or code changed. Continue validation, restore the changes, or finish with an explicit pending-validation/blocker report that accounts for the changed files."
+      );
+    }
     if (shouldRejectContradictoryCompletionFinish(message, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -1198,6 +1211,7 @@ async function runSubAgentTool(
       `task: ${task}`
     ].join("\n")
   );
+  const trackedChangesBefore = await trackedGitChangeSet(cwd);
 
   try {
     const result = await runSmithTask({
@@ -1211,8 +1225,10 @@ async function runSubAgentTool(
       onModelOutput: undefined,
       subAgentDepth: depth + 1
     });
+    const trackedChangesAfter = await trackedGitChangeSet(cwd);
+    const subAgentChangedFiles = changedTrackedFiles(trackedChangesBefore, trackedChangesAfter);
     const output = limitToolOutput(
-      `Sub-agent finished in ${result.turns} turns:\n${result.chatOut}`,
+      annotateSubAgentChangedFiles(`Sub-agent finished in ${result.turns} turns:\n${result.chatOut}`, subAgentChangedFiles),
       context.options.runtime.maxToolOutputChars
     );
     const totalUsage = addUsageCost(context.totalUsage, result.usage);
@@ -1222,15 +1238,38 @@ async function runSubAgentTool(
     const responsesInputItems = appendResponsesTerminalOutput(context.responsesInputItems, callId, output);
     context.options.trace?.write("sub_agent output", output);
     context.options.onTerminalOutput?.(output);
-    return { transcript, providerMessages, responsesInputItems, toolOutput: output, totalUsage };
+    return {
+      transcript,
+      providerMessages,
+      responsesInputItems,
+      toolOutput: output,
+      totalUsage,
+      ...(subAgentChangedFiles.length > 0 ? { changedFiles: subAgentChangedFiles } : {})
+    };
   } catch (error) {
     const totalUsage = addUsageCost(context.totalUsage, error instanceof SmithRunFailure ? error.usage : undefined);
-    const output = failedSubAgentOutput(error, context.options.runtime.maxToolOutputChars);
+    const trackedChangesAfter = await trackedGitChangeSet(cwd);
+    const subAgentChangedFiles = changedTrackedFiles(trackedChangesBefore, trackedChangesAfter);
+    const output = limitToolOutput(
+      annotateSubAgentChangedFiles(failedSubAgentOutput(error, context.options.runtime.maxToolOutputChars), subAgentChangedFiles),
+      context.options.runtime.maxToolOutputChars
+    );
     return {
       ...appendToolObservation({ ...context, totalUsage }, callId, output),
+      ...(subAgentChangedFiles.length > 0 ? { changedFiles: subAgentChangedFiles } : {}),
       ...(isSubAgentTurnLimitFailure(error) ? { subAgentTurnLimitFailure: true } : {})
     };
   }
+}
+
+function annotateSubAgentChangedFiles(output: string, changedFiles: string[]): string {
+  if (changedFiles.length === 0 || changedFilesAreOnlySmithMemory(changedFiles)) return output;
+  let annotated = `${output}\nSub-agent changed tracked files: ${formatChangedFiles(changedFiles)}\nTask patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical.`;
+  const changedTestFiles = changedFiles.filter(isLikelyTestFilePath);
+  if (changedTestFiles.length > 0) {
+    annotated = `${annotated}\nTest files changed: ${formatChangedFiles(changedTestFiles)}. Local validation may include the changed tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.`;
+  }
+  return annotated;
 }
 
 function failedSubAgentOutput(error: unknown, maxChars: number): string {
@@ -1391,6 +1430,12 @@ function finishClaimsValidationSuccess(message: string): boolean {
   ) || /\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b[\s\S]{0,120}\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b/i.test(
     message
   );
+}
+
+function finishClaimsNoChangedFiles(message: string): boolean {
+  return /\b(?:no|without)\s+(?:code|source|file|files|changes?|edits?|patch(?:es)?)\s+(?:changes?|changed|applied|made|were made|was made)?\b/i.test(
+    message
+  ) || /\b(?:nothing|no files?)\s+(?:were\s+|was\s+)?(?:changed|modified|edited|patched|applied)\b/i.test(message);
 }
 
 function shouldRejectIncompleteRequirementsFinish(

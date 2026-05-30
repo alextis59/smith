@@ -1520,6 +1520,66 @@ max_turns = 6
     expect(toolNames(provider.requests[2].body)).toEqual(["run", "patch", "finish"]);
   });
 
+  it("reports sub_agent edits as pending parent validation", async () => {
+    const provider = await startFakeProvider([
+      { name: "sub_agent", arguments: { task: "update the test fixture" } },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: tests/example.test.js",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "finish", arguments: { message: "child changed the fixture; validation pending" } },
+      { name: "finish", arguments: { message: "Blocked: no files were changed." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-sub-agent-edit-tracking-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "tests", "example.test.js"), "old\n", "utf8");
+    await execFileAsync("git", ["init"], { cwd });
+    await execFileAsync("git", ["add", "."], { cwd });
+    await execFileAsync("git", ["-c", "user.name=Smith Test", "-c", "user.email=smith@example.test", "commit", "-m", "init"], {
+      cwd
+    });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 20
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "parent task"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(provider.requests).toHaveLength(4);
+    expect(stdout).toContain("Blocked: no files were changed");
+    expect(readFileSync(join(cwd, "tests", "example.test.js"), "utf8")).toBe("new\n");
+    expect(userMessages(provider.requests[3].body)).toContain("Sub-agent changed tracked files: tests/example.test.js");
+    expect(userMessages(provider.requests[3].body)).toContain("Task patch pending validation");
+  });
+
   it("infers read-only sub_agent runs from do-not-edit tasks and removes patch", async () => {
     const provider = await startFakeProvider([
       { name: "sub_agent", arguments: { task: "Identify relevant files. Do not edit files." } },

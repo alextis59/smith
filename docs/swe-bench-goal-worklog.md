@@ -46,6 +46,7 @@ Artifact maintenance note:
 - `.smith-bench` can grow by several GB during targeted iteration because `--keep-sandbox` retains whole workspaces plus traces. Check `du -sh .smith-bench` and retained `run-*` count periodically.
 - Once a run's command, result JSON path, trace path, sandbox id, relevant diff snippets, and failure evidence are recorded here, mark it as eligible for pruning unless it is still needed for an active diagnosis.
 - Preserve benchmark result JSON files and any sandboxes cited by current leaderboard evidence, current milestone validation, or unresolved target-task hypotheses.
+- Current cleanup reminder: after the latest retained runs, `.smith-bench` is about `12G`. Before more long SWE runs, prune stale retained sandboxes after preserving the current evidence set and recording commands, result JSONs, trace paths, sandbox ids, diffs, and verifier errors here.
 
 ## 2026-05-23 Evidence: NodeBB 001 Inconclusive Failure
 
@@ -11392,3 +11393,85 @@ Decision:
 - Do not count `010` as recovered. Current strict targeted evidence remains `6/10`; no full SWE-bench Pro run.
 - Next generic direction: help Smith preserve or implement source-level compatibility APIs when task requirements imply new parser/helper methods but local public tests do not compile-check those names. This must remain generic; do not inspect hidden test source and do not add benchmark-specific prompt text.
 - Maintenance note: `.smith-bench` grew from `7.0G` after cleanup to `8.3G` after the latest representative and target runs. Clean stale run directories again after preserving `run-bbwPc4` and `run-kG8O37` if they are still needed as evidence.
+
+## 2026-05-30 Worklog: Sub-Agent Change Visibility
+
+Hypothesis:
+
+- A fresh `005-gravitational-teleport` diagnostic on the current branch failed with Smith reporting that no files were changed, while the retained workspace had staged tracked edits from child work.
+- This is a generic parent/child accountability issue: a sub-agent can leave tracked changes that the parent does not accurately incorporate into its validation and final status.
+- The fix should be runtime bookkeeping only. No benchmark-specific prompts, no task-id recognition, and no task-specific source hints.
+
+Pre-change diagnostic:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- Failed in `740567ms`.
+- Log: `/tmp/smith/2026-05-30T13-23-17-658Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-qWpZdH/home/.smith/runs/2026-05-30T13-11-04-113Z.trace`.
+- Sandbox: `.smith-bench/run-qWpZdH`.
+- Smith final said the patch attempt failed because context no longer matched and no files were changed.
+- Retained workspace contradicted that status with staged `lib/kube/proxy/forwarder_test.go` edits.
+- Verifier failed because `forwarder_test.go` referenced source fields/methods that did not exist, including `Forwarder.cfg` and `Forwarder.clientCredentials`.
+
+Implementation:
+
+- `runSubAgentTool()` now snapshots the tracked git change set before and after the child run.
+- If a sub-agent changes tracked non-memory files, the tool output includes:
+
+```text
+Sub-agent changed tracked files: ...
+Task patch pending validation: run a relevant test, build, lint, typecheck, check, or verify command before finish when practical.
+```
+
+- If changed files include likely tests/specs, the output also notes that local validation may include the changed tests and that existing behavior should still be preserved when the user did not ask to update tests.
+- The same annotation is applied for failed sub-agents that leave tracked changes.
+- Sub-agent tool results now return `changedFiles` so parent state can account for child edits.
+- Finish handling also rejects "no files changed" claims when dirty test files or a pending unvalidated task patch are known.
+- Added integration test `reports sub_agent edits as pending parent validation`.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "reports sub_agent edits as pending parent validation"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed repo validation:
+
+- `npm run build`: passed.
+- Focused integration selector: passed `1` selected test.
+- Full integration file: passed `78` tests in `31893ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed in `122380ms`.
+  - Log: `/tmp/smith/2026-05-30T13-33-04-395Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-6inovy/home/.smith/runs/2026-05-30T13-31-02-464Z.trace`.
+
+Target rerun:
+
+- `005-gravitational-teleport` failed in `753849ms`.
+  - Log: `/tmp/smith/2026-05-30T13-45-52-178Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-trsSFJ/home/.smith/runs/2026-05-30T13-33-27-476Z.trace`.
+  - Sandbox: `.smith-bench/run-trsSFJ`.
+
+Trace and verifier evidence:
+
+- The post-change run ended with explicit completed and blocked items rather than a simple "no files changed" claim.
+- It still did not recover the target. The verifier failed in `lib/kube/proxy` because `forwarder_test.go` referenced fields/methods that source did not provide, including `cfg` and `clientCredentials`.
+- This means the change improved workspace visibility and status honesty, but did not solve the implementation trajectory for `005`.
+
+Decision:
+
+- Keep the change as a generic sub-agent/parent workspace accounting improvement.
+- Do not count `005` as recovered. Strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Next generic direction: stronger propagation from child changes into parent validation state may still be needed, especially if unrequested test edits are left by a sub-agent. Any future change must remain general and apply to normal user tasks.
+- Maintenance note: `.smith-bench` is about `12G` after this validation. Prune stale retained sandboxes soon after preserving current evidence runs such as `run-qWpZdH`, `run-6inovy`, `run-trsSFJ`, `run-bbwPc4`, and `run-kG8O37`.
