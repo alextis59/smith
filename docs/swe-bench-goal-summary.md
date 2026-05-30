@@ -3077,3 +3077,26 @@ Decision:
 - Trace evidence: the new missing-field hint did not appear in this rerun; the failure path instead ended after a post-deadline patch-context mismatch and an accepted blocker about lack of reliable inspection path.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `28G`. Before another long SWE run, clean stale retained sandboxes after preserving the latest evidence (`run-7lnBwh`, `run-oBuBpa`, `run-b7ZWSj`, `run-tonPvU`) so the folder does not keep growing by several GB per iteration.
+
+## 2026-05-30 Inspection-Path Blocker Wording Guard
+
+Change:
+
+- Tightened the generic finish guard for inspection blockers so it also rejects wording like `requires exact current-line inspection` and `no reliable inspection path` when `run` is actually available for inspection.
+- Added regression coverage for a post-deadline patch-context mismatch where the model first claims no reliable inspection path, then is forced to use the available short inspection slot.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for post-deadline inspection and actionable inspection blockers: passed `4` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `91` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `128414ms`, log `/tmp/smith/2026-05-30T19-40-41-954Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-kNZCbH/home/.smith/runs/2026-05-30T19-38-36-549Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: reached verifier and failed in `913164ms`, log `/tmp/smith/2026-05-30T19-56-06-652Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-xaHdOj/home/.smith/runs/2026-05-30T19-41-00-119Z.trace`.
+
+Decision:
+
+- Keep the change because it is a generic consistency fix: Smith should not claim inspection is unavailable when the runtime is offering an inspection slot.
+- Do not count `005` as recovered. Verifier still failed on restored-test-facing missing `Forwarder.cfg` and `Forwarder.clientCredentials` fields/methods.
+- Trace evidence: this specific target rerun did not hit the new inspection-path rejection. It instead repeatedly hit the existing incomplete-requirements and no-op-validation finish guards before accepting a locally validated but externally pending report.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `30G`. Cleanup is overdue before more long target runs; preserve latest evidence (`run-xaHdOj`, `run-kNZCbH`, `run-7lnBwh`, `run-oBuBpa`) before pruning stale retained sandboxes.

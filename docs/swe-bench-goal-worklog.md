@@ -12225,3 +12225,81 @@ Decision:
 - Strict current evidence remains `6/10`; no full SWE-bench Pro run.
 - Next direction: inspect whether the post-deadline patch-context recovery path can generically reject premature blockers when a short inspection slot is still available. Avoid adding any task-specific instruction or field names.
 - Maintenance note: `.smith-bench` is about `28G`. Before more long target runs, clean stale retained sandboxes after copying needed evidence into these logs. Preserve `run-7lnBwh`, `run-oBuBpa`, `run-b7ZWSj`, and `run-tonPvU` until their traces are no longer needed, but do not let old run directories accumulate into another several-GB increase.
+
+## 2026-05-30 Worklog: Inspection-Path Blocker Wording Guard
+
+Context:
+
+- The previous `005-gravitational-teleport` run ended with a final blocker that said exact current-line inspection was required and there was no reliable inspection path left.
+- The trace showed the runtime system prompt was actually offering a short inspection slot after a post-deadline patch-context mismatch.
+- Existing `shouldRejectActionableInspectionBlockerFinish()` rejected some "need to inspect" blockers when `run` was available, but the wording detector did not explicitly cover "requires exact current-line inspection" or "no reliable inspection path".
+
+Hypothesis:
+
+- A generic finish guard should treat "requires inspection" and "inspection path unavailable" the same as "need to inspect" when `run` accepts inspection.
+- This prevents Smith from stopping on a self-contradictory tool-state blocker in ordinary late-run patch recovery.
+
+Implementation:
+
+- Extended `shouldRejectActionableInspectionBlockerFinish()` to recognize:
+  - `require`, `requires`, and `required` near `inspect` or `inspection`;
+  - `no reliable inspection path`, `without inspection path`, and similar unavailable-inspection-path wording.
+- Added integration coverage where:
+  - a post-deadline patch context mismatch opens a short inspection slot;
+  - the model first finishes with "requires exact current-line inspection" and "no reliable inspection path";
+  - Smith rejects that finish and accepts a subsequent `sed` inspection before finalizing.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "post-deadline inspection|inspection blockers|actionable inspection blockers"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused integration selector initially failed because `bin/smith.js` imports `dist`, and I had not rebuilt after editing TypeScript. After rebuilding, the selector passed `4` selected tests.
+- Full integration file passed `91` tests in `37509ms`.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed:
+  - Duration: `128414ms`.
+  - Log: `/tmp/smith/2026-05-30T19-40-41-954Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-kNZCbH/home/.smith/runs/2026-05-30T19-38-36-549Z.trace`.
+
+Target rerun:
+
+- `005-gravitational-teleport` reached verifier and failed:
+  - Duration: `913164ms`.
+  - Log: `/tmp/smith/2026-05-30T19-56-06-652Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-xaHdOj/home/.smith/runs/2026-05-30T19-41-00-119Z.trace`.
+  - Sandbox: `.smith-bench/run-xaHdOj`.
+  - Final Smith report claimed local package tests passed and reported only a pending external cluster-level `kubectl exec` smoke test.
+  - Verifier failed `lib/kube/proxy` build with restored-test-facing missing fields/methods:
+    - `unknown field 'cfg' in struct literal of type Forwarder`.
+    - `f.cfg undefined`.
+    - `unknown field 'clientCredentials' in struct literal of type Forwarder`.
+    - `f.clientCredentials undefined`.
+  - Retained sandbox after verifier: `lib/kube/proxy/forwarder.go`, `lib/service/kubernetes.go`, and `lib/kube/proxy/forwarder_test.go` were dirty; trace evidence shows Smith patches only touched source files, so the test-file diff appears to be verifier/restored-test state rather than a Smith test edit.
+
+Trace checks:
+
+- `rg 'Finish rejected: run is currently available, and the finish message says more inspection' .smith-bench/run-xaHdOj/...trace` returned no match. The target did not exercise the new wording guard.
+- Trace did show repeated existing finish rejections:
+  - incomplete explicit requirements without a concrete external blocker;
+  - no-op validation being treated as successful validation;
+  - unvalidated task patch claiming validation success.
+- Trace also showed many patch-context failures in `lib/kube/proxy/forwarder.go`, followed by source-only patches and narrow/local package validation.
+
+Decision:
+
+- Keep the change because it is generic, tested, and closes a real tool-state contradiction.
+- Do not count `005` as recovered. The target still fails the same restored-test compatibility surface.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Next direction: move away from additional prompt-like guidance. The target now exposes a broader generic issue around narrow/local validation and compatibility with external/restored tests, but changes must stay generic and avoid benchmark-specific verifier behavior.
+- Maintenance note: `.smith-bench` is about `30G`. Before another long target run, prune stale retained sandboxes after preserving current evidence (`run-xaHdOj`, `run-kNZCbH`, `run-7lnBwh`, `run-oBuBpa`) so the directory does not continue growing several GB per iteration.

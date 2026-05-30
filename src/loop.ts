@@ -1512,7 +1512,12 @@ function shouldRejectActionableInspectionBlockerFinish(
   availableToolNames: string[]
 ): boolean {
   if (!runAcceptsInspection(context, availableToolNames)) return false;
-  if (!/\b(?:need|needs|needed|must|should|would need|blocked)\b[\s\S]{0,160}\b(?:inspect|diagnose|read|check|look at|examine|review)\b/i.test(message)) {
+  const requestsInspection = /\b(?:need|needs|needed|must|should|would need|require|requires|required|blocked)\b[\s\S]{0,160}\b(?:inspect|inspection|diagnose|read|check|look at|examine|review)\b/i.test(
+    message
+  ) || /\b(?:no|without|lack(?:ing|s)?|unavailable|not available|no reliable)\b[\s\S]{0,120}\binspection path\b/i.test(
+    message
+  );
+  if (!requestsInspection) {
     return false;
   }
   return /\b(?:failure|failed|failing|error|trace|log|file|script|test|before (?:I )?(?:can )?(?:safely )?(?:finish|complete|continue|proceed))\b/i.test(

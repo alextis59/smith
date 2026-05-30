@@ -1210,6 +1210,75 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).not.toContain("Post-deadline run is reserved");
   });
 
+  it("rejects inspection-path blockers when post-deadline inspection is available", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-missing",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: [
+            "Blocker: I cannot safely complete the requested fix from the current tool state.",
+            "",
+            "Why this is blocked:",
+            "- The file context no longer matched the recorded snippets.",
+            "- The remaining work requires exact current-line inspection before any further edits.",
+            "- In the current post-deadline mode, I do not have a reliable inspection path left."
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "sed -n '1,2p' note.txt", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "blocked after inspection" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-post-deadline-inspection-blocker-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch note"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("blocked after inspection");
+    expect(provider.requests).toHaveLength(4);
+    expect(toolNames(provider.requests[2].body)).toEqual(["run", "patch", "finish"]);
+    expect(userMessages(provider.requests[2].body)).toContain(
+      "Finish rejected: run is currently available, and the finish message says more inspection or diagnosis is needed"
+    );
+    expect(userMessages(provider.requests[3].body)).toContain("old");
+  });
+
   it("rejects provider-history patch placeholders with actionable recovery guidance", async () => {
     const provider = await startFakeProvider([
       {
