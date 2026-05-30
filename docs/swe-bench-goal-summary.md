@@ -3124,3 +3124,32 @@ Decision:
 - Trace evidence: the new validation-success rejection fired before Smith accepted a more explicit partial blocker listing remaining incomplete forwarder work.
 - Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is about `32G`. Prune stale retained sandboxes before further long target runs; preserve latest evidence (`run-z84DKa`, `run-ji1bMb`, `run-xaHdOj`, `run-kNZCbH`) until their traces/logs are no longer needed.
+
+## 2026-05-30 Declaration Compatibility And Empty Finish Guards
+
+Change:
+
+- Added a generic finish guard for tasks that explicitly ask to preserve interface/API compatibility. If a source patch changed declaration signatures or removed declarations, a completion/validation finish must account for existing callers, old signatures, wrappers/adapters, or unchanged public interface.
+- Added a generic empty-finish rejection so a provider `finish` call with an empty message returns a non-empty tool observation instead of corrupting the next provider-state turn.
+- Added integration coverage for both paths.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for empty finish and declaration compatibility: passed `4` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `94` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `267754ms`, log `/tmp/smith/2026-05-30T21-10-23-028Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-TOlkI5/home/.smith/runs/2026-05-30T21-05-55-778Z.trace`.
+
+Target evidence:
+
+- Fresh pre-change current-branch `010-future-architect-vuls`: reached verifier and failed in `785340ms`, log `/tmp/smith/2026-05-30T20-42-21-397Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-sFmHyX/home/.smith/runs/2026-05-30T20-29-17-150Z.trace`.
+- First post-change `010` rerun failed with a Smith provider-state error after an empty `finish` message: `No tool output found for function call call_XxRXwEjN6YiJLBQsK1x7MQtL`, log `/tmp/smith/2026-05-30T21-03-44-006Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-KStwc8/home/.smith/runs/2026-05-30T20-49-37-282Z.trace`.
+- After the empty-finish fix, `010` failed cleanly by Docker timeout in `906261ms`, log `/tmp/smith/2026-05-30T21-25-40-481Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-HBcDtu/home/.smith/runs/2026-05-30T21-10-35-222Z.trace`.
+- Trace evidence: the declaration-compatibility rejection fired in the final `010` rerun after focused Alpine parser tests passed, forcing Smith to continue compatibility work or report a partial blocker instead of claiming completion.
+
+Decision:
+
+- Keep both changes because they are generic Smith runtime/final-answer integrity fixes and are validated by focused/full integration plus the representative benchmark.
+- Do not count `010` as recovered. It ended by timeout with modified `scanner/alpine.go` and untracked `scanner/alpine_extra_test.go` in the retained sandbox.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is about `36G`. Cleanup is overdue; preserve current evidence (`run-HBcDtu`, `run-TOlkI5`, `run-KStwc8`, `run-VH4k4x`, and `run-sFmHyX`) until logged evidence is no longer needed, then prune stale retained sandboxes before more long runs.

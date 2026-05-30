@@ -184,6 +184,7 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
   let noOpValidationSinceLastCheck = false;
   let unresolvedReadOnlyTestPatchFailure = false;
   let sourcePatchAfterReadOnlyTestPatchFailure = false;
+  let pendingDeclarationCompatibilityCheck = false;
   const runStartedAt = Date.now();
   const promptCacheKey = resolvePromptCacheKey(options.profile, options.cwd, options.prompt);
   const providerDebugJson =
@@ -331,7 +332,8 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
             unvalidatedTaskPatch,
             pendingValidationFiles: [...pendingValidationFiles],
             noOpValidationSinceLastCheck,
-            unresolvedReadOnlyTestPatchFailure
+            unresolvedReadOnlyTestPatchFailure,
+            pendingDeclarationCompatibilityCheck
           });
           totalUsage = action.totalUsage;
           transcript = action.transcript;
@@ -388,6 +390,9 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           }
           if (madeTaskPatch) {
             unvalidatedTaskPatch = true;
+            if (action.declarationCompatibilityChanged) {
+              pendingDeclarationCompatibilityCheck = true;
+            }
             if (unresolvedReadOnlyTestPatchFailure) {
               sourcePatchAfterReadOnlyTestPatchFailure = true;
             }
@@ -488,6 +493,7 @@ type ToolActionResult = {
   validationRunExecuted?: boolean;
   sourcePatchValidationEvidence?: boolean;
   readOnlyTestPatchFailed?: boolean;
+  declarationCompatibilityChanged?: boolean;
 };
 
 type ToolCallContext = {
@@ -504,6 +510,7 @@ type ToolCallContext = {
   pendingValidationFiles: string[];
   noOpValidationSinceLastCheck: boolean;
   unresolvedReadOnlyTestPatchFailure: boolean;
+  pendingDeclarationCompatibilityCheck: boolean;
 };
 
 async function handleToolCall(context: ToolCallContext): Promise<ToolActionResult> {
@@ -533,6 +540,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
 
   if (toolName === "finish") {
     const message = toolTextArgument(parentContext.toolCall.arguments, ["message", "answer", "text", "output"]) ?? "";
+    if (message.trim().length === 0) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: missing non-empty final message. Provide a concrete final answer, blocker report, or question for the user."
+      );
+    }
     if (shouldRejectUnsupportedReadOnlyFinish(message, parentContext, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -632,6 +646,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: a task patch is still not validated as complete, but the finish message claims successful validation. Finish with an explicit pending-validation or blocker report, or continue if tools are available."
       );
     }
+    if (shouldRejectUnaccountedDeclarationCompatibilityFinish(message, parentContext)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: the prompt asks to preserve interface/API compatibility, and earlier source patches changed declaration signatures or removed declarations. Before claiming completion, continue compatibility work or explicitly account for existing callers, old signatures, wrappers/adapters, or the unchanged public interface."
+      );
+    }
     if (shouldRejectSelfImposedApprovalBlockerFinish(message, parentContext, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -720,6 +741,7 @@ async function runPatchTool(
   let changedFiles: string[] | undefined;
   let patchContextFailed = false;
   let readOnlyTestPatchFailed = false;
+  let declarationCompatibilityChanged = false;
   try {
     const result = applySmithPatch(patch, parentContext.options.cwd);
     changedFiles = result.changedFiles;
@@ -738,6 +760,7 @@ async function runPatchTool(
       if (changedStructFields.length > 0) {
         output = `${output}\nCompatibility note: this patch changes struct or object fields: ${changedStructFields.map((name) => `\`${name}\``).join(", ")}. Search for keyed struct literals, direct field access, and embedded-field callers; preserve legacy fields, aliases, or adapters when existing callers may still use them before treating validation as complete.`;
       }
+      declarationCompatibilityChanged = removedDeclarations.length > 0 || changedDeclarationSignatures.length > 0;
       const changedTestFiles = result.changedFiles.filter(isLikelyTestFilePath);
       if (changedTestFiles.length > 0) {
         output = `${output}\nTest files changed: ${formatChangedFiles(changedTestFiles)}. Local validation may include the changed tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.`;
@@ -761,7 +784,8 @@ async function runPatchTool(
     totalUsage,
     ...(changedFiles ? { changedFiles } : {}),
     ...(patchContextFailed ? { patchContextFailed: true } : {}),
-    ...(readOnlyTestPatchFailed ? { readOnlyTestPatchFailed: true } : {})
+    ...(readOnlyTestPatchFailed ? { readOnlyTestPatchFailed: true } : {}),
+    ...(declarationCompatibilityChanged ? { declarationCompatibilityChanged: true } : {})
   };
 }
 
@@ -1577,6 +1601,28 @@ function finishAcknowledgesValidationNotPerformed(message: string): boolean {
 
 function finishAcknowledgesChangedTestValidation(message: string): boolean {
   return /\b(?:changed|modified|edited|dirty|updated|new)\s+(?:test|tests|test files?|spec|specs|spec files?)\b|\b(?:test|tests|test files?|spec|specs|spec files?)\s+(?:changed|modified|edited|dirty|updated|new)\b|\bvalidation\s+(?:ran|passed|succeeded)[^.\n]{0,120}\b(?:changed|modified|edited|dirty|updated|new)\s+(?:test|tests|test files?|spec|specs|spec files?)\b/i.test(
+    message
+  );
+}
+
+function shouldRejectUnaccountedDeclarationCompatibilityFinish(
+  message: string,
+  context: ToolCallContext
+): boolean {
+  if (!context.pendingDeclarationCompatibilityCheck) return false;
+  if (!promptRequestsInterfaceOrCompatibilityStability(context.options.prompt)) return false;
+  if (!finishClaimsComplete(message) && !finishClaimsValidationSuccess(message)) return false;
+  return !finishAccountsForDeclarationCompatibility(message);
+}
+
+function promptRequestsInterfaceOrCompatibilityStability(prompt: string): boolean {
+  return /\b(?:no new interfaces?|without new interfaces?|preserve compatibility|maintain compatibility|backwards? compatibility|backward-compatible|compatible with existing|existing (?:api|interface|callers)|public api|api compatibility|no breaking changes?|avoid breaking)\b/i.test(
+    prompt
+  );
+}
+
+function finishAccountsForDeclarationCompatibility(message: string): boolean {
+  return /\b(?:existing callers?|call sites?|old signatures?|previous signatures?|compatibility wrappers?|wrappers?|adapters?|backwards? compatibility|backward-compatible|compatible with existing|existing (?:api|interface)|public api|public interface|interface compatibility|api compatibility|no breaking changes?)\b/i.test(
     message
   );
 }

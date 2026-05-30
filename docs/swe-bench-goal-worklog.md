@@ -12391,3 +12391,93 @@ Decision:
 - Strict current evidence remains `6/10`; no full SWE-bench Pro run.
 - Next direction: stop iterating heavily on `005` unless a clearly generic implementation-quality issue appears. Consider another Codex-passed unrecovered target, but avoid Codex-failed/flawed tasks and avoid any benchmark-specific prompt or harness shortcut.
 - Maintenance note: `.smith-bench` is about `32G`. Cleanup is overdue; preserve `run-z84DKa`, `run-ji1bMb`, `run-xaHdOj`, and `run-kNZCbH` for current evidence, then prune stale retained sandboxes before more long runs.
+
+## 2026-05-30 Worklog: Declaration Compatibility And Empty Finish Guards
+
+Context:
+
+- The current clean target pool is still narrow: baseline full-run passes `002`, `004`, `007`, plus strict targeted recoveries `001`, `003`, and `008`. `005` and `010` remain unrecovered Codex-passed Smith failures.
+- User reinforced that SWE-specific prompt/runtime edits are cheating, so the next change must be generic Smith behavior for ordinary coding tasks.
+- `005` has consumed many iterations. I switched to `010-future-architect-vuls` to avoid continuing to overfit one target.
+
+Fresh current-branch diagnostic before the change:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+- Result: failed verifier in `785340ms`.
+- Log: `/tmp/smith/2026-05-30T20-42-21-397Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-sFmHyX/home/.smith/runs/2026-05-30T20-29-17-150Z.trace`.
+- Sandbox: `.smith-bench/run-sFmHyX`.
+- Verifier failures:
+  - `(newAlpine(config.ServerInfo{})).parseApkInstalledList undefined`.
+  - `(newAlpine(config.ServerInfo{})).parseApkIndex undefined`.
+  - `(newAlpine(config.ServerInfo{})).parseApkUpgradableList undefined`.
+  - `TestIsOvalDefAffected` case `[85]` expected unaffected but got affected with `fixedIn` `3.3.2-r0`.
+- Smith final claimed the Alpine fix was complete, `go test ./scanner` and `go test ./oval` passed, and no blockers remained.
+- Retained sandbox after verifier had staged verifier test files and a source patch in `scanner/alpine.go`.
+
+Hypothesis:
+
+- A generic integrity gap remains around interface/API compatibility accounting. Smith can see when a patch changes declaration signatures or removes declarations and already emits compatibility notes, but a later finish can still claim completion without accounting for a user request such as no new interfaces, API stability, or compatibility with existing callers.
+- Separately, the next `010` rerun exposed a generic runtime bug: an empty `finish` message was not rejected and caused a provider-state error on the next request.
+
+Implementation:
+
+- Track whether a successful Smith patch changed declaration signatures or removed declarations.
+- When the prompt asks for interface/API compatibility or no breaking changes, reject completion/validation finishes after such a patch unless the finish explicitly accounts for existing callers, old signatures, wrappers/adapters, or unchanged public interface.
+- Reject empty `finish` messages with a concrete non-empty tool observation.
+- Added regression coverage:
+  - `rejects completion claims that ignore declaration compatibility requirements`;
+  - `rejects empty finish messages`.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "empty finish|declaration compatibility|declaration signatures|removes declarations"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- First focused selector run failed only because it ran in parallel with `tsc` and hit stale `dist`. After rebuild completed, the selector passed `3` selected tests for the declaration guard. After adding the empty-finish fix, the selector passed `4` selected tests.
+- Full integration after the declaration guard: passed `93` tests in `35329ms`.
+- Full integration after the empty-finish fix: passed `94` tests in `35289ms`.
+
+Representative project validation:
+
+- First post-declaration-guard `091-command-router-refactor`: passed in `113663ms`, log `/tmp/smith/2026-05-30T20-49-26-714Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-VH4k4x/home/.smith/runs/2026-05-30T20-47-33-534Z.trace`.
+- Final post-empty-finish `091-command-router-refactor`: passed in `267754ms`, log `/tmp/smith/2026-05-30T21-10-23-028Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-TOlkI5/home/.smith/runs/2026-05-30T21-05-55-778Z.trace`.
+
+Target reruns:
+
+- First post-declaration-guard `010` failed as a Smith runtime/provider-state error:
+  - Duration: `847597ms`.
+  - Log: `/tmp/smith/2026-05-30T21-03-44-006Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-KStwc8/home/.smith/runs/2026-05-30T20-49-37-282Z.trace`.
+  - Error: `No tool output found for function call call_XxRXwEjN6YiJLBQsK1x7MQtL`.
+  - Trace evidence: the provider emitted a `finish` call with an empty `message`, and Smith did not convert it into a non-empty rejection observation before the next provider request.
+- Final post-empty-finish `010` failed cleanly by Docker timeout:
+  - Duration: `906261ms`.
+  - Log: `/tmp/smith/2026-05-30T21-25-40-481Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-HBcDtu/home/.smith/runs/2026-05-30T21-10-35-222Z.trace`.
+  - Sandbox: `.smith-bench/run-HBcDtu`.
+  - Retained sandbox status: `scanner/alpine.go` modified and `scanner/alpine_extra_test.go` untracked.
+
+Trace checks:
+
+- `rg 'Finish rejected: the prompt asks to preserve interface/API compatibility' .smith-bench/run-HBcDtu/...trace` found the new declaration-compatibility rejection after focused Alpine parser tests passed.
+- `rg 'Finish rejected: missing non-empty final message|No tool output found' .smith-bench/run-HBcDtu/...trace` found no recurrence of the empty-finish provider-state failure in the final target rerun.
+
+Decision:
+
+- Keep both changes. They are generic Smith runtime/final-answer integrity fixes, not SWE-specific prompt or scoring changes.
+- Do not count `010` as recovered. The target still failed, and the final run timed out without verifier.
+- Strict current evidence remains `6/10`; no full SWE-bench Pro run.
+- Next direction: do not keep grinding `010` unless there is a fresh generic runtime issue. Consider pruning `.smith-bench` first, then either inspect another unrecovered Codex-passed target path or re-evaluate whether a broader generic patching/validation improvement exists.
+- Maintenance note: `.smith-bench` is about `36G`. Cleanup is overdue. Preserve `run-HBcDtu`, `run-TOlkI5`, `run-KStwc8`, `run-VH4k4x`, and `run-sFmHyX` for current evidence, then prune stale retained sandboxes before more long runs.

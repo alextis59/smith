@@ -739,6 +739,42 @@ max_turns = 30
     expect(messages(provider.requests[1].body)[4].content).toContain("Local validation may include the changed tests");
   });
 
+  it("rejects empty finish messages", async () => {
+    const provider = await startFakeProvider([
+      { name: "finish", arguments: { message: "" } },
+      { name: "finish", arguments: { message: "Done with a concrete final answer." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-empty-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "finish normally"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("concrete final answer");
+    expect(provider.requests).toHaveLength(2);
+    expect(userMessages(provider.requests[1].body)).toContain("Finish rejected: missing non-empty final message");
+  });
+
   it("warns when a patch removes declarations that may need compatibility wrappers", async () => {
     const provider = await startFakeProvider([
       {
@@ -842,6 +878,72 @@ timeout_ms = 5000
     expect(messages(provider.requests[1].body)[4].content).toContain("changes declaration signatures");
     expect(messages(provider.requests[1].body)[4].content).toContain("`parseLine`");
     expect(messages(provider.requests[1].body)[4].content).toContain("keep wrappers or adapters");
+  });
+
+  it("rejects completion claims that ignore declaration compatibility requirements", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: parser.go",
+            "@@",
+            "-func parseLine(input string) (string, error) {",
+            "+func parseLine(input string) (string, bool, error) {",
+            "-\treturn input, nil",
+            "+\treturn input, true, nil",
+            " }",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "Done. npm test passed. No blockers remain." } },
+      {
+        name: "finish",
+        arguments: {
+          message:
+            "Done. npm test passed, and declaration compatibility was checked: existing callers and old signature compatibility are preserved."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-compat-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "parser.go"), "func parseLine(input string) (string, error) {\n\treturn input, nil\n}\n", "utf8");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node test.js" } }), "utf8");
+    writeFileSync(join(cwd, "test.js"), "console.log('checked');\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const prompt = "Update parser.go. Requirements: preserve compatibility with existing callers and keep the API stable.";
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, prompt], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("old signature compatibility are preserved");
+    expect(provider.requests).toHaveLength(4);
+    expect(userMessages(provider.requests[1].body)).toContain("changes declaration signatures");
+    expect(userMessages(provider.requests[3].body)).toContain(
+      "Finish rejected: the prompt asks to preserve interface/API compatibility"
+    );
   });
 
   it("warns when a patch changes struct fields that may break keyed callers", async () => {
