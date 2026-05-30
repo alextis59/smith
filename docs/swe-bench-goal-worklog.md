@@ -10999,3 +10999,84 @@ Decision:
 - No full SWE-bench Pro run.
 - Next high-value generic direction: investigate why Smith treated a selected scanner test pass as enough to finish with pending broader validation instead of using the available validation slot for broader package/project checks when verifier scope is likely wider. Keep any change generic and not tied to SWE task names.
 - Maintenance note: `.smith-bench` is about `12G` with `16` retained `run-*` directories. Before another long sequence, preserve current evidence (`run-hKlpEQ`, `run-pHfcsJ`, `run-pbVQuJ`, `run-qrHvTR`) plus any still-needed prior runs, then prune stale sandboxes.
+
+## 2026-05-30 Worklog: Patch-Context Blocker Finish
+
+Hypothesis:
+
+- Latest retained `005` evidence showed a generic finish-loop problem: Smith had a patch context mismatch near deadline, then repeatedly tried to report incomplete explicit requirements with a concrete stale-context/run-budget blocker.
+- The explicit-requirements guard rejected those reports because `finishReportsConcreteBlocker()` did not recognize patch anchoring failures as an operational blocker.
+- Desired generic behavior: still reject vague "more work remains" reports, but accept a blocker report when the transcript contains a patch context mismatch and the final message names stale patch context or insufficient remaining run budget.
+
+Implementation:
+
+- Updated `shouldRejectIncompleteRequirementsFinish()` in `src/loop.ts`.
+- Added `finishReportsPatchContextOrTimeBlocker()` for messages that mention patch/file/exact context mismatch, stale patch context, run-time deadline, time limit, or insufficient remaining run budget.
+- Added `transcriptHasPatchContextFailure()` so this exception only applies after Smith has actual patch-context-failure evidence in the transcript.
+- Added integration test `allows incomplete explicit-requirement reports after a patch context blocker`.
+
+Validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts -t "explicit-requirement|explicit requirements"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed:
+
+- `npm run build`: passed.
+- Focused explicit-requirements selector: passed `4` selected tests.
+- Full integration file: passed `74` tests in `27961ms`.
+- Before benchmark validation, pruned stale retained sandboxes:
+  - Preserved `run-TA29B0`, `run-hKlpEQ`, `run-pHfcsJ`, `run-pbVQuJ`, `run-qrHvTR`.
+  - `.smith-bench`: `12G` / `16` runs down to `4.7G` / `5` runs.
+
+Representative project validation:
+
+- `091-command-router-refactor` passed in `83893ms`.
+- Log: `/tmp/smith/2026-05-30T10-53-15-658Z-smith-091-command-router-refactor.json`.
+- Trace: `.smith-bench/run-8z0A50/home/.smith/runs/2026-05-30T10-51-53-116Z.trace`.
+
+Target rerun:
+
+- `005-gravitational-teleport` failed with Docker timeout after `908094ms`.
+- Log: `/tmp/smith/2026-05-30T11-08-32-439Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-dCnj9o/home/.smith/runs/2026-05-30T10-53-31-840Z.trace`.
+- Retained workspace status:
+
+```text
+ M lib/kube/proxy/forwarder.go
+```
+
+- Retained diff:
+
+```text
+ lib/kube/proxy/forwarder.go | 83 +++++++++++++++++++++++++++++++--------------
+ 1 file changed, 58 insertions(+), 25 deletions(-)
+```
+
+Trace evidence:
+
+- The previous explicit-requirements rejection loop did not recur at the end.
+- Smith accepted the final blocker report:
+
+```text
+Blocker report
+- The forwarder-side API/config refactor is in place and validated with TestGetClusterSession.
+- ServeHTTP now delegates to the embedded router.
+- The forwarder package compiles after the credential/session cache refactor.
+- However, I could not verify or complete the Kubernetes service session uploader initialization at startup...
+```
+
+- The benchmark result still had `stderr: docker timed out after 900000ms`, and no verifier payload was produced.
+- The trace shows the final `finish` happened after Smith's configured max run time had elapsed; the outer Docker timeout killed the run before the benchmark could complete normally.
+
+Decision:
+
+- Keep the change because it fixes a generic truthful-finish path after patch context mismatch evidence.
+- Do not count `005` as recovered. The final Smith answer was partial, required work remained incomplete, and the benchmark did not reach verifier.
+- Strict evidence remains `6/10`; no full SWE-bench Pro run.
+- Next generic hypothesis: benchmark runs should reserve internal Smith runtime headroom before the outer Docker timeout so a late Smith finish has time to exit cleanly and allow verifier execution.

@@ -224,6 +224,72 @@ max_turns = 30
     );
   });
 
+  it("allows incomplete explicit-requirement reports after a patch context blocker", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-missing",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message: [
+            "Blocked partial report:",
+            "- Implemented: no source changes were safely applied.",
+            "- Still incomplete: preserve compatibility.",
+            "",
+            "Concrete blocker:",
+            "- The patch context no longer matched note.txt, and there is not enough remaining run budget to safely re-anchor the broader change."
+          ].join("\n")
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-explicit-requirements-patch-context-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const prompt = ["Refactor note.txt.", "", "## Requirements", "", "- Preserve compatibility."].join("\n");
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, prompt], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Blocked partial report");
+    expect(provider.requests).toHaveLength(2);
+    expect(userMessages(provider.requests[1].body)).toContain("Patch context did not match the current file");
+    expect(userMessages(provider.requests[1].body)).not.toContain(
+      "Finish rejected: the prompt has explicit requirements"
+    );
+  });
+
   it("rejects finish reports that claim completion while reporting incomplete work", async () => {
     const provider = await startFakeProvider([
       {

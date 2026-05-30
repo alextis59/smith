@@ -2690,3 +2690,27 @@ Decision:
 - Do not count `010` as recovered. The verifier ran and failed on missing Alpine parser helper methods plus an OVAL expectation failure; strict targeted evidence remains `6/10`.
 - Full SWE-bench Pro is still not justified.
 - `.smith-bench` is about `12G` with `16` retained `run-*` directories. Cleanup should happen after preserving the current evidence runs, especially `run-hKlpEQ`, `run-pHfcsJ`, `run-pbVQuJ`, and `run-qrHvTR`.
+
+## 2026-05-30 Patch-Context Blocker Finish
+
+Change:
+
+- Explicit-requirement finish rejection now accepts a partial/blocker report when the transcript contains a patch-context mismatch and the finish message identifies stale patch context or remaining run budget as the blocker.
+- This is generic: it lets Smith end truthfully after failed patch anchoring instead of looping on incomplete-requirement rejections.
+- Added regression coverage for an explicit-requirements prompt where a patch context mismatch is followed by an incomplete blocker report.
+
+Validation:
+
+- `npm run build`: passed.
+- `npm test -- tests/integration.test.ts -t "explicit-requirement|explicit requirements"`: passed `4` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `74` tests.
+- Pruned stale `.smith-bench/run-*` sandboxes from `12G` / `16` runs to `4.7G` / `5` runs before benchmark validation.
+- Representative project benchmark `091-command-router-refactor`: passed in `83893ms`, log `/tmp/smith/2026-05-30T10-53-15-658Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-8z0A50/home/.smith/runs/2026-05-30T10-51-53-116Z.trace`.
+- Target SWE rerun `005-gravitational-teleport`: failed with Docker timeout after `908094ms`, log `/tmp/smith/2026-05-30T11-08-32-439Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-dCnj9o/home/.smith/runs/2026-05-30T10-53-31-840Z.trace`.
+
+Decision:
+
+- Keep the change because the trace shows the final blocker report was accepted instead of rejected by the explicit-requirements guard.
+- Do not count `005` as recovered. Smith finished too close to the Docker timeout, no verifier ran, and the final report still said required Kubernetes service startup work was incomplete.
+- Current strict targeted evidence remains `6/10`; full SWE-bench Pro is still not justified.
+- New generic follow-up: leave an internal runtime buffer before the benchmark Docker timeout so Smith can finish and the harness can run verifier instead of losing a late finish to the outer timeout.

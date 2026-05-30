@@ -1388,7 +1388,9 @@ function shouldRejectIncompleteRequirementsFinish(
   if (!promptHasExplicitRequirements(context.options.prompt)) return false;
   if (!availableToolNames.some((toolName) => toolName === "run" || toolName === "patch")) return false;
   if (!finishReportsIncompleteRequirements(message)) return false;
-  return !finishReportsConcreteBlocker(message);
+  if (finishReportsConcreteBlocker(message)) return false;
+  if (finishReportsPatchContextOrTimeBlocker(message) && transcriptHasPatchContextFailure(context.transcript)) return false;
+  return true;
 }
 
 function finishReportsIncompleteRequirements(message: string): boolean {
@@ -1401,6 +1403,16 @@ function finishReportsConcreteBlocker(message: string): boolean {
   return /\b(?:permission denied|not writable|read-only|missing (?:dependency|package|tool|service|credential|credentials)|dependency (?:is )?missing|environment (?:issue|limitation|does not support|is missing)|network (?:unavailable|blocked|failure)|access (?:denied|blocked|unavailable)|requires? (?:user|manual|external|network|credential|credentials)|cannot continue because (?:the )?(?:required )?(?:dependency|tool|service|credential|credentials|environment|network)|not practical (?:in|with|without) (?:this|the) (?:environment|workspace|available tools)|impossible (?:in|with|without) (?:this|the) (?:environment|workspace|available tools))\b/i.test(
     message
   );
+}
+
+function finishReportsPatchContextOrTimeBlocker(message: string): boolean {
+  return /\b(?:patch context|file context|exact context|stale patch context|context no longer matched|context (?:does|did) not match|not enough remaining (?:run )?(?:time|budget)|run[- ]time deadline|time limit|safe remaining inspection budget)\b/i.test(
+    message
+  );
+}
+
+function transcriptHasPatchContextFailure(transcript: string): boolean {
+  return /\bPatch context did not match the current file\b/i.test(transcript);
 }
 
 function finishAcknowledgesPendingValidation(message: string): boolean {
