@@ -13136,3 +13136,60 @@ Result:
 
 - `.smith-bench` dropped from about `27G` to `13G`.
 - `git status --short` was clean before recording this documentation-only cleanup note.
+
+## 2026-05-31 Worklog: Rejected 24-Call Inspection Pause Experiment
+
+Context:
+
+- Full-run `001-nodebb` evidence showed Smith did not produce its first task patch until after the `24` no-patch progress reminder, then ran out of useful validation/repair time.
+- Hypothesis: lowering the existing generic sustained-inspection pause from `36` to `24` non-edit tool calls might force earlier patching on broad editable tasks without adding benchmark-specific instructions.
+- This was a generic loop-control experiment only; no task prompts, benchmark harness, selected tests, scoring, verifier logic, or task-specific strings were changed.
+
+Implementation attempted, then reverted:
+
+- `src/loop.ts`: temporarily changed `INSPECTION_PAUSE_TOOL_INTERVAL` from `PROGRESS_REMINDER_TOOL_INTERVAL * 3` to `* 2`.
+- `tests/integration.test.ts`: temporarily updated the sustained-inspection pause tests from `36` calls to `24` calls.
+- After target evidence, the code and test changes were reverted. The worktree was clean before this log-only update.
+
+Validation while the experiment was active:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "repeated no-patch progress reminders|paused-inspection patch context mismatch|task patch needs validation|generic progress reminder"
+npm test -- tests/integration.test.ts --testNamePattern "post-deadline inspection available|repeated no-patch progress reminders|paused-inspection patch context mismatch|task patch needs validation"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- First focused test run initially failed because it raced the rebuild; rerunning after build passed `4` selected tests.
+- Full integration initially exposed a stale `36`-call expectation in `keeps post-deadline inspection available after inspection has been paused`; after updating that temporary test, focused coverage passed.
+- `npm test -- tests/integration.test.ts`: passed `104` tests in `35450ms`.
+- Representative project benchmark `091-command-router-refactor`: passed in `237245ms`.
+  - Log: `/tmp/smith/2026-05-31T03-55-34-063Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-81JmDC/home/.smith/runs/2026-05-31T03-51-37-089Z.trace`.
+
+Target evidence:
+
+- Target `001-nodebb` failed by Docker timeout after `920146ms`.
+  - Log: `/tmp/smith/2026-05-31T04-11-06-028Z-smith-001-nodebb-nodebb-vnan.json`.
+  - Trace: `.smith-bench/run-BwVv1L/home/.smith/runs/2026-05-31T03-56-00-764Z.trace`.
+  - Sandbox: `.smith-bench/run-BwVv1L`.
+  - Usage: `1919741` input tokens, `1626240` cached input tokens, `94046` output tokens, `81405` reasoning output tokens, `2013787` total tokens.
+- Trace evidence:
+  - At the `24`-call reminder, inspection tools were removed as intended: `Smith progress: 24 tool calls have completed ... available tools: patch, finish`.
+  - The first patch then landed at trace line `18883` in `src/user/email.js`.
+  - The broader follow-up patch at trace line `24368` produced malformed task code in `src/controllers/admin/users.js`: the Promise result destructuring still had four slots while `getConfirmObjs()` was added as a fifth Promise, `getConfirmObjs()` was called again later, and a spurious `const confirmData = arguments[0] ? null : null;` line was inserted.
+  - The retained sandbox diff confirms the malformed edit and an untracked `appendonlydir/` created by Redis/test startup attempts.
+  - The run spent the remainder in validation and finish-rejection loops around Redis `ECONNREFUSED` and post-deadline restrictions, then the benchmark wrapper timed out.
+
+Decision:
+
+- Reject and revert the change. Earlier forcing did not improve `001-nodebb`; it appears to have reduced inspection quality enough to create malformed edits and a worse timeout outcome.
+- Do not count this as a targeted recovery and do not run the full SWE-bench Pro suite from this evidence.
+- Keep the evidence in the logs as a rejected idea: do not simply lower the generic inspection pause threshold without a more nuanced signal that the current evidence is sufficient for a safe patch.
+- Next direction should move away from this simple threshold change. Investigate a different generic issue, likely validation environment/setup recovery for local services or a Codex-passed failed task such as `010-vuls`, while still avoiding SWE-specific instructions.
+- Maintenance: `.smith-bench` is about `14G` after preserving `run-BwVv1L` and `run-81JmDC`; clean again after any needed evidence is copied out.
