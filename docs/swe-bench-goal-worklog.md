@@ -13935,3 +13935,64 @@ Decision:
 - Do not run the full SWE-bench Pro suite from this evidence.
 - Keep focusing on generic runtime/tool behavior only; avoid any task-specific NodeBB, SWE-bench, selected-test, or benchmark prompt tuning.
 - Maintenance: `.smith-bench` is now about `40G`. Cleanup should happen soon, preserving `run-r9koIA`, `run-2s8m5P`, `run-hhcrES`, `run-9VmL6L`, `run-JgORbZ`, `run-OOAt3C`, and latest full-run evidence dirs before pruning stale sandboxes.
+
+## 2026-05-31 Worklog: Rejected Benchmark Max-Run Headroom Adjustment
+
+Rationale:
+
+- The latest current-code `001` run had the generic progress/deadline reminders but still left no successful task patch before Smith finalization.
+- Smith finalization happened around `11m 16s` of a `15m` outer task timeout. That left some process time, but not enough for the model to recover from the first stale-context patch failure and produce a validated candidate before Docker killed the run.
+- A prior experiment lowering the no-patch tool-call pause threshold to `24` was rejected because it reduced patch quality. This change instead adjusts the existing benchmark wall-clock budget, leaving more recovery/finalization headroom while preserving the same generic loop mechanics.
+- This applies to all Smith benchmark runs with `--timeout-ms`; it is not SWE-task-specific and does not change benchmark prompts, scoring, verifier logic, selected tests, or result parsing.
+
+Implementation:
+
+- Trial implementation changed `BENCHMARK_SMITH_MAX_RUN_RATIO` from `0.75` to `0.65`.
+- Trial test expectation changed the derived `--max-run-ms` for a `100000ms` benchmark timeout from `75000` to `65000`.
+- Trial docs changed the documented derived deadline from `85%` to `65%`; the previous `85%` text was already stale relative to the code's `75%`.
+
+Validation plan:
+
+```sh
+npm test -- tests/benchmark.test.ts
+npm run build
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Validation status:
+
+- `npm test -- tests/benchmark.test.ts`: passed `22` tests.
+- `npm run build`: passed.
+- Representative project benchmark `091-command-router-refactor` failed:
+  - Duration: `225135ms`.
+  - Log: `/tmp/smith/2026-05-31T13-26-15-109Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-00JpwL/home/.smith/runs/2026-05-31T13-22-30-229Z.trace`.
+  - Smith final output said it implemented `src/router.js` and `README.md` but could not run `/task/verify.sh` from the tool-limited state.
+  - Benchmark verifier `bash /task/verify.sh` exited `1`.
+- Decision: reject the `65%` ratio and revert behavior to `75%`.
+- Keep `docs/benchmarks.md` corrected to `75%` rather than the stale `85%` text.
+
+Cleanup:
+
+- User asked to clean `.smith-bench` ASAP because the benchmark run folder was getting too large.
+- Before cleanup: `.smith-bench` was about `35G` with `56` retained `run-*` directories.
+- Normal `rm -rf` removed user-owned stale dirs but hit Docker/root-owned files in old sandboxes.
+- `sudo` was unavailable because it required a terminal/password.
+- Used a short-lived Docker container mounted on `.smith-bench` to remove root-owned stale directories while preserving selected evidence dirs.
+- After cleanup: `.smith-bench` is `6.2G` with `14` retained `run-*` directories.
+- Retained dirs:
+  - `run-0hddN3`
+  - `run-2s8m5P`
+  - `run-5qUIye`
+  - `run-7koFyv`
+  - `run-9VmL6L`
+  - `run-JgORbZ`
+  - `run-OOAt3C`
+  - `run-REj3mb`
+  - `run-gnOttW`
+  - `run-hG2Ti1`
+  - `run-hhcrES`
+  - `run-mHu6bF`
+  - `run-nFIqXn`
+  - `run-r9koIA`

@@ -3673,3 +3673,30 @@ Decision:
 - The current generic hypothesis is narrower: wall-clock deadline policy may need better evidence-sensitive transition from inspection to implementation, but any change must be generic to ordinary coding tasks and validated on a project task before another SWE target rerun.
 - Current targeted/full evidence candidates remain `002`, `003`, `004`, `006`, `007`, and `008`; because `003` and `006` are Codex-failed/flawed-bucket caveats, full SWE-bench Pro is still not justified.
 - Maintenance note: `.smith-bench` is now about `40G`; prune stale `run-*` directories soon after preserving `run-r9koIA` and the latest full-run/targeted evidence dirs.
+
+## 2026-05-31 Rejected Benchmark Max-Run Headroom Adjustment
+
+Change:
+
+- Trialed lowering the generic benchmark-derived Smith `--max-run-ms` ratio from `75%` to `65%` of the outer task timeout.
+- Updated benchmark test expectation and benchmark documentation during the trial.
+- This was a generic benchmark-runner timing experiment. It did not alter task prompts, selected tests, parsers, scoring, verifier logic, or SWE task-specific behavior.
+
+Hypothesis:
+
+- The latest `001-nodebb` trace reached Smith finalization only after most of the outer Docker timeout had already elapsed, leaving too little time for patch-context recovery after a late stale hunk.
+- More post-deadline headroom might help ordinary benchmark tasks recover from late patch failures, validate a late task patch, or finish cleanly instead of being killed by the outer timeout.
+
+Validation status:
+
+- `npm test -- tests/benchmark.test.ts`: passed `22` tests.
+- `npm run build`: passed.
+- Representative project benchmark `091-command-router-refactor`: failed in `225135ms`, log `/tmp/smith/2026-05-31T13-26-15-109Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-00JpwL/home/.smith/runs/2026-05-31T13-22-30-229Z.trace`.
+- Smith implemented `src/router.js` and `README.md` but finished from a tool-limited state saying it could not run `/task/verify.sh`; the benchmark verifier then failed.
+- Decision: reject and revert the `65%` ratio. Keep the benchmark docs accurate at `75%`.
+
+Maintenance:
+
+- Cleaned `.smith-bench` after the user flagged the folder size.
+- Size dropped from about `35G` to `6.2G`.
+- Retained `14` current/high-value evidence directories: `run-0hddN3`, `run-2s8m5P`, `run-5qUIye`, `run-7koFyv`, `run-9VmL6L`, `run-JgORbZ`, `run-OOAt3C`, `run-REj3mb`, `run-gnOttW`, `run-hG2Ti1`, `run-hhcrES`, `run-mHu6bF`, `run-nFIqXn`, and `run-r9koIA`.
