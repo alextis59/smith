@@ -72,6 +72,13 @@ NODE
       expect(multilineOutput.exitCode).toBe(0);
       expect(multilineOutput.output).toBe("hello\nworld");
 
+      const errexitFailed = await runner.run("set -e\nfalse", 2000);
+      expect(errexitFailed.exitCode).toBe(1);
+
+      const afterErrexit = await runner.run("echo shell-survived", 2000);
+      expect(afterErrexit.exitCode).toBe(0);
+      expect(afterErrexit.output).toContain("shell-survived");
+
       const result = await runner.run("chat_out done", 2000);
       expect(result.chatOut).toBe("done");
       expect(result.output).toContain("done");

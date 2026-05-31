@@ -245,12 +245,18 @@ function sleep(ms: number): Promise<void> {
 }
 
 function wrapInteractiveShellCommand(command: string): string {
-  if (mayCloseInteractiveShell(command)) return command.includes("\n") ? `(\n${command}\n)` : `(${command})`;
+  if (mayCloseInteractiveShell(command) || mayMutateInteractiveShellOptions(command)) {
+    return command.includes("\n") ? `(\n${command}\n)` : `(${command})`;
+  }
   return wrapMultilineCommand(command);
 }
 
 function mayCloseInteractiveShell(command: string): boolean {
   return /(?:^|[;&|()\n]\s*)exit(?:\s|$|[;&|)\n])/i.test(command);
+}
+
+function mayMutateInteractiveShellOptions(command: string): boolean {
+  return /(?:^|[;&|()\n]\s*)set\s+[-+][A-Za-z]*e[A-Za-z]*(?:\s|$|[;&|)\n])/i.test(command);
 }
 
 function wrapMultilineCommand(command: string): string {

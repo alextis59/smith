@@ -13687,3 +13687,65 @@ Decision:
 - Next investigation should start with the most generic failure, `002` `smith: shell is closed`, then compare timeout failures for common loop/runtime symptoms before changing prompts or task behavior.
 - Avoid spending more effort on Codex-failed/flawed-bucket task details unless a generic runtime issue is clearly implicated.
 - Maintenance: `.smith-bench` is now `37G`. Cleanup should happen soon after preserving the latest full-run dirs `run-hG2Ti1`, `run-otcmC1`, `run-JbKAEj`, `run-o1e1B1`, `run-vE6dB5`, `run-gnOttW`, `run-mHu6bF`, `run-REj3mb`, `run-0hddN3`, and `run-nFIqXn`, plus targeted evidence dirs `run-S4RIbL`, `run-GhJ4iX`, `run-A4LcjE`, `run-zltk89`, `run-4Iwqwt`, and `run-z16bgW`.
+
+## 2026-05-31 Worklog: PTY Errexit Isolation
+
+Context:
+
+- Full-run `002-qutebrowser` failed with `smith: shell is closed` and no verifier output.
+- Trace `.smith-bench/run-otcmC1/home/.smith/runs/2026-05-31T09-27-58-225Z.trace` showed the model asked to run:
+
+```sh
+set -e
+cp tests/unit/utils/test_log.py /tmp/test_log.py.bak
+cp tests/unit/utils/test_qtlog.py /tmp/test_qtlog.py.bak
+rm -f tests/unit/utils/test_log.py tests/unit/utils/test_qtlog.py
+printf 'removed old files\n'
+cp /tmp/test_log.py.bak tests/unit/utils/test_log.py
+cp /tmp/test_qtlog.py.bak tests/unit/utils/test_qtlog.py
+printf 'restored old files\n'
+ls -l tests/unit/utils/test_log.py tests/unit/utils/test_qtlog.py
+```
+
+- `src/pty.ts` wrapped multiline commands in `{ ... }`, so `set -e` mutated the persistent interactive shell rather than an isolated child context.
+- Generic hypothesis: if a command enables `errexit` in the persistent PTY, a later command failure can close the shell and turn subsequent tool calls into `shell is closed`. This is a runtime stability problem that can affect any user task.
+
+Implementation:
+
+- `src/pty.ts`: `wrapInteractiveShellCommand` now wraps commands that may enable shell `errexit` in a subshell, just like commands that may explicitly close the shell.
+- Added `mayMutateInteractiveShellOptions` to detect `set -e`-style invocations, including combined short options such as `set -euo pipefail`.
+- `tests/pty.test.ts`: added regression coverage for `set -e\nfalse`, asserting exit code `1` and proving a follow-up `echo shell-survived` command still succeeds.
+- This preserves ordinary persistent-shell behavior for normal multiline commands while isolating shell-option changes that can kill the PTY.
+
+Validation commands:
+
+```sh
+npm test -- tests/pty.test.ts
+npm run build
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Validation results:
+
+- `npm test -- tests/pty.test.ts`: passed `2/2`.
+- `npm run build`: passed.
+- Representative project benchmark `091-command-router-refactor`: passed in `126244ms`.
+  - Log: `/tmp/smith/2026-05-31T11-30-58-440Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-5qUIye/home/.smith/runs/2026-05-31T11-28-53-465Z.trace`.
+- Target `002-qutebrowser`: passed in `843236ms`.
+  - Log: `/tmp/smith/2026-05-31T11-45-15-740Z-smith-002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c.json`.
+  - Trace: `.smith-bench/run-7koFyv/home/.smith/runs/2026-05-31T11-31-13-721Z.trace`.
+  - Sandbox: `.smith-bench/run-7koFyv`.
+  - Usage: `1410876` input tokens, `1151616` cached input tokens, `68643` output tokens, `57061` reasoning output tokens, `1479519` total tokens.
+- Verifier evidence:
+  - Selected tests: `tests/unit/utils/test_log.py` and `tests/unit/utils/test_qtlog.py`.
+  - Stats: `56` collected, `56` passed.
+  - No `shell is closed` failure occurred.
+
+Decision:
+
+- Keep the generic PTY fix and count `002-qutebrowser` as a targeted recovery candidate for current code.
+- Do not run the full suite yet. Full-run source of truth remains `3/10`; current targeted candidates now include `002`, `007`, and `008`, but additional recovery evidence is needed before another expensive run.
+- Next best direction is a generic investigation into timeout regressions on previously passing `003-ansible` and `006-navidrome`; avoid task-specific prompt changes or Codex-failed/flawed-task overfocus.
+- Maintenance: `.smith-bench` is now `38G`. Preserve `run-5qUIye` and `run-7koFyv` in addition to the latest full-run and targeted evidence dirs before pruning stale sandboxes.

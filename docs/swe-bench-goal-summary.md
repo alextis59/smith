@@ -3573,3 +3573,26 @@ Decision:
   - `010-vuls`: missing Alpine parser methods plus `TestIsOvalDefAffected` failure remained.
 - Next direction: investigate generic run stability and shell/session handling first, especially the `002` `shell is closed` failure and timeout regressions on tasks that previously passed. Avoid adding SWE-specific prompt instructions.
 - Maintenance note: `.smith-bench` is now `37G`; cleanup should happen soon, preserving the latest full-run dirs and targeted evidence dirs before pruning.
+
+## 2026-05-31 PTY Errexit Isolation
+
+Change:
+
+- Isolated run commands that enable shell `errexit` (`set -e`, `set -euo pipefail`, etc.) inside a subshell so they cannot poison or close Smith's persistent interactive PTY session.
+- Added a PTY regression test proving `set -e\nfalse` returns exit code `1` and the next command still runs.
+- This is a generic runtime stability fix, not a benchmark-specific instruction.
+
+Validation:
+
+- `npm test -- tests/pty.test.ts`: passed `2` tests.
+- `npm run build`: passed.
+- Representative project benchmark `091-command-router-refactor`: passed in `126244ms`, log `/tmp/smith/2026-05-31T11-30-58-440Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-5qUIye/home/.smith/runs/2026-05-31T11-28-53-465Z.trace`.
+- Target `002-qutebrowser`: passed in `843236ms`, log `/tmp/smith/2026-05-31T11-45-15-740Z-smith-002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c.json`, trace `.smith-bench/run-7koFyv/home/.smith/runs/2026-05-31T11-31-13-721Z.trace`.
+- Verifier selected `tests/unit/utils/test_log.py` and `tests/unit/utils/test_qtlog.py`; all `56` tests passed.
+
+Decision:
+
+- Count `002-qutebrowser` as a targeted recovery candidate for the current code.
+- Do not run full SWE-bench Pro yet; current source of truth remains `3/10`, and more regression recovery evidence is needed before another expensive full run.
+- Next highest-value direction is a generic cause for verifier timeouts on previously passing `003` and `006`, while avoiding overfocus on Codex-failed/flawed tasks.
+- Maintenance note: `.smith-bench` is now `38G`; prune stale sandboxes soon after preserving current evidence.
