@@ -13594,3 +13594,44 @@ Decision:
 - Do not run full SWE-bench Pro yet. Full-run source of truth remains `5/10`; current targeted evidence plausibly recovers `007`, but no evidence yet closes another failure needed for `>=7/10`.
 - Next high-value work should inspect `008` timeout or `009` timeout for a generic Smith runtime issue. Avoid hand-tuning benchmark implementation details.
 - Maintenance: `.smith-bench` is now at least `29G` and has additional `091`/`007` sandboxes; cleanup should happen soon after preserving `run-A4LcjE` and `run-S4RIbL` too.
+
+## 2026-05-31 Worklog: Current-Code `008-vuls` Targeted Recheck
+
+Context:
+
+- The latest full SWE-bench Pro run failed `008-vuls` by Docker verifier timeout after `900000ms` with no verifier stdout.
+- Earlier targeted evidence showed `008-vuls` could pass, but that did not reproduce in the full run.
+- After the generic exact-logic coverage reminder recovered targeted `007-element-web`, `008-vuls` became the most important non-Codex-failed target to recheck before considering another expensive full run.
+- No Smith code, benchmark prompt, selected-test parser, verifier, scoring, task IDs, or run scripts were changed for this recheck.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Passed `1/1` in `955881ms`, exit code `0`.
+- Log: `/tmp/smith/2026-05-31T09-11-51-628Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+- Trace: `.smith-bench/run-GhJ4iX/home/.smith/runs/2026-05-31T08-55-56-583Z.trace`.
+- Sandbox: `.smith-bench/run-GhJ4iX`.
+- Usage: `1039372` input tokens, `835200` cached input tokens, `69769` output tokens, `63362` reasoning output tokens, `1109141` total tokens.
+- Verifier evidence: selected `TestParse`; all selected package runs completed, and final verifier output was `{"passed": 1}`.
+
+Comparison:
+
+- This targeted pass does not prove the full suite will reproduce it, because the previous full run timed out on `008`.
+- It does show the current code can still solve the task under the official local task runner without task-specific Smith changes.
+- Current plausible full-run path is now:
+  - Full-run passes already reproduced: `001`, `002`, `003`, `004`, `006`.
+  - Current targeted recovery candidate: `007`.
+  - Current targeted recovery candidate: `008`.
+- Caveat: `003` and `006` are in the Codex-failed/flawed-task caution bucket, so the only acceptable source of truth remains a full honest run.
+
+Decision:
+
+- A full SWE-bench Pro rerun is now justified by targeted evidence rather than speculative prompting.
+- Do not update `LeaderBoard.md` until the full benchmark reaches `>=7/10`.
+- If the full run misses target again, classify failures from logs before making any further changes; avoid benchmark-specific task guidance.
+- Maintenance: `.smith-bench` is still growing into the tens of GB. Preserve `run-GhJ4iX`, `run-S4RIbL`, `run-A4LcjE`, the latest full-run dirs, and key older targeted evidence dirs before pruning stale sandboxes.

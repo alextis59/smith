@@ -3547,3 +3547,12 @@ Decision:
 - Do not run the full suite yet: current targeted/full evidence plausibly gets back to about `6/10`, but not the `>=7/10` target without another recovery.
 - Next target should avoid Codex-failed/flawed overfocus and look for a generic cause in `008` timeout or `009` timeout before another full run.
 - Maintenance note: `.smith-bench` remains around `29G+`; cleanup is due soon.
+
+## 2026-05-31 Current-Code `008-vuls` Targeted Recheck
+
+- Reran `008-vuls` after the generic exact-logic coverage reminder.
+- Result: passed in `955881ms`, log `/tmp/smith/2026-05-31T09-11-51-628Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-GhJ4iX/home/.smith/runs/2026-05-31T08-55-56-583Z.trace`.
+- Verifier selected `TestParse`; exit code `0`, `{"passed": 1}`.
+- This confirms `008` can still pass with current code after the full-run timeout. It is not conclusive for the full suite, but combined with current targeted recovery of `007` and the full-run passes for `001`, `002`, `003`, `004`, and `006`, it creates a plausible honest path to `>=7/10`.
+- Decision: a full SWE-bench Pro rerun is now justified. Do not update `LeaderBoard.md` unless that full run reaches the target.
+- Maintenance note: preserve `run-GhJ4iX`, `run-S4RIbL`, latest full-run dirs, and the representative `run-A4LcjE` before pruning `.smith-bench`; the directory is already in the tens of GB.
