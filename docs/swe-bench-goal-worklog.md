@@ -13893,3 +13893,45 @@ Decision:
 - Current evidence candidates are `002`, `003`, `004`, `006`, `007`, and `008`, still not enough to justify full-suite rerun against the `>=7/10` target.
 - Next target should be non-Codex-failed if possible; inspect `001-nodebb` syntax/blocker behavior or `009-openlibrary` MARC parsing failure for generic Smith issues before making another change.
 - Maintenance: `.smith-bench` is still about `38G+`; cleanup is overdue. Preserve `run-2s8m5P`, `run-hhcrES`, latest full-run dirs, and prior targeted evidence dirs before pruning.
+
+## 2026-05-31 Worklog: Current-Code `001-nodebb` Recheck
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed by Docker timeout after `900000ms`.
+- Summary duration: `919321ms`.
+- Total tokens: `1293722`.
+- Log: `/tmp/smith/2026-05-31T13-07-36-874Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-r9koIA/home/.smith/runs/2026-05-31T12-52-31-666Z.trace`.
+- Sandbox: `.smith-bench/run-r9koIA`.
+
+Trace evidence:
+
+- Smith received the generic exactness/negative-coverage user-prompt note; no SWE-bench-specific solving instruction was added.
+- Progress reminder at `12` tool calls without a task patch or finish: available tools `run, patch, sub_agent, finish`.
+- Progress reminder at `24` tool calls without a task patch or finish: available tools `run, patch, sub_agent, finish`.
+- Deadline reminder at `8m 44s` of `11m 15s` max run time (`75%` threshold): still available tools `run, patch, sub_agent, finish`.
+- Deadline finalization at about `11m 16s`: available tools narrowed to `patch, finish`.
+- First finish after finalization reported all requested items as not implemented; Smith correctly rejected it because explicit requirements were incomplete and there was no concrete external blocker.
+- A subsequent large patch failed with stale context in `src/user/email.js`; the trace then opened the one short post-deadline inspection slot for patch-context mismatch, but the outer benchmark timeout arrived before a validated candidate could finish.
+- No verifier output was produced.
+
+Diagnosis:
+
+- This current-code failure differs from the full-run `001` syntax-error failure. It is an over-inspection/late-patch convergence failure: Smith spent most of the configured run on read-only investigation, then attempted too much editing after finalization.
+- The existing generic progress reminders fired, but they did not force a task patch before the wall-clock budget was exhausted.
+- Do not simply lower `INSPECTION_PAUSE_TOOL_INTERVAL`: that experiment has already been tried and reverted after producing malformed `001` edits and another timeout.
+- A possible generic direction is an evidence-sensitive deadline transition that preserves quality while reducing late giant patches, but it needs careful local integration coverage and project-task validation before another target rerun.
+
+Decision:
+
+- Do not count `001-nodebb` as recovered.
+- Do not run the full SWE-bench Pro suite from this evidence.
+- Keep focusing on generic runtime/tool behavior only; avoid any task-specific NodeBB, SWE-bench, selected-test, or benchmark prompt tuning.
+- Maintenance: `.smith-bench` is now about `40G`. Cleanup should happen soon, preserving `run-r9koIA`, `run-2s8m5P`, `run-hhcrES`, `run-9VmL6L`, `run-JgORbZ`, `run-OOAt3C`, and latest full-run evidence dirs before pruning stale sandboxes.

@@ -3652,3 +3652,24 @@ Decision:
 - Current targeted/full evidence candidates are now `002`, `003`, `004`, `006`, `007`, and `008`, still short of the `>=7/10` full-run target and not enough to rerun the full suite.
 - Next target should avoid overfocusing on Codex-failed tasks; inspect `001-nodebb` or `009-openlibrary` for a generic failure mode.
 - Maintenance note: `.smith-bench` is still about `38G+`; preserve `run-2s8m5P` and `run-hhcrES` before cleanup.
+
+## 2026-05-31 Current-Code `001-nodebb` Recheck
+
+Evidence:
+
+- Reran `001-nodebb-nodebb-vnan` under the current generic runtime with no code changes after commit `e4e994c`.
+- Result: failed by Docker timeout after `900000ms`; summary duration `919321ms`, total tokens `1293722`.
+- Log: `/tmp/smith/2026-05-31T13-07-36-874Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-r9koIA/home/.smith/runs/2026-05-31T12-52-31-666Z.trace`.
+- Sandbox: `.smith-bench/run-r9koIA`.
+- The trace showed progress reminders at `12` and `24` no-patch tool calls, a `75%` deadline reminder at `8m 44s`, and finalization at about `11m 16s`.
+- No source patch landed before finalization. Smith first tried an honest incomplete finish, which was correctly rejected because explicit requirements remained unimplemented and no external blocker existed.
+- Smith then attempted a large patch after the deadline, but one hunk failed with stale context in `src/user/email.js`; no verifier evidence was produced before the outer Docker timeout.
+
+Decision:
+
+- Do not count `001-nodebb` as recovered under current code.
+- Do not reintroduce benchmark-specific prompt edits or lower the generic sustained-inspection threshold blindly; an earlier `24`-call pause experiment already produced lower-quality malformed edits and was reverted.
+- The current generic hypothesis is narrower: wall-clock deadline policy may need better evidence-sensitive transition from inspection to implementation, but any change must be generic to ordinary coding tasks and validated on a project task before another SWE target rerun.
+- Current targeted/full evidence candidates remain `002`, `003`, `004`, `006`, `007`, and `008`; because `003` and `006` are Codex-failed/flawed-bucket caveats, full SWE-bench Pro is still not justified.
+- Maintenance note: `.smith-bench` is now about `40G`; prune stale `run-*` directories soon after preserving `run-r9koIA` and the latest full-run/targeted evidence dirs.
