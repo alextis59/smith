@@ -8,14 +8,12 @@ Alternative success path added by user on 2026-05-30: if Smith `gpt-5.5` high re
 
 - Target score: `>=7/10`.
 - Leaderboard target reference: Codex CLI `gpt-5.4` high, `7/10`, raw result `.smith-bench/codex-gpt-5.4-high-swe-pro.json`.
-- Latest recorded Smith mini high full run: `3/10`, raw result `.smith-bench/swe-pro-default128k-max240-20260522.json`.
-- Latest Smith mini high passes: `002`, `004`, `007`.
-- Latest Smith mini high failures: `001`, `003`, `005`, `006`, `008`, `009`, `010`.
+- Latest Smith mini high full run evidence: `4/10` on 2026-05-31 after commit `2e3628e`; passed `002`, `003`, `004`, `007`; failed `001`, `005`, `006`, `008`, `009`, `010`. This was below the `>=7/10` target and was not added to `LeaderBoard.md` as a successful milestone.
 - Integrity correction: user clarified that prompt edits made specifically for the SWE benchmark are cheating for this goal. Earlier SWE-specific prompt milestones and any passes produced under them are retained below only as historical investigation notes, not valid target evidence.
 - Current valid evidence should count only the baseline full-run passes plus results produced after `befac0f` removed SWE-specific prompt coaching and kept only generic Smith/runtime or harness-integrity changes.
 - Stricter prompt rule: SWE-bench Pro tasks now receive the raw task prompt only, with no Smith benchmark wrapper or SWE-specific coaching. Local project benchmarks still keep their normal `/task/verify.sh` harness framing.
-- Current strict targeted evidence: baseline full-run passes `002`, `004`, `007`, plus recovered `001`, `003`, and `008` under the raw-prompt path, for `6/10` evidence. `003` is still a Codex `gpt-5.4` failed task, so keep prioritizing Codex-passed Smith failures for further work.
-- Current unrecovered Codex-passed Smith failures: `005` and `010`. Do not run the full SWE-bench Pro suite until generic changes recover one more Codex-passed failure to plausibly reach `>=7/10`.
+- Current full-run score is `4/10`, not complete. Targeted recoveries for `001`, `006`, and `008` did not reproduce in the latest full suite, so use the full-run traces as the current source of truth.
+- Current Codex-passed Smith full-run failures: `001`, `005`, `008`, and `010`. Prioritize these over Codex-failed/flawed candidates (`006`, `009`) unless a generic Smith issue clearly appears there.
 - User clarification on 2026-05-23: do not pursue prompt edits or instructions tailored to SWE-bench Pro. Generic Smith capabilities are acceptable only when they apply to ordinary user tasks as well.
 - User reinforcement on 2026-05-23: prompt or runtime instructions written specifically for SWE-bench Pro are cheating for this goal. Treat the older SWE-specific prompt sections below as rejected historical experiments only; do not count their scores, reintroduce their wording, or use them as design direction.
 - User reinforcement on 2026-05-24: benchmark-shaped prompt edits are cheating even when they look like general benchmark guidance. Future changes must be ordinary Smith improvements that would be appropriate for user tasks outside SWE-bench Pro.
@@ -27,7 +25,7 @@ Alternative success path added by user on 2026-05-30: if Smith `gpt-5.5` high re
 - `.smith-bench` grows quickly because many targeted runs keep full sandboxes, traces, and result artifacts. Periodically check its size with `du -sh .smith-bench` and the retained run count with `find .smith-bench -maxdepth 1 -type d -name 'run-*' | wc -l`.
 - After each useful failure has its command, log path, trace path, sandbox id, and relevant evidence copied into this summary/worklog, prune stale `.smith-bench/run-*` sandboxes that are no longer needed for diagnosis. Keep the raw result JSONs and any sandboxes that still contain unresolved evidence.
 - Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
-- 2026-05-31 cleanup reminder: `.smith-bench` was pruned from about `39G` to `7.1G`; after the latest retained representative/target runs it is about `9.1G`. Re-check this after each batch of retained runs so the folder does not silently grow by several GB. Preserve latest evidence dirs such as `run-LRnuEJ`, `run-yJ7ypB`, `run-I2G7TZ`, and `run-LSDhek` until their traces/logs are no longer needed.
+- 2026-05-31 cleanup reminder: `.smith-bench` was pruned from about `39G` to `7.1G`; after the latest retained representative, target, and full-suite runs it is about `18G`. Re-check this after each batch of retained runs so the folder does not silently grow by several GB. Preserve latest full-run evidence dirs such as `run-enkt2u`, `run-C7Ih7e`, `run-aiwHB9`, `run-z798E6`, `run-WHheYq`, `run-Id1DKE`, `run-C0epbw`, `run-zDUpXE`, `run-J300Es`, and `run-eqL6Sa` until their traces/logs are no longer needed.
 - 2026-05-30 note: after the latest targeted runs, `.smith-bench` is about `7.3G` with `8` retained `run-*` directories. Preserved current/recent evidence: `run-JvD7C8`, `run-vvBMuM`, `run-jZiXQQ`, `run-Gn7PlH`, `run-6goAJU`, `run-1zl86m`, `run-TA29B0`, and `run-SEpBif`.
 - 2026-05-30 note: `.smith-bench` is back to about `12G` after further retained local and SWE runs. Prune again soon after preserving current evidence runs such as `run-qWpZdH`, `run-6inovy`, `run-trsSFJ`, `run-bbwPc4`, and `run-kG8O37`; otherwise the directory will keep growing by several GB across iteration.
 
@@ -3237,3 +3235,32 @@ Decision:
 - Keep the guard because it is generic, focused-test covered, full-integration clean, and did not regress the representative project task.
 - Current score-plausibility evidence is baseline full-run passes `002`, `004`, `007`, plus targeted recoveries `001`, `003`, `006`, and `008`, which gives a plausible `7/10` full-run shot. Because `003` and `006` are Codex-failed/flawed candidates, do not over-interpret this as clean benchmark superiority; only a full SWE-bench Pro run can prove completion.
 - Full SWE-bench Pro is now plausibly justified after committing this milestone.
+
+## 2026-05-31 Full SWE-bench Pro Attempt After 006 Diagnostic
+
+Command:
+
+- `node bin/smith.js benchmark run swe-bench-pro --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json`
+
+Result:
+
+- Full run failed the goal: `4/10` passed, `6/10` failed.
+- Duration: `7657432ms` (`2h 7m 37s`).
+- Usage: `17641064` input tokens, `14560768` cached input tokens, `777413` output tokens, `657821` reasoning output tokens, `18418477` total tokens.
+- Passed: `002-qutebrowser`, `003-ansible`, `004-openlibrary`, `007-element-web`.
+- Failed: `001-nodebb`, `005-teleport`, `006-navidrome`, `008-vuls`, `009-openlibrary`, `010-vuls`.
+
+Key failed-task evidence:
+
+- `001-nodebb`: failed one selected test, `test/user/emails.js | email confirmation (library methods) canSendValidation should return true if it has been long enough to re-send confirmation`; log `/tmp/smith/2026-05-30T23-13-30-942Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-enkt2u/home/.smith/runs/2026-05-30T22-58-27-750Z.trace`.
+- `005-teleport`: verifier failed on restored-test-facing missing `Forwarder.cfg` and `Forwarder.clientCredentials`; log `/tmp/smith/2026-05-31T00-01-08-265Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-WHheYq/home/.smith/runs/2026-05-30T23-46-00-795Z.trace`.
+- `006-navidrome`: failed by Docker timeout in the full run, despite a preceding targeted pass; log `/tmp/smith/2026-05-31T00-16-35-271Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`, trace `.smith-bench/run-Id1DKE/home/.smith/runs/2026-05-31T00-01-29-946Z.trace`.
+- `008-vuls`: failed by Docker timeout; log `/tmp/smith/2026-05-31T00-37-01-186Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-zDUpXE/home/.smith/runs/2026-05-31T00-21-55-965Z.trace`.
+- `009-openlibrary`: failed by Docker timeout; log `/tmp/smith/2026-05-31T00-52-08-003Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`, trace `.smith-bench/run-J300Es/home/.smith/runs/2026-05-31T00-37-02-731Z.trace`.
+- `010-vuls`: verifier failed on Alpine parser return-value/build errors and `TestIsOvalDefAffected` case `[85]`; log `/tmp/smith/2026-05-31T01-05-46-928Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-eqL6Sa/home/.smith/runs/2026-05-31T00-52-08-846Z.trace`.
+
+Decision:
+
+- The goal is not met. Do not update the successful leaderboard target row.
+- The targeted `006` pass did not reproduce under full-suite conditions, so treat the latest full run as the current source of truth.
+- Highest-value next diagnosis is `001-nodebb`: Codex `gpt-5.4` high passed it, and the latest full run is down to one selected failing email throttle test instead of a broad timeout.
