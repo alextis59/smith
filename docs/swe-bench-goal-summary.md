@@ -3700,3 +3700,21 @@ Maintenance:
 - Cleaned `.smith-bench` after the user flagged the folder size.
 - Size dropped from about `35G` to `6.2G`.
 - Retained `14` current/high-value evidence directories: `run-0hddN3`, `run-2s8m5P`, `run-5qUIye`, `run-7koFyv`, `run-9VmL6L`, `run-JgORbZ`, `run-OOAt3C`, `run-REj3mb`, `run-gnOttW`, `run-hG2Ti1`, `run-hhcrES`, `run-mHu6bF`, `run-nFIqXn`, and `run-r9koIA`.
+
+## 2026-05-31 Smith `gpt-5.5` High Diagnostic on `001-nodebb`
+
+Evidence:
+
+- Ran Smith `gpt-5.5` high on `001-nodebb-nodebb-vnan` after the user said matching Codex `gpt-5.5` high would be enough.
+- Result: passed in `532803ms`.
+- Log: `/tmp/smith/2026-05-31T13-37-44-319Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-zv1sQq/home/.smith/runs/2026-05-31T13-29-08-322Z.trace`.
+- Usage: `1677858` input tokens, `1522048` cached input tokens, `21399` output tokens, `12267` reasoning output tokens, `1699257` total tokens.
+- Verifier selected `test/database.js`, `test/database/keys.js`, and `test/user/emails.js`; final verifier summary returned `{"passed": 291}`.
+
+Decision:
+
+- This is alternate-model evidence only; no Smith code changed.
+- `LeaderBoard.md` still has no Codex CLI `gpt-5.5` high SWE-bench Pro row, so this does not establish the alternate completion target by itself.
+- The result does justify considering more `gpt-5.5` targeted diagnostics or a full Smith `gpt-5.5` run once a Codex `gpt-5.5` comparison target is available.
+- `.smith-bench` grew back to about `7.0G` after retaining `run-zv1sQq`; continue pruning stale sandboxes after extracting evidence.

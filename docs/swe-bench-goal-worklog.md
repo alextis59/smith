@@ -13996,3 +13996,38 @@ Cleanup:
   - `run-mHu6bF`
   - `run-nFIqXn`
   - `run-r9koIA`
+
+## 2026-05-31 Worklog: Smith `gpt-5.5` High Diagnostic on `001-nodebb`
+
+Context:
+
+- User directive: if Smith `gpt-5.5` high can reach the same SWE-bench Pro result as Codex CLI `gpt-5.5` high, that is sufficient.
+- `LeaderBoard.md` still has no Codex CLI `gpt-5.5` high SWE-bench Pro row, so the comparison target remains unknown.
+- Because `001-nodebb` is a Codex `gpt-5.4` high pass and a persistent Smith `gpt-5.4-mini` failure, it is a useful targeted diagnostic for the alternate model path.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.5 --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Passed.
+- Duration: `532803ms`.
+- Log: `/tmp/smith/2026-05-31T13-37-44-319Z-smith-001-nodebb-nodebb-vnan.json`.
+- Trace: `.smith-bench/run-zv1sQq/home/.smith/runs/2026-05-31T13-29-08-322Z.trace`.
+- Sandbox: `.smith-bench/run-zv1sQq`.
+- Usage: `1677858` input tokens, `1522048` cached input tokens, `21399` output tokens, `12267` reasoning output tokens, `1699257` total tokens.
+
+Verifier evidence:
+
+- Selected tests: `test/database.js`, `test/database/keys.js`, and `test/user/emails.js`.
+- Final verifier summary: `{"passed": 291}`.
+- Smith's local validation before verifier included `node --check` on modified JS files, focused ESLint, and an attempted local mocha run that was blocked by unavailable Redis; the benchmark verifier started Redis and passed selected tests.
+
+Decision:
+
+- Count this only as alternate-model targeted evidence, not a Smith code improvement.
+- Do not update `LeaderBoard.md` or claim completion without a full run and a known Codex `gpt-5.5` comparison target.
+- `.smith-bench` is back to about `7.0G` with `run-zv1sQq` retained; prune again after any follow-up evidence extraction.
