@@ -3401,3 +3401,9 @@ Decision:
 - Do not count benchmark progress. `005` still fails and does not justify a full SWE-bench Pro run.
 - Stop focusing `005` unless a new generic runtime issue appears; move next to another Codex-passed failed task or re-evaluate with a fresh full-run plan after more targeted wins.
 - Maintenance note: `.smith-bench` is about `27G`; cleanup is overdue before more long retained runs.
+
+## 2026-05-31 Sandbox Cleanup
+
+- Pruned stale `.smith-bench/run-*` retained sandboxes before additional long benchmark runs.
+- Preserved the latest full-run evidence directories plus current `005`, `008`, and representative project evidence: `run-enkt2u`, `run-C7Ih7e`, `run-aiwHB9`, `run-z798E6`, `run-WHheYq`, `run-Id1DKE`, `run-C0epbw`, `run-zDUpXE`, `run-J300Es`, `run-eqL6Sa`, `run-zltk89`, `run-ju6GnR`, `run-aETuX0`, and `run-RLU2r6`.
+- `.smith-bench` size dropped from about `27G` to `13G`.

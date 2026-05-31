@@ -13113,3 +13113,26 @@ Decision:
 - Do not run full SWE-bench Pro from this evidence; latest full-run source of truth remains `4/10`, with `008` as the only newly plausible targeted recovery.
 - Next direction: move away from `005`; inspect another Codex-passed failed task or decide whether existing targeted recoveries justify a later full run after one more high-value recovery.
 - Maintenance note: `.smith-bench` is about `27G`. Clean stale retained sandboxes before more long retained runs, preserving `run-ju6GnR`, `run-aETuX0`, `run-RLU2r6`, `run-zltk89`, and latest full-run evidence if still needed.
+
+## 2026-05-31 Worklog: Retained Sandbox Cleanup
+
+Context:
+
+- User asked to leave notes about periodically cleaning `.smith-bench` so it does not grow to several GB.
+- After the latest project and SWE target reruns, `.smith-bench` had grown to about `27G`.
+
+Command:
+
+```sh
+find .smith-bench -maxdepth 1 -type d -name 'run-*' ! -name run-enkt2u ! -name run-C7Ih7e ! -name run-aiwHB9 ! -name run-z798E6 ! -name run-WHheYq ! -name run-Id1DKE ! -name run-C0epbw ! -name run-zDUpXE ! -name run-J300Es ! -name run-eqL6Sa ! -name run-zltk89 ! -name run-ju6GnR ! -name run-aETuX0 ! -name run-RLU2r6 -exec rm -rf {} +
+```
+
+Preserved evidence directories:
+
+- Latest full-run task evidence: `run-enkt2u`, `run-C7Ih7e`, `run-aiwHB9`, `run-z798E6`, `run-WHheYq`, `run-Id1DKE`, `run-C0epbw`, `run-zDUpXE`, `run-J300Es`, `run-eqL6Sa`.
+- Current targeted/project evidence: `run-zltk89`, `run-ju6GnR`, `run-aETuX0`, `run-RLU2r6`.
+
+Result:
+
+- `.smith-bench` dropped from about `27G` to `13G`.
+- `git status --short` was clean before recording this documentation-only cleanup note.
