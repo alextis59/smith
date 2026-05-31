@@ -3411,3 +3411,30 @@ Decision:
 - Pruned stale `.smith-bench/run-*` retained sandboxes before additional long benchmark runs.
 - Preserved the latest full-run evidence directories plus current `005`, `008`, and representative project evidence: `run-enkt2u`, `run-C7Ih7e`, `run-aiwHB9`, `run-z798E6`, `run-WHheYq`, `run-Id1DKE`, `run-C0epbw`, `run-zDUpXE`, `run-J300Es`, `run-eqL6Sa`, `run-zltk89`, `run-ju6GnR`, `run-aETuX0`, and `run-RLU2r6`.
 - `.smith-bench` size dropped from about `27G` to `13G`.
+
+## 2026-05-31 Read-Only Test Patch Compatibility Guidance
+
+Change:
+
+- Added generic patch-failure guidance for read-only test/spec files: when a failed test/spec edit references expected source APIs, helper names, fields, or behavior, Smith should preserve or add the corresponding source declarations or compatibility wrappers in writable files.
+- Added integration assertions that the guidance is surfaced in read-only test/spec patch recovery turns.
+- This is not benchmark-specific: it applies to any unwritable test/spec patch and does not mention SWE-bench, task IDs, selected tests, scoring, or verifier behavior.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused read-only test patch selector: passed `6` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `105` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `189894ms`, log `/tmp/smith/2026-05-31T04-46-47-923Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-Ilpkk5/home/.smith/runs/2026-05-31T04-43-38-546Z.trace`.
+
+Target evidence:
+
+- Target `010-vuls` rerun timed out after `906448ms`, log `/tmp/smith/2026-05-31T05-02-02-335Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-uRQGpK/home/.smith/runs/2026-05-31T04-46-56-973Z.trace`.
+- The trace confirms the new guidance was delivered after `scanner/alpine_test.go` failed read-only, and Smith attempted follow-up source compatibility work. The task still failed by timeout with an incomplete Alpine APKINDEX/source-mapping implementation and final-answer rejection loops around unvalidated latest patches.
+
+Decision:
+
+- Keep the generic guidance because it is low-risk and validated, but do not count a benchmark recovery.
+- Do not run the full SWE-bench Pro suite from this evidence. Latest full-run source of truth remains `4/10`; targeted `008` remains the only recovered failed task candidate.
+- Next work should move to a different Codex-passed failed task or a generic loop issue with stronger evidence. Avoid more `010`-specific parser chasing.
+- Maintenance note: `.smith-bench` is about `16G`; prune stale retained sandboxes periodically before it grows back to several GB.

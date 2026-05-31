@@ -1883,7 +1883,7 @@ function formatPatchFailure(error: unknown): string {
     ? [
         "The target path is not writable in this workspace; do not keep retrying the same patch unless permissions change. If the task can be solved by changing other writable files, patch those instead of treating this path as the whole blocker.",
         patchFailureMentionsLikelyTestPath(message)
-          ? "The unwritable path appears to be a test or spec file. If the user did not explicitly ask to update tests, treat the test as existing behavior to satisfy by changing source files instead of reporting the test file as the blocker."
+          ? "The unwritable path appears to be a test or spec file. If the user did not explicitly ask to update tests, treat the test as existing behavior to satisfy by changing source files instead of reporting the test file as the blocker. If the failed test/spec edit referenced expected source APIs, helper names, fields, or behaviors, preserve or add the corresponding source declarations or compatibility wrappers in writable files so restored or external tests can compile."
           : ""
       ]
         .filter(Boolean)

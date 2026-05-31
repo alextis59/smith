@@ -5537,6 +5537,9 @@ max_turns = 30
     expect(stdout).toContain("Partial result");
     expect(provider.requests).toHaveLength(3);
     expect(userMessages(provider.requests[1].body)).toContain("The unwritable path appears to be a test or spec file");
+    expect(userMessages(provider.requests[1].body)).toContain(
+      "If the failed test/spec edit referenced expected source APIs, helper names, fields, or behaviors"
+    );
     expect(userMessages(provider.requests[2].body)).toContain("Finish rejected: a read-only test/spec patch failed");
   });
 
@@ -5859,6 +5862,9 @@ max_turns = 30
 
     expect(stdout).toContain("Implemented and validated");
     expect(userMessages(provider.requests[2].body)).toContain("The unwritable path appears to be a test or spec file");
+    expect(userMessages(provider.requests[2].body)).toContain(
+      "preserve or add the corresponding source declarations or compatibility wrappers"
+    );
     expect(provider.requests).toHaveLength(7);
     expect(readFileSync(join(cwd, "src", "app.js"), "utf8")).toBe(
       "module.exports = () => 'new';\nmodule.exports.compat = true;\n"

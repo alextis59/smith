@@ -13247,3 +13247,58 @@ Decision:
 - Do not run full SWE-bench Pro from this evidence.
 - Next `010`-related generic direction, if pursued, should be source compatibility after refactors: Smith needs to preserve existing helper names/wrappers when restored tests or callers still depend on them. Avoid task-specific helper-name hardcoding in Smith; look for a general way to make declaration compatibility warnings more actionable before final validation.
 - Maintenance: `.smith-bench` is about `15G` after preserving `run-52UfjS` and `run-CMG37j`.
+
+## 2026-05-31 Worklog: Read-Only Test Patch as Source Compatibility Evidence
+
+Context:
+
+- Latest `010-vuls` target evidence after the in-progress finish guard failed verifier because restored tests expected source helper methods that Smith had not preserved: `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`.
+- The underlying generic failure mode is not the helper names themselves. When a patch to a test/spec file fails because the file is read-only, the failed patch can still contain useful compatibility evidence about source APIs or behavior that writable source files should preserve.
+- User guidance explicitly forbids SWE-bench-specific prompt/runtime tuning. This change is limited to generic patch-failure recovery text for any read-only test/spec path.
+
+Implementation:
+
+- `src/loop.ts`: extended the read-only test/spec patch failure guidance to say that if the failed test/spec edit referenced expected source APIs, helper names, fields, or behavior, Smith should preserve or add matching source declarations or compatibility wrappers in writable files.
+- `tests/integration.test.ts`: added assertions to existing read-only test/spec recovery cases so this guidance remains present.
+- No task IDs, benchmark-specific strings, selected tests, scoring, verifier logic, or benchmark runner behavior changed.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "read-only test patch|source compatibility work after a read-only test patch failure"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused selector passed `6` selected tests in `1665ms`.
+- `npm test -- tests/integration.test.ts`: passed `105` tests in `38145ms`.
+- Representative project benchmark `091-command-router-refactor`: passed in `189894ms`.
+  - Log: `/tmp/smith/2026-05-31T04-46-47-923Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-Ilpkk5/home/.smith/runs/2026-05-31T04-43-38-546Z.trace`.
+
+Target evidence:
+
+- Target `010-vuls` failed by Docker timeout after `906448ms`.
+  - Log: `/tmp/smith/2026-05-31T05-02-02-335Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-uRQGpK/home/.smith/runs/2026-05-31T04-46-56-973Z.trace`.
+  - Sandbox: `.smith-bench/run-uRQGpK`.
+  - Usage: `2031337` input tokens, `1566720` cached input tokens, `70620` output tokens, `57889` reasoning output tokens, `2101957` total tokens.
+- Trace evidence:
+  - The new guidance appears after the read-only patch failure for `/workspace/scanner/alpine_test.go`.
+  - Smith subsequently attempted source compatibility work in `scanner/alpine.go`, so the guidance was visible and acted on.
+  - The run still timed out. It reported that Alpine APKINDEX/package-index parsing and true binary-to-source mapping remained incomplete, and later got stuck in finish rejections because the latest compatibility patch was not validated while messages kept referencing earlier `go test ./scanner` success.
+- Retained sandbox diff:
+  - Only `scanner/alpine.go` changed.
+  - It added several general Alpine parser helpers, but did not complete the requested index/source-mapping behavior before timeout.
+
+Decision:
+
+- Keep this as a generic, validated patch-failure recovery improvement. It did not recover `010`, so it does not justify a full SWE-bench Pro run.
+- Do not continue hand-chasing Alpine parser specifics; that would become task-specific benchmark work. If `010` is revisited, only pursue another generic runtime issue, such as avoiding finish-loop deadlock around unvalidated latest patches.
+- Latest full-run source of truth remains `4/10`; targeted `008-vuls` remains the only plausible recovered failed full-run task.
+- Maintenance: `.smith-bench` is about `16G`. Continue pruning stale retained sandboxes periodically while preserving current evidence directories; otherwise this folder will grow back into the tens of GB.
