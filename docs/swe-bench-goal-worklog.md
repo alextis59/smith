@@ -13484,3 +13484,53 @@ Decision:
 - Plausible score is now `7/10` if the prior full-run passes `002`, `003`, `004`, `007` reproduce and targeted recovery candidates `001`, `006`, and `008` reproduce.
 - This is the first point where a full SWE-bench Pro rerun is justified by targeted evidence rather than speculative prompt edits. The final source of truth remains the full benchmark result.
 - Maintenance: `.smith-bench` was about `19G` before this run and is likely larger now. Preserve `run-z16bgW`, `run-4Iwqwt`, `run-zltk89`, latest full-run dirs, and recent failed-diagnostic dirs before pruning stale retained sandboxes.
+
+## 2026-05-31 Worklog: Full SWE-bench Pro Rerun After Targeted Evidence
+
+Context:
+
+- Targeted evidence after generic Smith loop changes suggested a plausible `7/10`: prior full-run passes `002`, `003`, `004`, `007`, plus targeted recoveries `001`, `006`, and `008`.
+- This was the first non-speculative point where a full run was warranted under the goal rules.
+- No benchmark prompt, selected-test, parser, verifier, scoring, or task-specific runtime changes were made for this run.
+- `LeaderBoard.md` has no concrete `gpt-5.5` SWE-bench Pro row, so the active target remained Codex CLI `gpt-5.4` high at `7/10`.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Summary:
+
+- Result: failed target at `5/10`, exit code `1`.
+- Duration: `7855062ms`.
+- Total usage: `14921265` input tokens, `12746880` cached input tokens, `653157` output tokens, `553848` reasoning output tokens, `15574422` total tokens.
+- Passed tasks:
+  - `001-nodebb-nodebb-vnan`, log `/tmp/smith/2026-05-31T06-34-27-638Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-aFMHRM/home/.smith/runs/2026-05-31T06-21-02-338Z.trace`.
+  - `002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c`, log `/tmp/smith/2026-05-31T06-46-34-295Z-smith-002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c.json`, trace `.smith-bench/run-gCyip1/home/.smith/runs/2026-05-31T06-34-28-863Z.trace`.
+  - `003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5`, log `/tmp/smith/2026-05-31T07-00-22-037Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`, trace `.smith-bench/run-l2kI2s/home/.smith/runs/2026-05-31T06-46-39-446Z.trace`.
+  - `004-internetarchive-openlibrary-v13642507b4fc1f8d234172bf8129942da2c2ca26`, log `/tmp/smith/2026-05-31T07-10-38-528Z-smith-004-internetarchive-openlibrary-v13642507b4fc1f8d234172bf8129942da2c2ca26.json`, trace `.smith-bench/run-N2V8v3/home/.smith/runs/2026-05-31T07-00-40-865Z.trace`.
+  - `006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e`, log `/tmp/smith/2026-05-31T07-37-19-089Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`, trace `.smith-bench/run-6YaYzF/home/.smith/runs/2026-05-31T07-22-46-612Z.trace`.
+- Failed tasks:
+  - `005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037`, log `/tmp/smith/2026-05-31T07-22-24-656Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-5XQjuc/home/.smith/runs/2026-05-31T07-10-45-192Z.trace`.
+  - `007-element-hq-element-web-33e8edb3d508d6eefb354819ca693b7accc695e7`, log `/tmp/smith/2026-05-31T07-45-28-380Z-smith-007-element-hq-element-web-33e8edb3d508d6eefb354819ca693b7accc695e7.json`, trace `.smith-bench/run-4SQdUr/home/.smith/runs/2026-05-31T07-37-30-542Z.trace`.
+  - `008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904`, log `/tmp/smith/2026-05-31T08-00-34-635Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-c1I2aH/home/.smith/runs/2026-05-31T07-45-29-262Z.trace`.
+  - `009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59`, log `/tmp/smith/2026-05-31T08-15-41-430Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`, trace `.smith-bench/run-ycfmkL/home/.smith/runs/2026-05-31T08-00-36-177Z.trace`.
+  - `010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`, log `/tmp/smith/2026-05-31T08-31-43-822Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-ac6owY/home/.smith/runs/2026-05-31T08-15-42-194Z.trace`.
+
+Failure evidence:
+
+- `005-teleport`: restored tests still expected legacy `Forwarder` fields `cfg` and `clientCredentials`; compile failed in `lib/kube/proxy/forwarder_test.go`.
+- `007-element-web`: verifier ran `test/KeyBindingsManager-test.ts`; only `should match key + modifier key combo` failed. `isKeyComboMatch(mockKeyEvent('k'), combo4, false)` returned `true` when expected `false`.
+- `008-vuls`: Docker verifier timed out after `900000ms`; no verifier stdout was captured.
+- `009-openlibrary`: Docker verifier timed out after `900000ms`; no verifier stdout was captured.
+- `010-vuls`: repeated missing `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList` methods for restored Alpine tests, plus `TestIsOvalDefAffected` case `[85]` still returned `affected=true` and `fixedIn=3.3.2-r0`.
+
+Decision:
+
+- Do not update `LeaderBoard.md`; the run missed the `>=7/10` target.
+- The current full-run source of truth is `5/10`, not the targeted plausible `7/10`.
+- Count only `001` and `006` as recovered in the full-suite context. `008` did not reproduce, and `007` regressed from the earlier full-run pass.
+- Next best target is `007-element-web`, because it is a small, concrete regression on a previously passing task and may expose a generic Smith issue around preserving negative test cases or modifier/option semantics. Any improvement must be generic and applicable outside SWE-bench.
+- Avoid more benchmark-specific work on `010` Alpine parsing or OVAL logic, and avoid overfocusing Codex-failed/flawed-bucket tasks.
+- Maintenance: `.smith-bench` is now `29G`. Cleanup is urgent after preserving latest full-run dirs `run-aFMHRM`, `run-gCyip1`, `run-l2kI2s`, `run-N2V8v3`, `run-5XQjuc`, `run-6YaYzF`, `run-4SQdUr`, `run-c1I2aH`, `run-ycfmkL`, `run-ac6owY`, plus targeted evidence dirs `run-4Iwqwt`, `run-z16bgW`, and `run-zltk89`.

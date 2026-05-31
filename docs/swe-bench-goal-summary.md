@@ -3508,3 +3508,15 @@ Decision:
 - Caveat: this is in the Codex-failed/flawed-task bucket, so it should not become a focus area. No task-specific Smith changes were made for it.
 - Plausible full-run evidence is now `7/10` if the prior full-run passes `002`, `003`, `004`, `007` reproduce and targeted recoveries `001`, `006`, and `008` reproduce. Because `003` and `006` are Codex-failed tasks, the final source of truth must be a full honest SWE-bench Pro run, not targeted evidence.
 - Maintenance note: `.smith-bench` was already about `19G` before this run and should be pruned soon after preserving the current evidence directories.
+
+## 2026-05-31 Full SWE-bench Pro Rerun After Targeted Evidence
+
+- Ran the full SWE-bench Pro suite with Smith `gpt-5.4-mini` high after targeted evidence suggested a plausible `7/10`.
+- Result: `5/10`, exit code `1`, duration `7855062ms`, total usage `15574422` tokens.
+- Passed: `001-nodebb`, `002-qutebrowser`, `003-ansible`, `004-openlibrary`, `006-navidrome`.
+- Failed: `005-teleport`, `007-element-web`, `008-vuls`, `009-openlibrary`, `010-vuls`.
+- Reproduced targeted recoveries: `001-nodebb` and `006-navidrome`.
+- Did not reproduce: `008-vuls` timed out, and prior baseline pass `007-element-web` regressed on one keybinding modifier test.
+- `LeaderBoard.md` was not updated because the run missed the `>=7/10` target.
+- Next likely high-value direction: analyze `007-element-web` first because it is a concrete regression on a previously passing task and has a small failing surface. Avoid task-specific prompt/runtime changes; any fix must be a generic Smith improvement.
+- Maintenance note: `.smith-bench` is now `29G`. Cleanup should happen soon, preserving the latest full-run evidence directories and current targeted evidence.
