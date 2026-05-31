@@ -12786,3 +12786,62 @@ Decision:
 - Latest full-run source of truth is `4/10`, not the targeted evidence set.
 - Next high-value task: diagnose `001-nodebb`, because it is Codex-passed and now fails only one selected test in the full run.
 - Maintenance note: `.smith-bench` is about `18G` after the full-suite retained sandboxes. Preserve the latest full-run evidence dirs listed above until their trace evidence has been mined; then prune stale retained sandboxes before additional long runs.
+
+## 2026-05-31 Worklog: Local Service Validation Blocker Guard
+
+Context:
+
+- In the latest full `001-nodebb` run, Smith ended with a Redis connection blocker after trying local validation, but the external verifier later ran and exposed the real remaining failure: one selected `canSendValidation` test.
+- Generic hypothesis: for ordinary coding tasks, when a patch is still unvalidated and a validation command fails with a refused localhost service/database connection, Smith should not immediately treat that as an external blocker while `run` is still available. It should first inspect project test setup or run the existing service-aware harness.
+- This is not NodeBB-specific and does not mention SWE-bench or benchmark verifier details.
+
+Implementation:
+
+- `src/loop.ts`: added `shouldRejectLocalServiceValidationBlockerFinish`.
+- The guard applies only when:
+  - the prompt has explicit requirements;
+  - a task patch is still unvalidated;
+  - `run` accepts validation;
+  - the final message claims validation/test/checks are blocked by `ECONNREFUSED` / refused connection to localhost or a local database/service;
+  - the guard has not already fired in the transcript.
+- `tests/integration.test.ts`: added `rejects local service validation blockers before setup recovery is attempted`.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "local service validation blockers|validation-unavailable|actionable inspection blockers|unavailable tool-access"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- First focused selector failed because the test's recovery command was `printf service-aware-validation`, which Smith correctly did not classify as validation; changed it to `npm test --silent`.
+- Focused selector then passed `4` selected tests in `1155ms`.
+- `npm test -- tests/integration.test.ts`: passed `98` tests in `36718ms`.
+- Representative project benchmark `091-command-router-refactor`: passed in `134889ms`.
+  - Log: `/tmp/smith/2026-05-31T01-16-56-613Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-VbxIhX/home/.smith/runs/2026-05-31T01-14-42-239Z.trace`.
+  - Sandbox: `.smith-bench/run-VbxIhX`.
+
+Target rerun:
+
+- `001-nodebb`: failed by Docker timeout in `919215ms`.
+  - Log: `/tmp/smith/2026-05-31T01-32-26-951Z-smith-001-nodebb-nodebb-vnan.json`.
+  - Trace: `.smith-bench/run-V4TfQe/home/.smith/runs/2026-05-31T01-17-21-699Z.trace`.
+  - Sandbox: `.smith-bench/run-V4TfQe`.
+  - Usage: `1545110` input tokens, `1202176` cached input tokens, `94991` output tokens, `84690` reasoning output tokens, `1640101` total tokens.
+- Retained sandbox status:
+  - Modified source: `src/controllers/admin/users.js`, `src/database/mongo/main.js`, `src/database/postgres/main.js`, `src/database/redis/main.js`, `src/socket.io/admin/user.js`, `src/user/delete.js`, `src/user/email.js`, `src/views/admin/manage/users.tpl`.
+  - Untracked: `SMITH.TASK.md`, `appendonlydir/`.
+- Trace search found no `Finish rejected: validation failed because a local service...` occurrence. The new guard did not fire and did not recover the target.
+
+Decision:
+
+- Keep the change as a generic runtime improvement because focused/full integration and representative validation passed.
+- Do not count any benchmark progress from this change.
+- Current full-run source of truth remains `4/10`.
+- The most useful `001` evidence is still the full-run trace `.smith-bench/run-enkt2u/...` with the one failing `canSendValidation` selected test, not the post-change timeout trace.

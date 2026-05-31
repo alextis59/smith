@@ -3264,3 +3264,28 @@ Decision:
 - The goal is not met. Do not update the successful leaderboard target row.
 - The targeted `006` pass did not reproduce under full-suite conditions, so treat the latest full run as the current source of truth.
 - Highest-value next diagnosis is `001-nodebb`: Codex `gpt-5.4` high passed it, and the latest full run is down to one selected failing email throttle test instead of a broad timeout.
+
+## 2026-05-31 Local Service Validation Blocker Guard
+
+Change:
+
+- Added a generic finish guard for explicit-requirement tasks with an unvalidated patch: if validation is reported blocked only because a localhost service/database connection was refused while `run` is still available, Smith gets one rejection telling it to inspect project test setup or use the service-aware test harness before treating the service as an external blocker.
+- Added regression coverage for the guard.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for local service validation blockers and nearby finish guards: passed `4` selected tests after fixing the test to use a real validation command.
+- `npm test -- tests/integration.test.ts`: passed `98` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `134889ms`, log `/tmp/smith/2026-05-31T01-16-56-613Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-VbxIhX/home/.smith/runs/2026-05-31T01-14-42-239Z.trace`.
+
+Target evidence:
+
+- Target `001-nodebb` rerun failed by Docker timeout in `919215ms`, log `/tmp/smith/2026-05-31T01-32-26-951Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-V4TfQe/home/.smith/runs/2026-05-31T01-17-21-699Z.trace`.
+- Trace search found no occurrence of the new local-service finish rejection, so this change did not recover the target.
+
+Decision:
+
+- Keep only as a generic runtime improvement; do not count it as benchmark progress.
+- Current full-run source of truth remains `4/10`.
+- For `001`, the latest target timeout changed the failure mode away from the full-run one-test failure. Continue only if a fresh generic issue appears; otherwise next diagnosis should use the full-run `001` trace and verifier failure evidence.

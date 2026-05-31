@@ -587,6 +587,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: run is currently available, and the finish message says more inspection or diagnosis is needed. Use run to inspect the relevant failure, file, or script, or finish with the actual blocker."
       );
     }
+    if (shouldRejectLocalServiceValidationBlockerFinish(message, parentContext, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: validation failed because a local service or database connection was refused, but run is available and a task patch is still pending. Before treating this as an external blocker, inspect the project's test setup or scripts for how to start the required service or run the existing service-aware test harness. If setup is genuinely unavailable after that, finish with the blocker."
+      );
+    }
     if (shouldRejectNoOpValidationClaimFinish(message, parentContext)) {
       return appendToolObservation(
         parentContext,
@@ -1557,6 +1564,25 @@ function shouldRejectActionableInspectionBlockerFinish(
     return false;
   }
   return /\b(?:failure|failed|failing|error|trace|log|file|script|test|before (?:I )?(?:can )?(?:safely )?(?:finish|complete|continue|proceed))\b/i.test(
+    message
+  );
+}
+
+function shouldRejectLocalServiceValidationBlockerFinish(
+  message: string,
+  context: ToolCallContext,
+  availableToolNames: string[]
+): boolean {
+  if (!promptHasExplicitRequirements(context.options.prompt)) return false;
+  if (!context.unvalidatedTaskPatch) return false;
+  if (!runAcceptsValidation(context, availableToolNames)) return false;
+  if (context.transcript.includes("Finish rejected: validation failed because a local service or database connection was refused")) {
+    return false;
+  }
+  if (!/\b(?:validat\w*|verif\w*|tests?|checks?)\b/i.test(message)) return false;
+  return /\b(?:ECONNREFUSED|connection refused|connect ECONNREFUSED|could not connect|cannot connect|can't connect|unable to connect)\b[\s\S]{0,160}\b(?:127\.0\.0\.1|localhost|redis|postgres|postgresql|mysql|mariadb|mongodb|mongo|database|service)\b/i.test(
+    message
+  ) || /\b(?:127\.0\.0\.1|localhost|redis|postgres|postgresql|mysql|mariadb|mongodb|mongo|database|service)\b[\s\S]{0,160}\b(?:ECONNREFUSED|connection refused|connect ECONNREFUSED|could not connect|cannot connect|can't connect|unable to connect)\b/i.test(
     message
   );
 }

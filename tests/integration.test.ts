@@ -4780,6 +4780,72 @@ max_turns = 30
     expect(userMessages(provider.requests[2].body)).toContain("inspected");
   });
 
+  it("rejects local service validation blockers before setup recovery is attempted", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      {
+        name: "run",
+        arguments: {
+          command: "node -e \"console.error('Error: connect ECONNREFUSED 127.0.0.1:6379'); process.exit(1)\""
+        }
+      },
+      {
+        name: "finish",
+        arguments: {
+          message:
+            "Blocker report: validation could not run because the test harness cannot connect to Redis (`ECONNREFUSED 127.0.0.1:6379`)."
+        }
+      },
+      { name: "run", arguments: { command: "npm test --silent", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "Implemented and validated with the service-aware test harness." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-local-service-validation-blocker-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "printf service-aware-validation" } }), "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "Requirements:\n- Change note.txt and validate it."], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Implemented and validated");
+    expect(provider.requests).toHaveLength(5);
+    expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: validation failed because a local service or database connection was refused");
+    expect(userMessages(provider.requests[4].body)).toContain("service-aware-validation");
+  });
+
   it("allows inspection blockers when the post-deadline run slot only accepts validation", async () => {
     const provider = await startFakeProvider([
       {
