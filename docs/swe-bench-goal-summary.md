@@ -3438,3 +3438,30 @@ Decision:
 - Do not run the full SWE-bench Pro suite from this evidence. Latest full-run source of truth remains `4/10`; targeted `008` remains the only recovered failed task candidate.
 - Next work should move to a different Codex-passed failed task or a generic loop issue with stronger evidence. Avoid more `010`-specific parser chasing.
 - Maintenance note: `.smith-bench` is about `16G`; prune stale retained sandboxes periodically before it grows back to several GB.
+
+## 2026-05-31 Pending-Verification Finish Classification
+
+Change:
+
+- Broadened generic pending-validation recognition so messages such as `could not be verified`, `not verified`, and `cannot complete validation` are treated as honest pending-validation caveats instead of validation-success claims.
+- Added an integration regression for an unvalidated source patch whose final blocker says verification could not complete.
+- This is generic finish-classification logic, not task-specific prompting or benchmark harness behavior.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for unvalidated patch finishes and external-validation claims: passed `3` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `106` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `160609ms`, log `/tmp/smith/2026-05-31T05-10-05-876Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-PiJP3X/home/.smith/runs/2026-05-31T05-07-25-512Z.trace`.
+
+Target evidence:
+
+- Target `001-nodebb` passed in `831335ms`, log `/tmp/smith/2026-05-31T05-24-07-966Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-4Iwqwt/home/.smith/runs/2026-05-31T05-10-30-677Z.trace`.
+- The verifier reported `300/300` selected tests passing, including the previously failing `canSendValidation should return true if it has been long enough to re-send confirmation`.
+
+Decision:
+
+- Count `001-nodebb` as a targeted recovery candidate.
+- Latest full-run source of truth remains `4/10`, but targeted recovery candidates now include `001` and `008`, suggesting a plausible `6/10` if reproduced in a full run. One more Codex-passed recovery is still needed before a full SWE-bench Pro rerun is justified.
+- Next high-value targets remain `005` or another generic loop issue; avoid Codex-failed/flawed tasks unless clear generic evidence appears.
+- Maintenance note: `.smith-bench` is about `17G`; clean stale retained sandboxes after preserving the current `001`, `008`, project, and full-run evidence.

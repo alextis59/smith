@@ -13302,3 +13302,60 @@ Decision:
 - Do not continue hand-chasing Alpine parser specifics; that would become task-specific benchmark work. If `010` is revisited, only pursue another generic runtime issue, such as avoiding finish-loop deadlock around unvalidated latest patches.
 - Latest full-run source of truth remains `4/10`; targeted `008-vuls` remains the only plausible recovered failed full-run task.
 - Maintenance: `.smith-bench` is about `16G`. Continue pruning stale retained sandboxes periodically while preserving current evidence directories; otherwise this folder will grow back into the tens of GB.
+
+## 2026-05-31 Worklog: Pending Verification Phrases Are Not Success Claims
+
+Context:
+
+- Latest full-run `001-nodebb` evidence ended with a Redis validation blocker while the external verifier later ran and exposed one actual selected-test failure:
+  `test/user/emails.js | email confirmation (library methods) canSendValidation should return true if it has been long enough to re-send confirmation`.
+- The trace also showed Smith repeatedly trying to report honest pending-validation blockers, but `shouldRejectUnvalidatedTaskPatchValidationClaimFinish` rejected messages containing phrases like `could not validate` or `could not complete validation` because nearby words such as `complete` and `verified` looked like success claims.
+- The same false-positive pattern appeared in the latest `010-vuls` timeout around unvalidated final compatibility patches.
+- Generic hypothesis: reduce finish-loop waste by recognizing more negative verification phrases as pending-validation caveats, while preserving the existing rejection for messages that claim selected/local tests passed but broader validation remains pending.
+
+Implementation:
+
+- `src/loop.ts`: added `not verified`, `not fully verified`, `could not verify`, `could not be verified`, and `cannot/could not/unable to complete validation` forms to the pending-validation phrase sets used by finish guards.
+- `tests/integration.test.ts`: added `allows unvalidated patch blockers when verification could not complete`.
+- No task-specific prompt text, task IDs, selected tests, scoring, verifier logic, or benchmark runner behavior changed.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "unvalidated patch finish|local validation success claims|validation could not complete|verification could not complete"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused finish-validation selector passed `3` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `106` tests in `38204ms`.
+- Representative project benchmark `091-command-router-refactor`: passed in `160609ms`.
+  - Log: `/tmp/smith/2026-05-31T05-10-05-876Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-PiJP3X/home/.smith/runs/2026-05-31T05-07-25-512Z.trace`.
+
+Target evidence:
+
+- Target `001-nodebb` passed in `831335ms`.
+  - Log: `/tmp/smith/2026-05-31T05-24-07-966Z-smith-001-nodebb-nodebb-vnan.json`.
+  - Trace: `.smith-bench/run-4Iwqwt/home/.smith/runs/2026-05-31T05-10-30-677Z.trace`.
+  - Sandbox: `.smith-bench/run-4Iwqwt`.
+  - Usage: `1158479` input tokens, `896640` cached input tokens, `78292` output tokens, `68456` reasoning output tokens, `1236771` total tokens.
+- Verifier evidence:
+  - Selected tests: `test/database.js`, `test/database/keys.js`, `test/user/emails.js`.
+  - Stats: `300` tests, `300` passes, `0` failures.
+  - The prior full-run failure `canSendValidation should return true if it has been long enough to re-send confirmation` passed in this target rerun.
+- Trace evidence:
+  - One unvalidated-patch validation-claim rejection still fired for a message that mixed implementation-complete wording with Redis validation failure.
+  - A later pending-validation/Redis blocker finish was accepted, and the external verifier then passed. This is acceptable benchmark behavior because the verifier is the source of truth for final scoring.
+
+Decision:
+
+- Keep the change and count `001-nodebb` as a targeted recovery candidate.
+- Combined plausible full-run score is now `6/10` if baseline full-run passes `002`, `003`, `004`, `007` reproduce and targeted recoveries `001` and `008` reproduce. This still does not justify a full SWE-bench Pro run against the `>=7/10` target.
+- Next step should seek one more Codex-passed recovery, likely a fresh generic issue in `005-teleport` or another full-run failure. Avoid returning to `010` implementation specifics or Codex-failed/flawed tasks.
+- Maintenance: `.smith-bench` is about `17G`; prune stale retained sandboxes after preserving `run-4Iwqwt`, `run-PiJP3X`, `run-zltk89`, and latest full-run evidence.

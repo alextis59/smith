@@ -1677,7 +1677,7 @@ function finishClaimsComplete(message: string): boolean {
 }
 
 function finishAcknowledgesValidationNotPerformed(message: string): boolean {
-  return /\b(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)\b/i.test(
+  return /\b(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|not verified|not fully verified|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|could not verify|couldn't verify|unable to verify|not able to verify|could not be verified|couldn't be verified|cannot complete validation|can't complete validation|could not complete validation|couldn't complete validation|unable to complete validation|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)\b/i.test(
     message
   );
 }
@@ -1736,9 +1736,9 @@ function finishClaimsValidationSuccess(message: string): boolean {
 
 function finishAcknowledgesPatchValidationStillPending(message: string): boolean {
   const pendingValidation =
-    "(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)";
+    "(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|not verified|not fully verified|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|could not verify|couldn't verify|unable to verify|not able to verify|could not be verified|couldn't be verified|cannot complete validation|can't complete validation|could not complete validation|couldn't complete validation|unable to complete validation|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)";
   const pendingThenScopeValidation =
-    "(?:validation (?:is |remains )?pending|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)";
+    "(?:validation (?:is |remains )?pending|not validated|not fully validated|not verified|not fully verified|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|could not verify|couldn't verify|unable to verify|not able to verify|could not be verified|couldn't be verified|cannot complete validation|can't complete validation|could not complete validation|couldn't complete validation|unable to complete validation|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)";
   const patchScope =
     "(?:patch|task patch|source patch|source|changes?|changed files?|broader validation|project validation|full validation|complete validation|narrow|selected|subset|no tests?|cached|dirty|modified tests?|uncovered)";
   return new RegExp(`\\b${patchScope}\\b[\\s\\S]{0,160}\\b${pendingValidation}\\b`, "i").test(message) ||
@@ -1840,7 +1840,7 @@ function transcriptHasPatchContextFailure(transcript: string): boolean {
 }
 
 function finishAcknowledgesPendingValidation(message: string): boolean {
-  return /\b(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|validation failed|tests? failed|build failed|lint failed|typecheck failed|blocked|blocker|partial|incomplete)\b/i.test(
+  return /\b(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|not verified|not fully verified|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|could not verify|couldn't verify|unable to verify|not able to verify|could not be verified|couldn't be verified|cannot complete validation|can't complete validation|could not complete validation|couldn't complete validation|unable to complete validation|validation failed|tests? failed|build failed|lint failed|typecheck failed|blocked|blocker|partial|incomplete)\b/i.test(
     message
   );
 }
