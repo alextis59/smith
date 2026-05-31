@@ -1728,10 +1728,23 @@ function shouldRejectUnvalidatedTaskPatchValidationClaimFinish(message: string, 
 }
 
 function finishClaimsValidationSuccess(message: string): boolean {
-  return /\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b[\s\S]{0,120}\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b/i.test(
-    message
-  ) || /\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b[\s\S]{0,120}\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b/i.test(
-    message
+  const patterns = [
+    /\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b[\s\S]{0,120}\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b/gi,
+    /\b(?:pass(?:ed|es)?|ok|success(?:ful)?|clean|validated|verified|complete)\b[\s\S]{0,120}\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified)\b/gi
+  ];
+  return patterns.some((pattern) => {
+    for (const match of message.matchAll(pattern)) {
+      const index = match.index ?? 0;
+      const context = message.slice(Math.max(0, index - 80), index + match[0].length);
+      if (!validationSuccessClaimIsNegated(context)) return true;
+    }
+    return false;
+  });
+}
+
+function validationSuccessClaimIsNegated(context: string): boolean {
+  return /\b(?:cannot|can't|could not|couldn't|unable to|not able to|do not|does not|did not|not yet|never)\b[\s\S]{0,120}\b(?:validat(?:e|ed|ion)|tests?|checks?|build|compile|lint|typecheck|verify|verified|pass(?:ed|es)?|success(?:ful)?|clean|complete)\b/i.test(
+    context
   );
 }
 
@@ -1841,7 +1854,7 @@ function transcriptHasPatchContextFailure(transcript: string): boolean {
 }
 
 function finishAcknowledgesPendingValidation(message: string): boolean {
-  return /\b(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|not verified|not fully verified|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|could not verify|couldn't verify|unable to verify|not able to verify|could not be verified|couldn't be verified|cannot complete validation|can't complete validation|could not complete validation|couldn't complete validation|unable to complete validation|validation failed|tests? failed|build failed|lint failed|typecheck failed|blocked|blocker|partial|incomplete)\b/i.test(
+  return /\b(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|not verified|not fully verified|needs validation|need(?:s|ed)? (?:more )?validation|cannot validate|can't validate|could not validate|couldn't validate|unable to validate|not able to validate|cannot verify|can't verify|could not verify|couldn't verify|unable to verify|not able to verify|could not be verified|couldn't be verified|cannot complete validation|can't complete validation|could not complete validation|couldn't complete validation|unable to complete validation|validation failed|tests? failed|build failed|lint failed|typecheck failed|blocked|blocker|partial|incomplete)\b/i.test(
     message
   );
 }

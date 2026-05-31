@@ -13840,3 +13840,56 @@ Decision:
 - Current plausible full-run evidence is still below target without another recovery: full source of truth remains `3/10`, with current targeted candidates `002`, `003`, `007`, and `008` plus full-run pass `004`.
 - Do not run a full SWE-bench Pro rerun yet; next target should be another generic regression candidate such as `006-navidrome` or `001-nodebb`.
 - Maintenance: `.smith-bench` remains around `38G`. Cleanup is overdue; preserve `run-9VmL6L`, `run-JgORbZ`, `run-OOAt3C`, `run-z70aos`, latest full-run dirs, and prior targeted evidence dirs before pruning stale sandboxes.
+
+## 2026-05-31 Worklog: Negated Validation Success Handling for `006-navidrome`
+
+Context:
+
+- Latest full-run `006-navidrome` failed by Docker timeout after `900000ms`, despite earlier targeted and full-suite passes.
+- Trace `.smith-bench/run-gnOttW/home/.smith/runs/2026-05-31T10-15-06-587Z.trace` showed repeated finish-loop behavior after partial refactor work.
+- One repeated generic false positive was wording like `I cannot verify the LastFM, ListenBrainz, and Spotify packages compile and pass tests`, which `finishClaimsValidationSuccess` treated as a successful validation claim because it matched `verify ... pass tests`.
+- This is a generic final-answer parsing issue; an honest inability to verify should not be interpreted as claiming validation success.
+- Caveat: `006-navidrome` is in the Codex-failed/flawed-task caution bucket, so targeted evidence should not be overweighted and must not drive task-specific Smith behavior.
+
+Implementation:
+
+- `src/loop.ts`: refactored `finishClaimsValidationSuccess` to scan candidate success windows and ignore those with nearby negation such as `cannot`, `can't`, `could not`, `unable to`, `not able to`, `do not`, `did not`, `not yet`, or `never`.
+- `src/loop.ts`: added `cannot validate` / `cannot verify` to `finishAcknowledgesPendingValidation`.
+- `tests/integration.test.ts`: added a regression where a patch is followed by a failed validation run and a finish message says `I cannot verify the affected packages compile and pass tests`; Smith should accept it as pending validation/blocker wording, not reject it as a validation-success claim.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "negated verification|validation success claims|broader suite pending|external validation"
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Validation results:
+
+- `npm run build`: passed.
+- Focused integration selector: passed `5` selected tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `185447ms`.
+  - Log: `/tmp/smith/2026-05-31T12-40-08-385Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-hhcrES/home/.smith/runs/2026-05-31T12-37-03-281Z.trace`.
+  - Usage: `69530` input tokens, `54144` cached input tokens, `14991` output tokens, `13148` reasoning output tokens, `84521` total tokens.
+- Target `006-navidrome`: passed in `566910ms`.
+  - Log: `/tmp/smith/2026-05-31T12-49-49-039Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`.
+  - Trace: `.smith-bench/run-2s8m5P/home/.smith/runs/2026-05-31T12-40-46-910Z.trace`.
+  - Sandbox: `.smith-bench/run-2s8m5P`.
+  - Usage: `973557` input tokens, `895616` cached input tokens, `42988` output tokens, `30926` reasoning output tokens, `1016545` total tokens.
+- Verifier evidence:
+  - Selected tests: `TestListenBrainz`, `TestSpotify`, and `TestLastFM`.
+  - LastFM: `50` specs passed.
+  - ListenBrainz: `22` specs passed.
+  - Spotify: `8` specs passed.
+  - Final verifier summary: `{"passed": 3}`.
+
+Decision:
+
+- Keep the generic negated-validation fix.
+- Count `006-navidrome` as a targeted recovery candidate, but keep the Codex-failed/flawed-task caveat prominent.
+- Current evidence candidates are `002`, `003`, `004`, `006`, `007`, and `008`, still not enough to justify full-suite rerun against the `>=7/10` target.
+- Next target should be non-Codex-failed if possible; inspect `001-nodebb` syntax/blocker behavior or `009-openlibrary` MARC parsing failure for generic Smith issues before making another change.
+- Maintenance: `.smith-bench` is still about `38G+`; cleanup is overdue. Preserve `run-2s8m5P`, `run-hhcrES`, latest full-run dirs, and prior targeted evidence dirs before pruning.

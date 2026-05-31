@@ -3625,3 +3625,30 @@ Decision:
 - Current targeted/full evidence candidates are now `002`, `003`, `004`, `007`, and `008`, which is still short of the `>=7/10` full-run target.
 - Do not run the full suite yet. Next best target is another generic timeout/regression, likely `006-navidrome` or `001-nodebb`, while avoiding task-specific fixes.
 - Maintenance note: `.smith-bench` remains about `38G`; cleanup should happen soon after preserving `run-9VmL6L`, `run-JgORbZ`, `run-OOAt3C`, and previously listed evidence dirs.
+
+## 2026-05-31 Negated Validation Success Handling and `006-navidrome`
+
+Change:
+
+- Updated the validation-success detector to ignore negated phrases such as `cannot verify ... pass tests` while still recognizing real positive validation claims elsewhere in the message.
+- Added `cannot validate` / `cannot verify` to pending-validation acknowledgement language.
+- Added an integration test for an honest blocker report that says validation failed and `cannot verify` packages compile/pass.
+- This is generic final-answer parsing, not SWE-bench-specific behavior.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for negated validation and validation-success paths: passed `5` selected tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `185447ms`, log `/tmp/smith/2026-05-31T12-40-08-385Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-hhcrES/home/.smith/runs/2026-05-31T12-37-03-281Z.trace`.
+
+Target evidence:
+
+- Target `006-navidrome` passed in `566910ms`, log `/tmp/smith/2026-05-31T12-49-49-039Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`, trace `.smith-bench/run-2s8m5P/home/.smith/runs/2026-05-31T12-40-46-910Z.trace`.
+- Verifier selected `TestListenBrainz`, `TestSpotify`, and `TestLastFM`; final verifier returned `{"passed": 3}`.
+
+Decision:
+
+- Count `006-navidrome` as a targeted recovery candidate with the existing caveat that this task is in the Codex-failed/flawed-task caution bucket.
+- Current targeted/full evidence candidates are now `002`, `003`, `004`, `006`, `007`, and `008`, still short of the `>=7/10` full-run target and not enough to rerun the full suite.
+- Next target should avoid overfocusing on Codex-failed tasks; inspect `001-nodebb` or `009-openlibrary` for a generic failure mode.
+- Maintenance note: `.smith-bench` is still about `38G+`; preserve `run-2s8m5P` and `run-hhcrES` before cleanup.
