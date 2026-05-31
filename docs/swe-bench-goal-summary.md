@@ -3289,3 +3289,31 @@ Decision:
 - Keep only as a generic runtime improvement; do not count it as benchmark progress.
 - Current full-run source of truth remains `4/10`.
 - For `001`, the latest target timeout changed the failure mode away from the full-run one-test failure. Continue only if a fresh generic issue appears; otherwise next diagnosis should use the full-run `001` trace and verifier failure evidence.
+
+## 2026-05-31 In-Progress Finish Status Guard
+
+Change:
+
+- Added a generic finish guard that rejects status-only finish messages such as `Please hold while I inspect...` when ordinary work tools are still available. The guard asks the model to keep working or finish with a concrete result, blocker, or question.
+- Added regression coverage for the guard.
+- Recorded the user's updated constraint: benchmark-specific prompt/runtime instructions are not acceptable; keep improvements generic to normal user tasks. Also recorded the alternate success directive: if a Smith `gpt-5.5` high run can match the Codex `gpt-5.5` high result, that is sufficient. `LeaderBoard.md` currently has no Codex `gpt-5.5` row, so the active numeric target remains the recorded Codex `gpt-5.4` high `7/10`.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for in-progress and empty finish handling: passed `2` selected tests after rebuilding `dist`.
+- `npm test -- tests/integration.test.ts`: passed `99` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `100204ms`, log `/tmp/smith/2026-05-31T01-39-09-188Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-J9idw2/home/.smith/runs/2026-05-31T01-37-29-384Z.trace`.
+
+Target evidence:
+
+- Target `005-teleport` rerun failed in `805586ms`, log `/tmp/smith/2026-05-31T01-52-47-390Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-RoCaRT/home/.smith/runs/2026-05-31T01-39-30-326Z.trace`.
+- The new guard did not fire in this rerun. Smith ended with an explicit blocker after changing `lib/kube/proxy/forwarder.go` and `lib/service/kubernetes.go`.
+- Verifier failed because restored tests still expect `Forwarder.cfg` and `Forwarder.clientCredentials`; retained sandbox status also showed `lib/kube/proxy/forwarder_test.go` modified in the sandbox, which does not help the restored verifier.
+
+Decision:
+
+- Keep as a generic runtime correctness improvement because it directly addresses the previous full-run `005` trace's accepted non-final status update and passes repo/project validation.
+- Do not count benchmark progress from the target rerun; latest full-run source of truth remains `4/10`.
+- Next work should prefer Codex-passed/high-value failures such as full-run `001`, `005`, `008`, or `010`; avoid overfocusing Codex-failed/flawed tasks unless they expose a generic issue.
+- Maintenance note: `.smith-bench` is about `21G`; prune stale retained sandboxes after mining traces and before additional long runs.

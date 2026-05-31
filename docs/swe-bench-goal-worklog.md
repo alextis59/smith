@@ -12845,3 +12845,66 @@ Decision:
 - Do not count any benchmark progress from this change.
 - Current full-run source of truth remains `4/10`.
 - The most useful `001` evidence is still the full-run trace `.smith-bench/run-enkt2u/...` with the one failing `canSendValidation` selected test, not the post-change timeout trace.
+
+## 2026-05-31 Worklog: In-Progress Finish Status Guard
+
+Context:
+
+- User clarified that SWE-bench-specific prompt/runtime edits are considered cheating. From here, discard benchmark-shaped instructions and keep only generic behavior improvements that apply to ordinary user tasks.
+- User also added an alternate completion route: matching the Codex `gpt-5.5` high result with Smith `gpt-5.5` high is sufficient. Current check of `LeaderBoard.md` found no Codex `gpt-5.5` SWE-bench Pro row, so there is no concrete alternate score target yet.
+- User asked to leave notes about cleaning `.smith-bench`; current retained-sandbox size is about `21G`.
+- Latest full `005-teleport` trace `.smith-bench/run-WHheYq/home/.smith/runs/2026-05-30T23-46-00-795Z.trace` ended with an accepted finish message: `Please hold while I inspect the current patched files and confirm which requested items are actually complete versus still blocked.`
+- Generic hypothesis: a final answer that says to wait while the agent inspects/checks/verifies is not a final answer. If work tools are still available, Smith should continue instead of terminating.
+
+Implementation:
+
+- `src/loop.ts`: added `shouldRejectInProgressStatusFinish`.
+- The guard only applies when at least one work-capable tool is available (`run`, `patch`, or `sub_agent`) and the finish message is shaped like a status update about inspecting/checking/verifying before completion.
+- `tests/integration.test.ts`: added `rejects in-progress status finish messages while tools are available`.
+- No SWE-bench task IDs, project names, hidden-test behavior, verifier details, or benchmark-specific prompt text were added.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "in-progress status finish|empty finish"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused integration selector initially raced stale built output, then passed `2` selected tests after the build completed.
+- `npm test -- tests/integration.test.ts`: passed `99` tests in about `36.5s`.
+- Representative project benchmark `091-command-router-refactor`: passed in `100204ms`.
+  - Log: `/tmp/smith/2026-05-31T01-39-09-188Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-J9idw2/home/.smith/runs/2026-05-31T01-37-29-384Z.trace`.
+  - Sandbox: `.smith-bench/run-J9idw2`.
+
+Target rerun:
+
+- `005-teleport`: failed in `805586ms`.
+  - Log: `/tmp/smith/2026-05-31T01-52-47-390Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-RoCaRT/home/.smith/runs/2026-05-31T01-39-30-326Z.trace`.
+  - Sandbox: `.smith-bench/run-RoCaRT`.
+  - Usage: `2640483` input tokens, `2203008` cached input tokens, `73197` output tokens, `59733` reasoning output tokens, `2713680` total tokens.
+- Trace search:
+  - No occurrence of `Finish rejected: the message is an in-progress status update`.
+  - Final finish was an explicit blocker: Smith reported it could not finish post-edit validation for audit-context, credential-caching, and cluster-session refactor requirements.
+- Verifier/build failure:
+  - `lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder`.
+  - `lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder`.
+  - `f.cfg undefined`; `f.clientCredentials undefined`.
+- Retained sandbox:
+  - `git -C .smith-bench/run-RoCaRT/workspace status --short` showed modified `lib/kube/proxy/forwarder.go`, staged/modified `lib/kube/proxy/forwarder_test.go`, and modified `lib/service/kubernetes.go`.
+  - `git -C .smith-bench/run-RoCaRT/workspace diff --stat` showed production changes only in unstaged diff: `lib/kube/proxy/forwarder.go` and `lib/service/kubernetes.go`, `82 insertions`, `39 deletions`.
+
+Decision:
+
+- Keep the guard as a generic final-answer integrity improvement because it addresses a real prior trace failure and passed repo/project validation.
+- Do not count the `005` rerun as progress; the guard did not fire and the task still failed.
+- Do not run full SWE-bench Pro from this evidence.
+- Next high-value diagnoses remain full-run failures that Codex `gpt-5.4` high passed or that expose clear generic issues: `001-nodebb`, `005-teleport`, `008-vuls`, `010-vuls`. Avoid spending much time on `003`, `006`, or `009` unless there is a general runtime issue.
+- Before more retained-sandbox-heavy runs, clean stale `.smith-bench/run-*` directories after preserving the latest full-run and current diagnostic traces.

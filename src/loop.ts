@@ -552,6 +552,13 @@ async function handleToolCall(context: ToolCallContext): Promise<ToolActionResul
         "Finish rejected: missing non-empty final message. Provide a concrete final answer, blocker report, or question for the user."
       );
     }
+    if (shouldRejectInProgressStatusFinish(message, availableToolNames)) {
+      return appendToolObservation(
+        parentContext,
+        callId,
+        "Finish rejected: the message is an in-progress status update, not a final answer, blocker report, or question for the user. Continue with the available tools, or finish with a concrete result or blocker."
+      );
+    }
     if (shouldRejectUnsupportedReadOnlyFinish(message, parentContext, availableToolNames)) {
       return appendToolObservation(
         parentContext,
@@ -1475,6 +1482,17 @@ function appendToolObservation(
   context.options.trace?.write("tool output", output);
   context.options.onTerminalOutput?.(output);
   return { transcript, providerMessages, responsesInputItems, toolOutput: output, totalUsage: context.totalUsage };
+}
+
+function shouldRejectInProgressStatusFinish(message: string, availableToolNames: string[]): boolean {
+  if (!availableToolNames.some((toolName) => toolName === "run" || toolName === "patch" || toolName === "sub_agent")) {
+    return false;
+  }
+  return /\b(?:please hold|hold on|one moment|stand by)\b[\s\S]{0,160}\b(?:inspect|check|verify|confirm|review|continue|work|run|test)\b/i.test(
+    message
+  ) || /\b(?:I need to|I should|I will|I'll|I'm going to|I am going to)\b[\s\S]{0,160}\b(?:inspect|check|verify|confirm|review|run|test)\b[\s\S]{0,160}\bbefore I (?:can )?(?:finish|report|complete|answer|finalize)\b/i.test(
+    message
+  );
 }
 
 function shouldRejectUnsupportedReadOnlyFinish(

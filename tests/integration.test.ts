@@ -775,6 +775,49 @@ timeout_ms = 5000
     expect(userMessages(provider.requests[1].body)).toContain("Finish rejected: missing non-empty final message");
   });
 
+  it("rejects in-progress status finish messages while tools are available", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "finish",
+        arguments: {
+          message: "Please hold while I inspect the current files and confirm the remaining work."
+        }
+      },
+      { name: "run", arguments: { command: "printf inspected" } },
+      { name: "finish", arguments: { message: "Inspected and found no changes were needed." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-in-progress-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "inspect and report"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Inspected");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[1].body)).toContain("Finish rejected: the message is an in-progress status update");
+    expect(userMessages(provider.requests[2].body)).toContain("inspected");
+  });
+
   it("warns when a patch removes declarations that may need compatibility wrappers", async () => {
     const provider = await startFakeProvider([
       {
