@@ -13193,3 +13193,57 @@ Decision:
 - Keep the evidence in the logs as a rejected idea: do not simply lower the generic inspection pause threshold without a more nuanced signal that the current evidence is sufficient for a safe patch.
 - Next direction should move away from this simple threshold change. Investigate a different generic issue, likely validation environment/setup recovery for local services or a Codex-passed failed task such as `010-vuls`, while still avoiding SWE-specific instructions.
 - Maintenance: `.smith-bench` is about `14G` after preserving `run-BwVv1L` and `run-81JmDC`; clean again after any needed evidence is copied out.
+
+## 2026-05-31 Worklog: Reject In-Progress Finish Status Even When Only Finish Remains
+
+Context:
+
+- Older `010-vuls` evidence ended with a non-final status finish: `I’m rechecking the current state and validation so I can either finish cleanly or report a precise blocker.`
+- The `finish` tool contract is generic: it should end with a final answer, blocker report, or user question, not with an interim status update.
+- Smith already rejected these in-progress status finishes when work tools were available. The generic gap was that the helper returned `false` when no `run`, `patch`, or `sub_agent` tool remained.
+
+Implementation:
+
+- `src/loop.ts`: removed the tool-availability precondition from `shouldRejectInProgressStatusFinish`, so transitional status messages are rejected regardless of the currently available tool set.
+- `tests/integration.test.ts`: added `rejects first-person rechecking finish messages when only finish is available`, covering read-only + post-deadline state where the next provider request exposes only `finish`.
+- No benchmark-specific prompt text, task IDs, selected tests, verifier logic, scoring, or benchmark harness code changed.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "first-person rechecking finish messages|in-progress status finish messages"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused finish-guard selector: passed `3` selected tests in `601ms`.
+- `npm test -- tests/integration.test.ts`: passed `105` tests in `37993ms`.
+- Representative project benchmark `091-command-router-refactor`: passed in `103527ms`.
+  - Log: `/tmp/smith/2026-05-31T04-20-14-021Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-52UfjS/home/.smith/runs/2026-05-31T04-18-30-750Z.trace`.
+
+Target evidence:
+
+- Target `010-vuls` failed verifier in `875687ms`.
+  - Log: `/tmp/smith/2026-05-31T04-35-00-759Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-CMG37j/home/.smith/runs/2026-05-31T04-20-25-896Z.trace`.
+  - Sandbox: `.smith-bench/run-CMG37j`.
+  - Usage: `2579634` input tokens, `1930496` cached input tokens, `65813` output tokens, `51405` reasoning output tokens, `2645447` total tokens.
+- Target comparison:
+  - Unlike the older `run-eqL6Sa` full-run trace, the new trace did not end with the non-final `I'm rechecking` style finish. It ended with a concrete partial/blocker report.
+  - The new target still failed verifier. Restored tests expected helper methods that Smith did not preserve: `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`.
+  - `TestIsOvalDefAffected` also failed because the patch made source-package OVAL assessment too broad for one restored test case.
+  - The new guard was not enough to recover the task; it should be kept as a generic finish-integrity improvement, not counted as a score improvement.
+
+Decision:
+
+- Keep the change because it is generic, low-risk, covered by focused/full integration, and does not alter benchmark mechanics.
+- Do not update `LeaderBoard.md`; latest full-run source of truth remains below target.
+- Do not run full SWE-bench Pro from this evidence.
+- Next `010`-related generic direction, if pursued, should be source compatibility after refactors: Smith needs to preserve existing helper names/wrappers when restored tests or callers still depend on them. Avoid task-specific helper-name hardcoding in Smith; look for a general way to make declaration compatibility warnings more actionable before final validation.
+- Maintenance: `.smith-bench` is about `15G` after preserving `run-52UfjS` and `run-CMG37j`.

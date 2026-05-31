@@ -1505,9 +1505,6 @@ function appendToolObservation(
 }
 
 function shouldRejectInProgressStatusFinish(message: string, availableToolNames: string[]): boolean {
-  if (!availableToolNames.some((toolName) => toolName === "run" || toolName === "patch" || toolName === "sub_agent")) {
-    return false;
-  }
   return /\b(?:please hold|hold on|one moment|stand by)\b[\s\S]{0,160}\b(?:inspect|check|verify|confirm|review|continue|work|run|test)\b/i.test(
     message
   ) || /\b(?:I(?:['\u2019]m| am)(?: going to)?|I(?:['\u2019]ll| will| need to| should))\b[\s\S]{0,160}\b(?:inspect|check|verify|confirm|review|recheck|rechecking|run|test)\b[\s\S]{0,160}\b(?:before I (?:can )?(?:finish|report|complete|answer|finalize)|so I can\b[\s\S]{0,120}\b(?:finish|report|complete|answer|finalize|blocker))\b/i.test(

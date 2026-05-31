@@ -20,6 +20,7 @@ Alternative success path added by user on 2026-05-30: if Smith `gpt-5.5` high re
 - User reinforcement on 2026-05-24: anything done specifically for the SWE benchmark, including prompt edits or runtime instructions tuned to benchmark shape, must be discarded. Valid work must be generic Smith behavior that would be appropriate for ordinary user tasks.
 - User directive on 2026-05-30: matching the Codex CLI `gpt-5.5` high SWE-bench Pro score with Smith `gpt-5.5` high is sufficient if/when that Codex target is recorded in `LeaderBoard.md`. Keep the same no-cheating constraints.
 - 2026-05-31 rejected experiment: lowering the generic sustained-inspection pause from `36` to `24` non-edit tool calls passed focused/full integration and the representative `091-command-router-refactor` task, but targeted `001-nodebb` timed out after `920146ms` and produced malformed task edits. The code change was reverted and should not be counted as an improvement.
+- 2026-05-31 generic finish-integrity change: in-progress `finish` messages such as "I'm rechecking..." are now rejected even when only `finish` remains available. Focused/full integration and the representative project task passed. Target `010-vuls` still failed verifier, so this is not a score recovery.
 
 ## Maintenance Notes
 
@@ -28,6 +29,7 @@ Alternative success path added by user on 2026-05-30: if Smith `gpt-5.5` high re
 - Do not let cleanup remove artifacts referenced by `LeaderBoard.md`, current milestone evidence, or active target-task diagnosis.
 - 2026-05-31 cleanup reminder: `.smith-bench` was pruned from about `39G` to `7.1G`; after the latest retained representative, target, and full-suite runs it is about `18G`. Re-check this after each batch of retained runs so the folder does not silently grow by several GB. Preserve latest full-run evidence dirs such as `run-enkt2u`, `run-C7Ih7e`, `run-aiwHB9`, `run-z798E6`, `run-WHheYq`, `run-Id1DKE`, `run-C0epbw`, `run-zDUpXE`, `run-J300Es`, and `run-eqL6Sa` until their traces/logs are no longer needed.
 - 2026-05-31 note: after preserving the rejected `001-nodebb` experiment sandbox `run-BwVv1L` and representative project sandbox `run-81JmDC`, `.smith-bench` is about `14G`. Clean again after any useful evidence is copied out of those sandboxes.
+- 2026-05-31 note: after preserving finish-integrity evidence sandboxes `run-52UfjS` and `run-CMG37j`, `.smith-bench` is about `15G`. Prune stale `run-*` dirs again before another batch of long SWE target runs.
 - 2026-05-30 note: after the latest targeted runs, `.smith-bench` is about `7.3G` with `8` retained `run-*` directories. Preserved current/recent evidence: `run-JvD7C8`, `run-vvBMuM`, `run-jZiXQQ`, `run-Gn7PlH`, `run-6goAJU`, `run-1zl86m`, `run-TA29B0`, and `run-SEpBif`.
 - 2026-05-30 note: `.smith-bench` is back to about `12G` after further retained local and SWE runs. Prune again soon after preserving current evidence runs such as `run-qWpZdH`, `run-6inovy`, `run-trsSFJ`, `run-bbwPc4`, and `run-kG8O37`; otherwise the directory will keep growing by several GB across iteration.
 

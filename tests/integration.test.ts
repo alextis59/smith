@@ -859,6 +859,51 @@ timeout_ms = 5000
     expect(userMessages(provider.requests[1].body)).toContain("Finish rejected: the message is an in-progress status update");
   });
 
+  it("rejects first-person rechecking finish messages when only finish is available", async () => {
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "sleep 0.02; printf inspected" } },
+      {
+        name: "finish",
+        arguments: {
+          message: "I'm rechecking the current state and validation so I can either finish cleanly or report a precise blocker."
+        }
+      },
+      { name: "finish", arguments: { message: "Blocked: the run budget elapsed before validation could complete." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-rechecking-finish-only-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+read_only = true
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "inspect and report"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Blocked: the run budget elapsed");
+    expect(provider.requests).toHaveLength(3);
+    expect(toolNames(provider.requests[1].body)).toEqual(["finish"]);
+    expect(userMessages(provider.requests[2].body)).toContain("Finish rejected: the message is an in-progress status update");
+  });
+
   it("warns when a patch removes declarations that may need compatibility wrappers", async () => {
     const provider = await startFakeProvider([
       {
