@@ -3317,3 +3317,31 @@ Decision:
 - Do not count benchmark progress from the target rerun; latest full-run source of truth remains `4/10`.
 - Next work should prefer Codex-passed/high-value failures such as full-run `001`, `005`, `008`, or `010`; avoid overfocusing Codex-failed/flawed tasks unless they expose a generic issue.
 - Maintenance note: `.smith-bench` is about `21G`; prune stale retained sandboxes after mining traces and before additional long runs.
+
+## 2026-05-31 Broaden Generic Finish And Recovery Guards
+
+Change:
+
+- Broadened the generic in-progress finish guard to reject first-person status messages such as `I'm rechecking ... so I can ... finish/report`.
+- Added one post-deadline inspection slot after an unwritable test/spec patch fails, so Smith can inspect source compatibility after being told to satisfy read-only tests through source changes.
+- Added regression coverage for both behaviors.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for in-progress/rechecking/read-only test recovery cases: passed `8` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `101` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `101240ms`, log `/tmp/smith/2026-05-31T02-20-13-347Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-rm0KVg/home/.smith/runs/2026-05-31T02-18-32-595Z.trace`.
+
+Target evidence:
+
+- Target `010-vuls` rerun after the rechecking guard failed by Docker timeout in `906700ms`, log `/tmp/smith/2026-05-31T02-14-43-961Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-OcTA8T/home/.smith/runs/2026-05-31T01-59-38-080Z.trace`.
+- Target `010-vuls` rerun after the read-only test recovery slot also failed by Docker timeout in `906209ms`, log `/tmp/smith/2026-05-31T02-35-28-305Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-zORfWb/home/.smith/runs/2026-05-31T02-20-22-863Z.trace`.
+- Latest `010` trace did not show the read-only test/spec recovery slot firing. It repeatedly rejected partial finishes around an incomplete explicit package-index requirement and eventually timed out.
+
+Decision:
+
+- Keep as generic runtime improvements, but do not count benchmark progress.
+- Do not run full SWE-bench Pro from this evidence; latest full-run source of truth remains `4/10`.
+- Stop focusing `010` for now unless a new generic issue emerges. Move next to `001` or `005`, because repeated `010` target reruns are timing out.
+- Maintenance note: `.smith-bench` is now about `23G`; prune stale retained sandboxes after preserving needed traces.

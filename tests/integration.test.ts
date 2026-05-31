@@ -818,6 +818,47 @@ timeout_ms = 5000
     expect(userMessages(provider.requests[2].body)).toContain("inspected");
   });
 
+  it("rejects first-person rechecking finish messages while tools are available", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "finish",
+        arguments: {
+          message: "I'm rechecking the current state and validation so I can either finish cleanly or report a precise blocker."
+        }
+      },
+      { name: "finish", arguments: { message: "Blocked: validation is still failing with a compile error." } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-rechecking-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "inspect and report"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("Blocked: validation is still failing");
+    expect(provider.requests).toHaveLength(2);
+    expect(userMessages(provider.requests[1].body)).toContain("Finish rejected: the message is an in-progress status update");
+  });
+
   it("warns when a patch removes declarations that may need compatibility wrappers", async () => {
     const provider = await startFakeProvider([
       {
@@ -2739,6 +2780,65 @@ max_run_ms = 1
     expect(userMessages(provider.requests[3].body)).not.toContain("Post-deadline run is reserved");
     expect(userMessages(provider.requests[4].body)).toContain("exit_status: 0");
     expect(readFileSync(join(cwd, "note.js"), "utf8")).toContain("function greet(name, suffix = \"\")");
+  });
+
+  it("allows one short inspection after a post-deadline read-only test patch failure", async () => {
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "sleep 0.02; printf output" } },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: tests/readonly.test.js",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "sed -n '1p' src/app.js" } },
+      { name: "finish", arguments: { message: "blocked after source compatibility inspection" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-post-deadline-readonly-test-inspection-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    mkdirSync(join(cwd, "tests"), { recursive: true });
+    writeFileSync(join(cwd, "src", "app.js"), "old-source\n", "utf8");
+    writeFileSync(join(cwd, "tests", "readonly.test.js"), "old\n", "utf8");
+    chmodSync(join(cwd, "tests", "readonly.test.js"), 0o444);
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "fix source compatibility"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("blocked after source compatibility inspection");
+    expect(provider.requests).toHaveLength(4);
+    expect(toolNames(provider.requests[1].body)).toEqual(["patch", "finish"]);
+    expect(systemMessage(provider.requests[2].body)).toContain("post-deadline read-only test/spec patch failed");
+    expect(userMessages(provider.requests[3].body)).toContain("old-source");
+    expect(userMessages(provider.requests[3].body)).not.toContain("Post-deadline run is reserved");
   });
 
   it("does not classify printf-labeled inspection pipelines as validation", async () => {

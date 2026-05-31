@@ -347,6 +347,12 @@ export async function runSmithTask(options: SmithRunOptions): Promise<SmithRunRe
           if (action.readOnlyTestPatchFailed) {
             unresolvedReadOnlyTestPatchFailure = true;
             sourcePatchAfterReadOnlyTestPatchFailure = false;
+            if (toolAvailabilityState.deadlineFinalizationReason || toolAvailabilityState.inspectionDisabledReason) {
+              toolAvailabilityState = {
+                ...toolAvailabilityState,
+                postDeadlineInspectionRunReason: readOnlyTestPatchInspectionReason(toolAvailabilityState)
+              };
+            }
           }
           if (madeTaskPatch && subAgentTurnLimitFailures < 2) {
             unsafeRunEditRejectionsSincePatch = 0;
@@ -1025,7 +1031,7 @@ async function runShellCommandTool(
     return appendToolObservation(
       parentContext,
       callId,
-      "Post-deadline run is reserved for validation commands such as test, build, lint, typecheck, check, or verify, or for one short inspection command after a failed validation, patch context mismatch, or compatibility-warning patch. Use patch for a known final edit or finish with the current result."
+      "Post-deadline run is reserved for validation commands such as test, build, lint, typecheck, check, or verify, or for one short inspection command after a failed validation, patch context mismatch, read-only test/spec patch failure, or compatibility-warning patch. Use patch for a known final edit or finish with the current result."
     );
   }
   if (isLikelyHeredocFileWrite(command)) {
@@ -1490,7 +1496,7 @@ function shouldRejectInProgressStatusFinish(message: string, availableToolNames:
   }
   return /\b(?:please hold|hold on|one moment|stand by)\b[\s\S]{0,160}\b(?:inspect|check|verify|confirm|review|continue|work|run|test)\b/i.test(
     message
-  ) || /\b(?:I need to|I should|I will|I'll|I'm going to|I am going to)\b[\s\S]{0,160}\b(?:inspect|check|verify|confirm|review|run|test)\b[\s\S]{0,160}\bbefore I (?:can )?(?:finish|report|complete|answer|finalize)\b/i.test(
+  ) || /\b(?:I(?:['\u2019]m| am)(?: going to)?|I(?:['\u2019]ll| will| need to| should))\b[\s\S]{0,160}\b(?:inspect|check|verify|confirm|review|recheck|rechecking|run|test)\b[\s\S]{0,160}\b(?:before I (?:can )?(?:finish|report|complete|answer|finalize)|so I can\b[\s\S]{0,120}\b(?:finish|report|complete|answer|finalize|blocker))\b/i.test(
     message
   );
 }
@@ -2050,6 +2056,16 @@ function patchContextInspectionReason(availability: ToolAvailabilityState): stri
     return "A patch failed because its context did not match after inspection was paused, so run is available for one short inspection command to inspect exact current lines before patching or finalizing.";
   }
   return "A patch failed because its context did not match, so run is available for one short inspection command to inspect exact current lines before patching or finalizing.";
+}
+
+function readOnlyTestPatchInspectionReason(availability: ToolAvailabilityState): string {
+  if (availability.deadlineFinalizationReason) {
+    return "A post-deadline read-only test/spec patch failed, so run is available for one short inspection command to inspect source compatibility before patching or finalizing.";
+  }
+  if (availability.inspectionDisabledReason) {
+    return "A read-only test/spec patch failed after inspection was paused, so run is available for one short inspection command to inspect source compatibility before patching or finalizing.";
+  }
+  return "A read-only test/spec patch failed, so run is available for one short inspection command to inspect source compatibility before patching or finalizing.";
 }
 
 function retainPersistentToolAvailability(availability: ToolAvailabilityState): ToolAvailabilityState {

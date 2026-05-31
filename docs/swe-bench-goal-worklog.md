@@ -12908,3 +12908,64 @@ Decision:
 - Do not run full SWE-bench Pro from this evidence.
 - Next high-value diagnoses remain full-run failures that Codex `gpt-5.4` high passed or that expose clear generic issues: `001-nodebb`, `005-teleport`, `008-vuls`, `010-vuls`. Avoid spending much time on `003`, `006`, or `009` unless there is a general runtime issue.
 - Before more retained-sandbox-heavy runs, clean stale `.smith-bench/run-*` directories after preserving the latest full-run and current diagnostic traces.
+
+## 2026-05-31 Worklog: Rechecking Finish And Read-Only Test Recovery
+
+Context:
+
+- Full-run `010-vuls` trace `.smith-bench/run-eqL6Sa/home/.smith/runs/2026-05-31T00-52-08-846Z.trace` ended with accepted stdout `I’m rechecking the current state and validation so I can either finish cleanly or report a precise blocker.` That is a status update, not a final answer.
+- First post-change target rerun `.smith-bench/run-OcTA8T/home/.smith/runs/2026-05-31T01-59-38-080Z.trace` did not hit the rechecking guard. It exposed a different generic recovery issue: after an unwritable test/spec patch failed, Smith was told to satisfy existing tests through source changes, but post-deadline inspection commands were still rejected. This contradicts the recovery instruction because the model may need one source inspection before patching.
+- Neither issue is benchmark-specific; both apply to ordinary source-change tasks with limited runtime and read-only tests.
+
+Implementation:
+
+- `src/loop.ts`: broadened `shouldRejectInProgressStatusFinish` to catch first-person recheck/check/inspect/verify status messages that say the agent is doing work so it can finish or report.
+- `src/loop.ts`: when `readOnlyTestPatchFailed` happens after deadline finalization or paused inspection, set `postDeadlineInspectionRunReason` for one short source-compatibility inspection.
+- `src/loop.ts`: updated the post-deadline run reservation text to include read-only test/spec patch failures.
+- `tests/integration.test.ts`: added:
+  - `rejects first-person rechecking finish messages while tools are available`;
+  - `allows one short inspection after a post-deadline read-only test patch failure`.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "rechecking finish|read-only test patch failure|in-progress status finish|post-deadline read-only"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused selector: passed `8` selected tests in about `2.0s`.
+- `npm test -- tests/integration.test.ts`: passed `101` tests in about `37.2s`.
+- Representative project benchmark `091-command-router-refactor`: passed in `101240ms`.
+  - Log: `/tmp/smith/2026-05-31T02-20-13-347Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-rm0KVg/home/.smith/runs/2026-05-31T02-18-32-595Z.trace`.
+  - Sandbox: `.smith-bench/run-rm0KVg`.
+
+Target reruns:
+
+- `010-vuls` after only the broadened rechecking guard: failed by Docker timeout in `906700ms`.
+  - Log: `/tmp/smith/2026-05-31T02-14-43-961Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-OcTA8T/home/.smith/runs/2026-05-31T01-59-38-080Z.trace`.
+  - Sandbox: `.smith-bench/run-OcTA8T`.
+  - Usage: `1461288` input tokens, `1142144` cached input tokens, `82545` output tokens, `69874` reasoning output tokens, `1543833` total tokens.
+  - Evidence: no occurrence of `Finish rejected: the message is an in-progress status update`; retained sandbox changed `scanner/alpine.go` and created `SMITH.md`/`SMITH.TASK.md`.
+- `010-vuls` after adding the read-only test/spec recovery slot: failed by Docker timeout in `906209ms`.
+  - Log: `/tmp/smith/2026-05-31T02-35-28-305Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-zORfWb/home/.smith/runs/2026-05-31T02-20-22-863Z.trace`.
+  - Sandbox: `.smith-bench/run-zORfWb`.
+  - Usage: `1379913` input tokens, `1183104` cached input tokens, `66916` output tokens, `58329` reasoning output tokens, `1446829` total tokens.
+  - Evidence: no `post-deadline read-only test/spec patch failed` slot; no read-only test patch failure in this run.
+  - Trace shows repeated finish attempts rejected because explicit requested work remained incomplete without a concrete external blocker, especially the separate package-index mapping requirement. The run eventually timed out with only `scanner/alpine.go` modified.
+
+Decision:
+
+- Keep the generic runtime changes because they are covered by focused/full integration and do not regress the representative project benchmark.
+- Do not count benchmark progress. Both `010` target reruns failed by timeout and do not justify a full run.
+- Current full-run source of truth remains `4/10`.
+- Avoid more `010` reruns until a distinct generic runtime problem appears; next target should return to `001-nodebb` or `005-teleport`.
+- `.smith-bench` size is about `23G`; clean stale retained sandboxes soon, preserving the latest full-run evidence and selected diagnostic traces.
