@@ -3718,3 +3718,19 @@ Decision:
 - `LeaderBoard.md` still has no Codex CLI `gpt-5.5` high SWE-bench Pro row, so this does not establish the alternate completion target by itself.
 - The result does justify considering more `gpt-5.5` targeted diagnostics or a full Smith `gpt-5.5` run once a Codex `gpt-5.5` comparison target is available.
 - `.smith-bench` grew back to about `7.0G` after retaining `run-zv1sQq`; continue pruning stale sandboxes after extracting evidence.
+
+## 2026-05-31 Smith `gpt-5.5` High Diagnostic on `005-teleport`
+
+Evidence:
+
+- Ran Smith `gpt-5.5` high on `005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037`.
+- Result: failed in `812268ms`.
+- Log: `/tmp/smith/2026-05-31T13-52-54-772Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace was in `.smith-bench/run-MIl8q3/home/.smith/runs/2026-05-31T13-39-29-731Z.trace`; the sandbox was pruned after evidence extraction because it was `2.1G`.
+- Verifier failed `lib/kube/proxy` build due missing `Forwarder.cfg` and `Forwarder.clientCredentials` compatibility fields referenced by restored tests.
+
+Decision:
+
+- Do not count `005-teleport` as recovered for the `gpt-5.5` path.
+- Avoid more Teleport-specific chasing unless a fresh generic Smith runtime/tool issue appears.
+- After pruning `run-MIl8q3`, `.smith-bench` returned below the diagnostic peak.

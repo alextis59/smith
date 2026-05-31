@@ -14031,3 +14031,36 @@ Decision:
 - Count this only as alternate-model targeted evidence, not a Smith code improvement.
 - Do not update `LeaderBoard.md` or claim completion without a full run and a known Codex `gpt-5.5` comparison target.
 - `.smith-bench` is back to about `7.0G` with `run-zv1sQq` retained; prune again after any follow-up evidence extraction.
+
+## 2026-05-31 Worklog: Smith `gpt-5.5` High Diagnostic on `005-teleport`
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.5 --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed.
+- Duration: `812268ms`.
+- Log: `/tmp/smith/2026-05-31T13-52-54-772Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+- Trace: `.smith-bench/run-MIl8q3/home/.smith/runs/2026-05-31T13-39-29-731Z.trace`.
+- Sandbox: `.smith-bench/run-MIl8q3`.
+- Usage: `4929490` input tokens, `4262912` cached input tokens, `22542` output tokens, `7706` reasoning output tokens, `4952032` total tokens.
+
+Verifier evidence:
+
+- Smith reported local `go test ./lib/kube/proxy ./lib/service` success, but the benchmark verifier failed.
+- Restored-test build errors in `lib/kube/proxy`:
+  - unknown field `cfg` in `Forwarder`
+  - `f.cfg undefined`
+  - unknown field `clientCredentials` in `Forwarder`
+  - `f.clientCredentials undefined`
+- Selected `TestParseResourcePath`, `TestAuthenticate`, and `TestGetKubeCreds` cases were marked missing/failed because the package did not build.
+
+Decision:
+
+- Do not count `005-teleport` as recovered under the `gpt-5.5` path.
+- This reinforces the existing generic compatibility failure diagnosis, but it does not suggest a new safe Smith change by itself.
+- The failed sandbox was `2.1G`; pruned `.smith-bench/run-MIl8q3` immediately after recording evidence to keep `.smith-bench` from growing again.
