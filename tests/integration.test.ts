@@ -108,6 +108,7 @@ max_turns = 30
     expect(stdout).toContain("done");
     expect(userMessages(provider.requests[0].body)).toContain("Track them as concrete todo items");
     expect(userMessages(provider.requests[0].body)).toContain("explicit requirements or checklist items");
+    expect(userMessages(provider.requests[0].body)).toContain("negative coverage for missing required inputs");
   });
 
   it("rejects incomplete finish reports for prompts with explicit requirements", async () => {

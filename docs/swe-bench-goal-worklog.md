@@ -13534,3 +13534,63 @@ Decision:
 - Next best target is `007-element-web`, because it is a small, concrete regression on a previously passing task and may expose a generic Smith issue around preserving negative test cases or modifier/option semantics. Any improvement must be generic and applicable outside SWE-bench.
 - Avoid more benchmark-specific work on `010` Alpine parsing or OVAL logic, and avoid overfocusing Codex-failed/flawed-bucket tasks.
 - Maintenance: `.smith-bench` is now `29G`. Cleanup is urgent after preserving latest full-run dirs `run-aFMHRM`, `run-gCyip1`, `run-l2kI2s`, `run-N2V8v3`, `run-5XQjuc`, `run-6YaYzF`, `run-4SQdUr`, `run-c1I2aH`, `run-ycfmkL`, `run-ac6owY`, plus targeted evidence dirs `run-4Iwqwt`, `run-z16bgW`, and `run-zltk89`.
+
+## 2026-05-31 Worklog: Generic Exact-Logic Test Coverage Reminder
+
+Context:
+
+- Full-run `007-element-web` failed one restored test in `test/KeyBindingsManager-test.ts`.
+- The failing restored assertion was `isKeyComboMatch(mockKeyEvent('k'), combo4, false) === false` for a combo with `shiftKey: true`.
+- The sandbox source allowed this through:
+  `(expectedShift || isLetterCombo || ev.shiftKey === false)`, so any letter combo passed the Shift check even when Shift was required.
+- Smith had added and run local focused tests, but its own tests missed the missing-required-Shift negative case. It covered positive matches and extra unexpected modifiers, but not the inverse missing-required option.
+- Generic hypothesis: for exact predicate/matching/parser/validation logic, Smith needs a stronger requirements checklist reminder to test both missing-required and extra-unexpected cases. This is applicable to ordinary user tasks and not tied to SWE-bench.
+
+Implementation:
+
+- `src/loop.ts`: extended `taskChecklistReminder` with:
+  `For predicate, matching, parser, or validation logic with exactness, optional flags, or mutually exclusive options, include both positive coverage and negative coverage for missing required inputs plus extra unexpected inputs when practical.`
+- `tests/integration.test.ts`: updated the generic checklist reminder integration test to assert the new reminder is present.
+- No benchmark prompts, task IDs, selected tests, scoring, parsers, verifier logic, or run scripts changed.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "generic checklist reminder"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/007-element-hq-element-web-33e8edb3d508d6eefb354819ca693b7accc695e7 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Validation results:
+
+- `npm run build`: passed.
+- First focused test attempt failed because it ran in parallel with the build and used the old compiled CLI output; rerunning after build passed. No runtime code changed for that failure.
+- Focused checklist reminder test: passed.
+- `npm test -- tests/integration.test.ts`: passed `107` tests in `39587ms`.
+- Representative project benchmark `091-command-router-refactor`: passed in `160051ms`.
+  - Log: `/tmp/smith/2026-05-31T08-40-56-601Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-A4LcjE/home/.smith/runs/2026-05-31T08-38-19-015Z.trace`.
+
+Target evidence:
+
+- Target `007-element-web` passed in `726995ms`.
+  - Log: `/tmp/smith/2026-05-31T08-53-15-293Z-smith-007-element-hq-element-web-33e8edb3d508d6eefb354819ca693b7accc695e7.json`.
+  - Trace: `.smith-bench/run-S4RIbL/home/.smith/runs/2026-05-31T08-41-20-328Z.trace`.
+  - Sandbox: `.smith-bench/run-S4RIbL`.
+  - Usage: `494367` input tokens, `345344` cached input tokens, `62293` output tokens, `56325` reasoning output tokens, `556660` total tokens.
+- Verifier evidence:
+  - Selected tests: `test/KeyBindingsManager-test.ts`.
+  - Stats: all `5` tests passed.
+  - The prior failing key + modifier combo case passed.
+- Smith final-answer evidence:
+  - Explicitly reported focused Jest coverage with both positive and negative cases.
+  - Validated with `yarn test --runInBand test/KeyBindingsManager-test.js`.
+
+Decision:
+
+- Keep the generic reminder and count `007-element-web` as a targeted recovery candidate.
+- Do not run full SWE-bench Pro yet. Full-run source of truth remains `5/10`; current targeted evidence plausibly recovers `007`, but no evidence yet closes another failure needed for `>=7/10`.
+- Next high-value work should inspect `008` timeout or `009` timeout for a generic Smith runtime issue. Avoid hand-tuning benchmark implementation details.
+- Maintenance: `.smith-bench` is now at least `29G` and has additional `091`/`007` sandboxes; cleanup should happen soon after preserving `run-A4LcjE` and `run-S4RIbL` too.

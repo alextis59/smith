@@ -2312,7 +2312,8 @@ function taskChecklistReminder(prompt: string): string | undefined {
   if (!promptHasExplicitRequirements(prompt)) return undefined;
   return [
     "smith$ # task checklist",
-    "The user prompt contains explicit requirements or checklist items. Track them as concrete todo items, and before finish verify each requested item is implemented, validated, or explicitly reported as incomplete or blocked."
+    "The user prompt contains explicit requirements or checklist items. Track them as concrete todo items, and before finish verify each requested item is implemented, validated, or explicitly reported as incomplete or blocked.",
+    "For predicate, matching, parser, or validation logic with exactness, optional flags, or mutually exclusive options, include both positive coverage and negative coverage for missing required inputs plus extra unexpected inputs when practical."
   ].join("\n");
 }
 

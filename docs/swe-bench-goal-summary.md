@@ -3520,3 +3520,30 @@ Decision:
 - `LeaderBoard.md` was not updated because the run missed the `>=7/10` target.
 - Next likely high-value direction: analyze `007-element-web` first because it is a concrete regression on a previously passing task and has a small failing surface. Avoid task-specific prompt/runtime changes; any fix must be a generic Smith improvement.
 - Maintenance note: `.smith-bench` is now `29G`. Cleanup should happen soon, preserving the latest full-run evidence directories and current targeted evidence.
+
+## 2026-05-31 Generic Exact-Logic Test Coverage Reminder
+
+Change:
+
+- Extended the generic explicit-requirements checklist reminder to call out predicate, matching, parser, and validation logic with exactness or optional flags.
+- The reminder now asks for positive coverage plus negative coverage for missing required inputs and extra unexpected inputs when practical.
+- This is a general validation-quality reminder, not a SWE-bench-specific prompt or task hint.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused checklist reminder integration test: passed after rebuilding.
+- `npm test -- tests/integration.test.ts`: passed `107` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `160051ms`, log `/tmp/smith/2026-05-31T08-40-56-601Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-A4LcjE/home/.smith/runs/2026-05-31T08-38-19-015Z.trace`.
+
+Target evidence:
+
+- Target `007-element-web` passed in `726995ms`, log `/tmp/smith/2026-05-31T08-53-15-293Z-smith-007-element-hq-element-web-33e8edb3d508d6eefb354819ca693b7accc695e7.json`, trace `.smith-bench/run-S4RIbL/home/.smith/runs/2026-05-31T08-41-20-328Z.trace`.
+- Verifier selected `test/KeyBindingsManager-test.ts`; all `5` tests passed, including the previously failing key + modifier combo case.
+
+Decision:
+
+- Count `007-element-web` as a targeted recovery candidate for the current code.
+- Do not run the full suite yet: current targeted/full evidence plausibly gets back to about `6/10`, but not the `>=7/10` target without another recovery.
+- Next target should avoid Codex-failed/flawed overfocus and look for a generic cause in `008` timeout or `009` timeout before another full run.
+- Maintenance note: `.smith-bench` remains around `29G+`; cleanup is due soon.
