@@ -14064,3 +14064,35 @@ Decision:
 - Do not count `005-teleport` as recovered under the `gpt-5.5` path.
 - This reinforces the existing generic compatibility failure diagnosis, but it does not suggest a new safe Smith change by itself.
 - The failed sandbox was `2.1G`; pruned `.smith-bench/run-MIl8q3` immediately after recording evidence to keep `.smith-bench` from growing again.
+
+## 2026-05-31 Worklog: Smith `gpt-5.5` High Diagnostic on `010-vuls`
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.5 --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed.
+- Duration: `747347ms`.
+- Log: `/tmp/smith/2026-05-31T16-58-47-386Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace: `.smith-bench/run-TnyhCY/home/.smith/runs/2026-05-31T16-46-21-423Z.trace`.
+- Sandbox: `.smith-bench/run-TnyhCY`.
+- Usage: `1442170` input tokens, `1367808` cached input tokens, `23638` output tokens, `14257` reasoning output tokens, `1465808` total tokens.
+
+Verifier evidence:
+
+- Smith reported `go test -count=1 ./scanner ./oval` passing locally, but the benchmark verifier failed.
+- Restored `scanner/alpine_test.go` expected methods that were still missing:
+  - `parseApkInstalledList`
+  - `parseApkIndex`
+  - `parseApkUpgradableList`
+- `TestIsOvalDefAffected` still failed at case `[85]`, reporting `affected expected false actual true` and unexpected `fixedIn 3.3.2-r0`.
+
+Decision:
+
+- Do not count `010-vuls` as recovered under the `gpt-5.5` path.
+- The alternate-model targeted diagnostics do not justify a full Smith `gpt-5.5` run yet: `001` passed, but `005` and `010` failed.
+- The failed sandbox was `1.5G`; pruned `.smith-bench/run-TnyhCY` immediately after recording evidence.

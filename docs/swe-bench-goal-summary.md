@@ -3734,3 +3734,19 @@ Decision:
 - Do not count `005-teleport` as recovered for the `gpt-5.5` path.
 - Avoid more Teleport-specific chasing unless a fresh generic Smith runtime/tool issue appears.
 - After pruning `run-MIl8q3`, `.smith-bench` returned below the diagnostic peak.
+
+## 2026-05-31 Smith `gpt-5.5` High Diagnostic on `010-vuls`
+
+Evidence:
+
+- Ran Smith `gpt-5.5` high on `010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`.
+- Result: failed in `747347ms`.
+- Log: `/tmp/smith/2026-05-31T16-58-47-386Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+- Trace was in `.smith-bench/run-TnyhCY/home/.smith/runs/2026-05-31T16-46-21-423Z.trace`; the sandbox was pruned after evidence extraction because it was `1.5G`.
+- Verifier failed because restored `scanner/alpine_test.go` expected `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList` methods, and `TestIsOvalDefAffected` still failed.
+
+Decision:
+
+- Do not count `010-vuls` as recovered for the `gpt-5.5` path.
+- Alternate-model targeted evidence across Codex-passed failures is now mixed: `001` passed, `005` failed, `010` failed.
+- A full Smith `gpt-5.5` SWE-bench Pro run is not justified from these diagnostics alone without a Codex `gpt-5.5` comparison target or stronger targeted evidence.
