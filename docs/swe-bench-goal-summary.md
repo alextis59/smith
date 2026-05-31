@@ -3465,3 +3465,30 @@ Decision:
 - Latest full-run source of truth remains `4/10`, but targeted recovery candidates now include `001` and `008`, suggesting a plausible `6/10` if reproduced in a full run. One more Codex-passed recovery is still needed before a full SWE-bench Pro rerun is justified.
 - Next high-value targets remain `005` or another generic loop issue; avoid Codex-failed/flawed tasks unless clear generic evidence appears.
 - Maintenance note: `.smith-bench` is about `17G`; clean stale retained sandboxes after preserving the current `001`, `008`, project, and full-run evidence.
+
+## 2026-05-31 Struct Field Compatibility State
+
+Change:
+
+- Struct/object field changes now mark a patch as compatibility-sensitive, not just signature/declaration removals.
+- This gives the loop the same post-deadline inspection opportunity for keyed struct literals, direct field access, embedded fields, and legacy aliases that it already gives for changed function signatures.
+- Added an integration regression for post-deadline inspection after a struct-field compatibility patch.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused compatibility selector: passed `4` selected tests after correcting the test assertion turn index.
+- `npm test -- tests/integration.test.ts`: passed `107` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `226832ms`, log `/tmp/smith/2026-05-31T05-32-58-771Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-IBz7NR/home/.smith/runs/2026-05-31T05-29-12-185Z.trace`.
+
+Target evidence:
+
+- Target `005-teleport` timed out after `911897ms`, log `/tmp/smith/2026-05-31T05-48-22-879Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-KxtufR/home/.smith/runs/2026-05-31T05-33-17-550Z.trace`.
+- The trace shows the compatibility path fired and Smith attempted follow-up source compatibility work, but the task did not recover and ended in timeout after new validation failures.
+
+Decision:
+
+- Keep the small generic compatibility-state fix, but do not count a benchmark recovery.
+- Stop chasing `005` unless a new generic runtime issue appears; repeated targeted runs have not recovered it.
+- Latest plausible score remains `6/10` from full-run passes plus targeted candidates `001` and `008`; not enough for a full SWE-bench Pro rerun.
+- Maintenance note: `.smith-bench` is about `19G`; cleanup is due soon, preserving current evidence first.

@@ -13359,3 +13359,59 @@ Decision:
 - Combined plausible full-run score is now `6/10` if baseline full-run passes `002`, `003`, `004`, `007` reproduce and targeted recoveries `001` and `008` reproduce. This still does not justify a full SWE-bench Pro run against the `>=7/10` target.
 - Next step should seek one more Codex-passed recovery, likely a fresh generic issue in `005-teleport` or another full-run failure. Avoid returning to `010` implementation specifics or Codex-failed/flawed tasks.
 - Maintenance: `.smith-bench` is about `17G`; prune stale retained sandboxes after preserving `run-4Iwqwt`, `run-PiJP3X`, `run-zltk89`, and latest full-run evidence.
+
+## 2026-05-31 Worklog: Struct Field Changes Trigger Compatibility State
+
+Context:
+
+- Latest `005-teleport` evidence repeatedly failed restored tests because `Forwarder` no longer exposed legacy fields expected by keyed struct literals and direct field access:
+  `cfg` and `clientCredentials`.
+- Smith already emitted a compatibility note when a patch changed struct/object fields, but that signal did not set `declarationCompatibilityChanged`.
+- As a result, struct field changes did not receive the same post-deadline compatibility inspection slot as function signature or declaration-removal patches.
+- Generic hypothesis: field-level API changes are compatibility-sensitive too. Smith should have an inspection opportunity to check keyed literals, embedded-field callers, direct field access, aliases, or adapters before validation/finalization.
+
+Implementation:
+
+- `src/loop.ts`: included `changedStructFields.length > 0` in the compatibility-sensitive patch state.
+- `tests/integration.test.ts`: added `allows one short inspection after a post-deadline struct-field compatibility patch`.
+- No benchmark prompts, task IDs, selected tests, scoring, verifier code, or benchmark runner behavior changed.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "struct-field compatibility|compatibility-warning patch|declaration compatibility|struct fields"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- First focused test run failed because the new assertion checked the provider request before the patch result was replayed. The test expectation was corrected; no runtime code changed for that failure.
+- Focused compatibility selector then passed `4` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `107` tests in `38312ms`.
+- Representative project benchmark `091-command-router-refactor`: passed in `226832ms`.
+  - Log: `/tmp/smith/2026-05-31T05-32-58-771Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-IBz7NR/home/.smith/runs/2026-05-31T05-29-12-185Z.trace`.
+
+Target evidence:
+
+- Target `005-teleport` failed by Docker timeout after `911897ms`.
+  - Log: `/tmp/smith/2026-05-31T05-48-22-879Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-KxtufR/home/.smith/runs/2026-05-31T05-33-17-550Z.trace`.
+  - Sandbox: `.smith-bench/run-KxtufR`.
+  - Usage: `4836491` input tokens, `4020992` cached input tokens, `74955` output tokens, `52417` reasoning output tokens, `4911446` total tokens.
+- Trace evidence:
+  - The struct/object field compatibility note appeared.
+  - Smith used follow-up compatibility work and moved beyond the previous restored-test missing-field shape into package validation failures around nil pointer dereferences and duplicate helper declarations.
+  - It still timed out and did not reach a passing verifier.
+
+Decision:
+
+- Keep the change as a correct generic loop-state fix, but do not count `005` as recovered.
+- Stop spending targeted runs on `005` without a fresh generic Smith issue. Further work appears to be broad task implementation/refactor quality rather than a clear runtime bug.
+- Latest plausible score remains `6/10`: full-run passes `002`, `003`, `004`, `007` plus targeted recovery candidates `001` and `008`.
+- Do not run full SWE-bench Pro yet.
+- Maintenance: `.smith-bench` is about `19G`; prune stale retained sandboxes soon after preserving `run-KxtufR`, `run-IBz7NR`, `run-4Iwqwt`, `run-PiJP3X`, `run-zltk89`, and latest full-run evidence.

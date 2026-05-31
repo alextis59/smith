@@ -2827,6 +2827,70 @@ max_run_ms = 1
     expect(readFileSync(join(cwd, "note.js"), "utf8")).toContain("function greet(name, suffix = \"\")");
   });
 
+  it("allows one short inspection after a post-deadline struct-field compatibility patch", async () => {
+    const provider = await startFakeProvider([
+      { name: "run", arguments: { command: "sleep 0.02; printf ready" } },
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: forwarder.go",
+            "@@",
+            " type Forwarder struct {",
+            "-\tForwarderConfig",
+            "+\tcfg ForwarderConfig",
+            " \tlog Logger",
+            " }",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "grep -n \"cfg ForwarderConfig\" forwarder.go", timeout_ms: 5000 } },
+      { name: "run", arguments: { command: "go test ./...", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-post-deadline-struct-compat-inspection-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, "forwarder.go"),
+      ["type ForwarderConfig struct{}", "", "type Logger struct{}", "", "type Forwarder struct {", "\tForwarderConfig", "\tlog Logger", "}", ""].join("\n"),
+      "utf8"
+    );
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "finish near deadline"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(5);
+    expect(userMessages(provider.requests[2].body)).toContain("changes struct or object fields");
+    expect(systemMessage(provider.requests[2].body)).toContain("post-deadline task patch changed declarations");
+    expect(userMessages(provider.requests[3].body)).toContain("cfg ForwarderConfig");
+    expect(userMessages(provider.requests[3].body)).not.toContain("Post-deadline run is reserved");
+    expect(userMessages(provider.requests[4].body)).toContain("exit_status: 0");
+  });
+
   it("allows one short inspection after a post-deadline read-only test patch failure", async () => {
     const provider = await startFakeProvider([
       { name: "run", arguments: { command: "sleep 0.02; printf output" } },

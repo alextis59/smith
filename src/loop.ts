@@ -792,7 +792,8 @@ async function runPatchTool(
       if (changedStructFields.length > 0) {
         output = `${output}\nCompatibility note: this patch changes struct or object fields: ${changedStructFields.map((name) => `\`${name}\``).join(", ")}. Search for keyed struct literals, direct field access, and embedded-field callers; preserve legacy fields, aliases, or adapters when existing callers may still use them before treating validation as complete.`;
       }
-      declarationCompatibilityChanged = removedDeclarations.length > 0 || changedDeclarationSignatures.length > 0;
+      declarationCompatibilityChanged =
+        removedDeclarations.length > 0 || changedDeclarationSignatures.length > 0 || changedStructFields.length > 0;
       const changedTestFiles = result.changedFiles.filter(isLikelyTestFilePath);
       if (changedTestFiles.length > 0) {
         output = `${output}\nTest files changed: ${formatChangedFiles(changedTestFiles)}. Local validation may include the changed tests; if the user did not ask to update tests, preserve compatibility with the existing test behavior too.`;
