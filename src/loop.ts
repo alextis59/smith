@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { ProfileConfig, RuntimeConfig } from "./config.js";
 import { addUsageCost, formatUsageCost, summarizeUsage, type TokenUsageCost } from "./cost.js";
@@ -1101,7 +1101,7 @@ async function runShellCommandTool(
     !noOpValidation &&
     !failedValidation &&
     !cachedValidation &&
-    validationMissesChangedSourceFiles(command, parentContext.pendingValidationFiles);
+    validationMissesChangedSourceFiles(command, parentContext.pendingValidationFiles, parentContext.options.cwd);
   const narrowValidation =
     validationCommand && !noOpValidation && !failedValidation && !uncoveredValidation && isNarrowValidationCommand(command);
   const testModifiedValidation =
@@ -1158,7 +1158,7 @@ async function runShellCommandTool(
   } else if (cachedValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command reused cached test results while a task patch is pending. Rerun validation with caching disabled, for example with an appropriate no-cache or force-recheck option, before treating the patch as validated.`;
   } else if (uncoveredValidation) {
-    annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command did not appear to cover all changed source directories: ${formatChangedFiles(uncoveredChangedSourceDirs(command, parentContext.pendingValidationFiles))}. Run validation for the remaining changed directories or a broader package/project check before treating the patch as validated.`;
+    annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command did not appear to cover all changed source directories: ${formatChangedFiles(uncoveredChangedSourceDirs(command, parentContext.pendingValidationFiles, parentContext.options.cwd))}. Run validation for the remaining changed directories or a broader package/project check before treating the patch as validated.`;
   } else if (narrowValidation) {
     annotatedTerminalOutput = `${rawTerminalOutput}\nValidation warning: this command selected a subset of checks. Any pending task patch is only narrowly validated; run a broader package or project test, build, lint, typecheck, check, or verify command before finish when practical.`;
   }
@@ -1244,22 +1244,36 @@ function isLikelyHeredocFileWrite(command: string): boolean {
   return /\bcat\s*>\s*(?:\.\/)?[^\s<>|;&]+[\s\S]*<<-?\s*['"]?\w+['"]?/i.test(command);
 }
 
-function validationMissesChangedSourceFiles(command: string, changedFiles: string[]): boolean {
-  return uncoveredChangedSourceDirs(command, changedFiles).length > 0;
+function validationMissesChangedSourceFiles(command: string, changedFiles: string[], cwd?: string): boolean {
+  return uncoveredChangedSourceDirs(command, changedFiles, cwd).length > 0;
 }
 
-function uncoveredChangedSourceDirs(command: string, changedFiles: string[]): string[] {
+function uncoveredChangedSourceDirs(command: string, changedFiles: string[], cwd?: string): string[] {
   const goPackages = goTestPackageArgs(command);
   if (!goPackages) return [];
   return [
     ...new Set(
       changedFiles
-        .map((path) => path.replace(/\\/g, "/").replace(/^\.\//, ""))
+        .map((path) => normalizeValidationPath(path, cwd))
         .filter((path) => path.endsWith(".go") && !isLikelyTestFilePath(path))
         .map((path) => path.split("/").slice(0, -1).join("/") || ".")
         .filter((dir) => !goPackages.some((pkg) => goPackageCoversDir(pkg, dir)))
     )
   ].sort();
+}
+
+function normalizeValidationPath(path: string, cwd?: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (cwd && normalized.startsWith("/")) {
+    const cwdNormalized = resolve(cwd).replace(/\\/g, "/").replace(/\/$/, "");
+    if (normalized === cwdNormalized) return ".";
+    if (normalized.startsWith(`${cwdNormalized}/`)) {
+      return relative(cwdNormalized, normalized).replace(/\\/g, "/") || ".";
+    }
+  }
+  if (normalized === "/workspace") return ".";
+  if (normalized.startsWith("/workspace/")) return normalized.slice("/workspace/".length);
+  return normalized;
 }
 
 function goTestPackageArgs(command: string): string[] | undefined {

@@ -4116,6 +4116,69 @@ max_turns = 30
     expect(userMessages(provider.requests[3].body)).toContain("Finish rejected: a task patch is still pending validation");
   });
 
+  it("matches absolute changed go file paths against relative go test packages", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-go-absolute-validation-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    const bin = join(cwd, "bin");
+    const modelPath = join(cwd, "models", "thing.go");
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    mkdirSync(join(cwd, "models"), { recursive: true });
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(modelPath, "package models\n", "utf8");
+    writeFileSync(join(bin, "go"), "#!/bin/sh\necho 'ok  \texample.test/models\t0.001s'\n", "utf8");
+    chmodSync(join(bin, "go"), 0o755);
+
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            `*** Update File: ${modelPath}`,
+            "@@",
+            "-package models",
+            "+package models",
+            "+",
+            "+func Thing() string { return \"thing\" }",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "go test -count=1 ./models", timeout_ms: 5000 } },
+      { name: "finish", arguments: { message: "done" } }
+    ]);
+    servers.push(provider.server);
+
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("done");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[2].body)).toContain("ok  \texample.test/models");
+    expect(userMessages(provider.requests[2].body)).not.toContain(
+      "Validation warning: this command did not appear to cover all changed source directories"
+    );
+  });
+
   it("keeps validation pending when source validation runs with modified or untracked test files", async () => {
     const provider = await startFakeProvider([
       {

@@ -3345,3 +3345,31 @@ Decision:
 - Do not run full SWE-bench Pro from this evidence; latest full-run source of truth remains `4/10`.
 - Stop focusing `010` for now unless a new generic issue emerges. Move next to `001` or `005`, because repeated `010` target reruns are timing out.
 - Maintenance note: `.smith-bench` is now about `23G`; prune stale retained sandboxes after preserving needed traces.
+
+## 2026-05-31 Go Validation Coverage Path Normalization
+
+Change:
+
+- Normalized changed source paths before Go validation coverage checks, so absolute workspace paths such as `/workspace/models/foo.go` or host absolute paths are compared against relative `go test ./models` package arguments correctly.
+- Added a regression for an absolute changed Go file path validated by a relative package command.
+- This is a generic validation bookkeeping fix, not SWE-bench-specific prompt or task logic.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for absolute Go paths, missed Go packages, and validation-success guards: passed `5` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `102` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `159332ms`, log `/tmp/smith/2026-05-31T02-44-58-486Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-YUExWy/home/.smith/runs/2026-05-31T02-42-19-506Z.trace`.
+
+Target evidence:
+
+- Target `008-vuls` rerun passed in `888418ms`, log `/tmp/smith/2026-05-31T02-59-57-388Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-zltk89/home/.smith/runs/2026-05-31T02-45-09-810Z.trace`.
+- Trace search found no recurrence of the old false uncovered-directory warning or `/workspace/models` mismatch.
+- The verifier ran selected `TestParse` checks and passed.
+
+Decision:
+
+- Keep the change as a validated generic runtime improvement. It recovered a current Codex-passed full-run failure target (`008`) in targeted rerun.
+- Do not run the full SWE-bench Pro suite yet. Latest full-run source of truth remains `4/10`; targeted evidence now makes `008` a plausible recovered task, but more evidence is needed before another expensive full run.
+- Next high-value target should be `001-nodebb` or `005-teleport`; avoid overfocusing Codex-failed/flawed tasks.
+- Maintenance note: `.smith-bench` is about `24G` after the retained project and SWE target runs. Cleanup is due before another long sequence; preserve `run-zltk89`, `run-YUExWy`, and the latest full-run evidence before pruning stale `run-*` directories.

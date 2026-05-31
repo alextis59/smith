@@ -12969,3 +12969,70 @@ Decision:
 - Current full-run source of truth remains `4/10`.
 - Avoid more `010` reruns until a distinct generic runtime problem appears; next target should return to `001-nodebb` or `005-teleport`.
 - `.smith-bench` size is about `23G`; clean stale retained sandboxes soon, preserving the latest full-run evidence and selected diagnostic traces.
+
+## 2026-05-31 Worklog: Go Validation Coverage Path Normalization
+
+Context:
+
+- Full-run `008-vuls` failed by Docker timeout, but its trace showed a generic Smith bookkeeping problem rather than only task difficulty.
+- Smith edited Go source under `models` and related Trivy packages, then ran relevant validation including packages shaped like `./models` and `./contrib/trivy/...`.
+- The validation coverage checker still warned that `/workspace/models` was uncovered. That was a false mismatch between absolute changed paths and relative Go package arguments.
+- The false warning kept the task patch marked unvalidated, causing repeated finish rejection and eventual timeout.
+- This issue can affect any Go workspace where Smith tracks absolute changed file paths but the user/model validates with relative `go test ./pkg` package paths.
+
+Implementation:
+
+- `src/loop.ts`: `validationMissesChangedSourceFiles` and `uncoveredChangedSourceDirs` now receive the runtime cwd.
+- `src/loop.ts`: added `normalizeValidationPath`, which:
+  - converts backslashes to slashes;
+  - strips a configured cwd prefix from absolute changed paths;
+  - handles `/workspace` paths used inside benchmark sandboxes;
+  - preserves ordinary relative paths.
+- `tests/integration.test.ts`: added `matches absolute changed go file paths against relative go test packages`, which patches an absolute Go file path and validates with `go test -count=1 ./models` without triggering an uncovered-source warning.
+- No task prompts, verifier logic, selected tests, scoring, parser behavior, or benchmark-specific task IDs were changed.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "absolute changed go file paths|go test misses changed source directories|validation success claims"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed.
+- Focused selector: passed `5` selected tests in `1475ms`.
+- `npm test -- tests/integration.test.ts`: passed `102` tests in `37322ms`.
+- `git diff --check`: passed.
+- Representative project benchmark `091-command-router-refactor`: passed in `159332ms`.
+  - Log: `/tmp/smith/2026-05-31T02-44-58-486Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-YUExWy/home/.smith/runs/2026-05-31T02-42-19-506Z.trace`.
+  - Sandbox: `.smith-bench/run-YUExWy`.
+  - Usage: `38347` input tokens, `26880` cached input tokens, `10987` output tokens, `9577` reasoning output tokens, `49334` total tokens.
+
+Target rerun:
+
+- `008-vuls`: passed in `888418ms`.
+  - Log: `/tmp/smith/2026-05-31T02-59-57-388Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`.
+  - Trace: `.smith-bench/run-zltk89/home/.smith/runs/2026-05-31T02-45-09-810Z.trace`.
+  - Sandbox: `.smith-bench/run-zltk89`.
+  - Usage: `1689082` input tokens, `1520512` cached input tokens, `76232` output tokens, `67686` reasoning output tokens, `1765314` total tokens.
+- Verifier:
+  - Command: Docker verifier for the Vuls task.
+  - Exit code: `0`.
+  - Selected tests: `TestParse`, with package output passing.
+- Trace evidence:
+  - `rg "Validation warning: this command did not appear to cover all changed source directories|/workspace/models|Finish rejected: a task patch is still pending validation" .smith-bench/run-zltk89/home/.smith/runs/2026-05-31T02-45-09-810Z.trace` returned no matches.
+  - The final trace still had generic honesty guards rejecting over-complete finish wording, then accepted a blocker-style report that acknowledged the unrun end-to-end reproduction.
+  - Benchmark verifier passed despite that caveat, confirming the patch solved the selected task behavior.
+
+Decision:
+
+- Keep the change. It is a small generic fix to Smith's validation coverage accounting and is covered by focused/full integration plus representative benchmark validation.
+- Count `008` as a targeted recovery candidate. Combined with latest full-run source of truth, this suggests a plausible `5/10` if reproduced under full-suite conditions, but not enough to justify another full SWE run yet.
+- Do not update `LeaderBoard.md`; the full-suite goal is not met.
+- Next target should be a Codex-passed failed task, preferably `001-nodebb` or `005-teleport`, unless another trace exposes a broader generic issue first.
+- Maintenance note: `.smith-bench` is about `24G`. Before additional long retained runs, prune stale retained sandboxes after preserving `run-zltk89`, `run-YUExWy`, and the latest full-run evidence directories.
