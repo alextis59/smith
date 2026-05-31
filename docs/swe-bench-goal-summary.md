@@ -3499,3 +3499,12 @@ Decision:
 - Result: failed verifier in `844601ms`, log `/tmp/smith/2026-05-31T06-04-59-238Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-mkx2LN/home/.smith/runs/2026-05-31T05-50-55-495Z.trace`.
 - The run reached external verifier instead of timing out, but restored tests still failed because source compatibility wrappers/methods were missing: `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`. `TestIsOvalDefAffected` also still failed.
 - Decision: do not count `010` as recovered and do not run the full SWE-bench Pro suite. This is now a concrete task implementation miss, and continuing to hand-tune Alpine parsing would violate the generic-improvements-only boundary.
+
+## 2026-05-31 Current-Code `006-navidrome` Evidence Check
+
+- Reran `006-navidrome` with current generic loop changes and Smith `gpt-5.4-mini` high.
+- Result: passed in `650525ms`, log `/tmp/smith/2026-05-31T06-18-02-045Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`, trace `.smith-bench/run-z16bgW/home/.smith/runs/2026-05-31T06-07-35-885Z.trace`.
+- Selected verifier tests `TestListenBrainz`, `TestSpotify`, and `TestLastFM` all passed.
+- Caveat: this is in the Codex-failed/flawed-task bucket, so it should not become a focus area. No task-specific Smith changes were made for it.
+- Plausible full-run evidence is now `7/10` if the prior full-run passes `002`, `003`, `004`, `007` reproduce and targeted recoveries `001`, `006`, and `008` reproduce. Because `003` and `006` are Codex-failed tasks, the final source of truth must be a full honest SWE-bench Pro run, not targeted evidence.
+- Maintenance note: `.smith-bench` was already about `19G` before this run and should be pruned soon after preserving the current evidence directories.

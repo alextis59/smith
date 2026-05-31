@@ -13448,3 +13448,39 @@ Decision:
 - Do not count `010` as recovered.
 - Do not continue hand-tuning Alpine parser/source wrappers because that would be task-specific benchmark work, not a generic Smith improvement.
 - Latest plausible score remains `6/10`; one more valid recovery is still needed before a full SWE-bench Pro run is justified.
+
+## 2026-05-31 Worklog: Current-Code 006 Evidence Check
+
+Context:
+
+- After the generic pending-verification and compatibility-state fixes, targeted recovery candidates were `001-nodebb` and `008-vuls`.
+- `006-navidrome` was also a failed full-run task with a concrete chance to benefit from generic compatibility behavior, but it is in the Codex-failed/flawed-task bucket. Treat this as evidence only, not a reason for task-specific tuning.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Passed in `650525ms`.
+  - Log: `/tmp/smith/2026-05-31T06-18-02-045Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`.
+  - Trace: `.smith-bench/run-z16bgW/home/.smith/runs/2026-05-31T06-07-35-885Z.trace`.
+  - Sandbox: `.smith-bench/run-z16bgW`.
+  - Usage: `1236714` input tokens, `1115392` cached input tokens, `55848` output tokens, `42772` reasoning output tokens, `1292562` total tokens.
+- Verifier evidence:
+  - Selected tests: `TestListenBrainz`, `TestSpotify`, `TestLastFM`.
+  - Stats: all `3` selected tests passed.
+- Smith final-answer evidence:
+  - Made LastFM, ListenBrainz, and Spotify concrete client types package-private in production.
+  - Moved low-level client methods behind package-private access for in-package call sites.
+  - Added test-only compatibility shims in `export_test.go`.
+  - Validated with `go test ./core/agents/lastfm ./core/agents/listenbrainz ./core/agents/spotify`.
+
+Decision:
+
+- Count `006-navidrome` as a targeted recovery candidate, with the explicit caveat that it is a Codex-failed/flawed-bucket task and must not receive any benchmark-specific Smith prompt or runtime tuning.
+- Plausible score is now `7/10` if the prior full-run passes `002`, `003`, `004`, `007` reproduce and targeted recovery candidates `001`, `006`, and `008` reproduce.
+- This is the first point where a full SWE-bench Pro rerun is justified by targeted evidence rather than speculative prompt edits. The final source of truth remains the full benchmark result.
+- Maintenance: `.smith-bench` was about `19G` before this run and is likely larger now. Preserve `run-z16bgW`, `run-4Iwqwt`, `run-zltk89`, latest full-run dirs, and recent failed-diagnostic dirs before pruning stale retained sandboxes.
