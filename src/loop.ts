@@ -1584,6 +1584,16 @@ function shouldRejectUnsupportedValidationUnavailableFinish(
     message
   ) || /\b(?:not able|unable|cannot|can't|could not|couldn't|wasn'?t able)\s+(?:run|execute|perform)\b[\s\S]{0,160}\b(?:validat\w*|verif\w*|tests?|build|lint|typecheck|checks?)\b[\s\S]{0,160}\b(?:in this session|available session|here|now|currently)\b/i.test(
     message
+  ) || /\b(?:could not|couldn't|cannot|can't|unable|not able|blocked)\b[\s\S]{0,120}\b(?:finish|complete|run|perform)\b[\s\S]{0,120}\b(?:post[- ]edit\s+)?(?:validat\w*|verif\w*|tests?|build|lint|typecheck|checks?)\b[\s\S]{0,160}\b(?:tool|runtime|run[- ]time|time)\s+limits?\b/i.test(
+    message
+  ) || /\b(?:not run|no\s+(?:test|build|lint|typecheck|check|verification|validation)[\w\s/-]{0,80}(?:completed|run|performed))\b[\s\S]{0,160}\b(?:tool|runtime|run[- ]time|time)\s+limits?\b/i.test(
+    message
+  ) || /\b(?:validat\w*|verif\w*|tests?|build|lint|typecheck|checks?)\b[\s\S]{0,160}\b(?:blocked|not run|not completed|could not|couldn't|cannot|can't|unable)\b[\s\S]{0,160}\brun\s+commands?\s+(?:were|are|was|is)?\s*(?:rejected|denied|blocked|refused)\b[\s\S]{0,160}\b(?:deadline|time limit|runtime|run[- ]time)\b/i.test(
+    message
+  ) || /\brun\s+commands?\s+(?:were|are|was|is)?\s*(?:rejected|denied|blocked|refused)\b[\s\S]{0,160}\b(?:deadline|time limit|runtime|run[- ]time)\b[\s\S]{0,160}\b(?:validat\w*|verif\w*|tests?|build|lint|typecheck|checks?)\b/i.test(
+    message
+  ) || /\b(?:could not|couldn't|cannot|can't|unable|not able|blocked)\b[\s\S]{0,80}\b(?:validat\w*|verif\w*|tests?|build|lint|typecheck|checks?)\b[\s\S]{0,160}\brun\s+commands?\s+(?:were|are|was|is)?\s*(?:rejected|denied|blocked|refused)\b[\s\S]{0,160}\b(?:deadline|time limit|runtime|run[- ]time)\b/i.test(
+    message
   );
 }
 

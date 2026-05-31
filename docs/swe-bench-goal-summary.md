@@ -3373,3 +3373,31 @@ Decision:
 - Do not run the full SWE-bench Pro suite yet. Latest full-run source of truth remains `4/10`; targeted evidence now makes `008` a plausible recovered task, but more evidence is needed before another expensive full run.
 - Next high-value target should be `001-nodebb` or `005-teleport`; avoid overfocusing Codex-failed/flawed tasks.
 - Maintenance note: `.smith-bench` is about `24G` after the retained project and SWE target runs. Cleanup is due before another long sequence; preserve `run-zltk89`, `run-YUExWy`, and the latest full-run evidence before pruning stale `run-*` directories.
+
+## 2026-05-31 Broaden Validation-Unavailable Finish Guard
+
+Change:
+
+- Broadened the generic validation-unavailable finish guard so Smith rejects final blockers that claim post-edit validation cannot be completed because of current tool/runtime limits or rejected post-deadline run commands while a validation run is still available.
+- Added regressions for both wording variants.
+- This is generic final-answer integrity logic; it does not mention SWE-bench tasks, selected tests, verifier behavior, or benchmark scoring.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for validation-unavailable, runtime-limit, post-deadline run-rejected, tool-access, and session-scoped blockers: passed `5` selected tests.
+- `npm test -- tests/integration.test.ts`: passed `104` tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `189302ms`, log `/tmp/smith/2026-05-31T03-28-00-327Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-RLU2r6/home/.smith/runs/2026-05-31T03-24-51-336Z.trace`.
+
+Target evidence:
+
+- First `005-teleport` rerun after the first guard broadening failed in `754338ms`, log `/tmp/smith/2026-05-31T03-21-28-039Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-aETuX0/home/.smith/runs/2026-05-31T03-09-02-235Z.trace`.
+- Second `005-teleport` rerun after covering the run-rejected wording failed in `736271ms`, log `/tmp/smith/2026-05-31T03-40-33-562Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-ju6GnR/home/.smith/runs/2026-05-31T03-28-24-811Z.trace`.
+- The latest verifier failure remains the same restored-test build break: `Forwarder` is missing `cfg` and `clientCredentials` fields expected by `lib/kube/proxy/forwarder_test.go`.
+
+Decision:
+
+- Keep the guard because local tests and representative validation passed, and the target trace shows Smith rejected several invalid completion/blocker reports instead of accepting the earlier premature status shape.
+- Do not count benchmark progress. `005` still fails and does not justify a full SWE-bench Pro run.
+- Stop focusing `005` unless a new generic runtime issue appears; move next to another Codex-passed failed task or re-evaluate with a fresh full-run plan after more targeted wins.
+- Maintenance note: `.smith-bench` is about `27G`; cleanup is overdue before more long retained runs.

@@ -13036,3 +13036,80 @@ Decision:
 - Do not update `LeaderBoard.md`; the full-suite goal is not met.
 - Next target should be a Codex-passed failed task, preferably `001-nodebb` or `005-teleport`, unless another trace exposes a broader generic issue first.
 - Maintenance note: `.smith-bench` is about `24G`. Before additional long retained runs, prune stale retained sandboxes after preserving `run-zltk89`, `run-YUExWy`, and the latest full-run evidence directories.
+
+## 2026-05-31 Worklog: Validation-Unavailable Finish Guard Broadening
+
+Context:
+
+- Latest `005-teleport` target trace `.smith-bench/run-RoCaRT/home/.smith/runs/2026-05-31T01-39-30-326Z.trace` accepted a final report saying post-edit validation could not be finished under current tool/runtime limits, even though the post-deadline state still offered a bounded validation run.
+- This is a generic control-loop issue: when `run` is available for validation, Smith should not finish by claiming validation is unavailable due tool/runtime limits.
+- A follow-up target run then shifted the wording to "subsequent run commands were rejected after the deadline threshold" even though the post-deadline gate distinguishes validation commands from inspection commands. That wording needed the same generic treatment.
+
+Implementation:
+
+- `src/loop.ts`: broadened `shouldRejectUnsupportedValidationUnavailableFinish` to catch:
+  - inability to finish/complete/run post-edit validation due tool/runtime/time limits;
+  - no test/build/validation being completed because of tool/runtime/time limits;
+  - validation blocked because run commands were rejected after a deadline/time limit while validation run is available.
+- `tests/integration.test.ts`: added:
+  - `rejects runtime-limit validation blockers when run is available`;
+  - `rejects post-deadline run-rejected validation blockers when validation run is available`.
+- No benchmark-specific prompts, task IDs, selected-test logic, verifier logic, or scoring code were changed.
+
+Validation commands:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "runtime-limit validation blockers|post-deadline run-rejected validation blockers|validation-unavailable|tool-access|session-scoped validation"
+npm test -- tests/integration.test.ts
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Observed validation:
+
+- `npm run build`: passed after each guard broadening.
+- First focused selector passed `4` selected tests, then the added post-deadline run-rejected regression initially failed because the regex did not cover "could not validate ... because subsequent run commands were rejected"; the matcher was corrected.
+- Final focused selector passed `5` selected tests in `1414ms`.
+- `npm test -- tests/integration.test.ts`: passed `104` tests in `37739ms`.
+- `git diff --check`: passed.
+- Representative project benchmark `091-command-router-refactor`:
+  - First run after the runtime-limit broadening passed in `123298ms`, log `/tmp/smith/2026-05-31T03-08-45-242Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-YstSy6/home/.smith/runs/2026-05-31T03-06-42-433Z.trace`.
+  - Final run after the run-rejected broadening passed in `189302ms`, log `/tmp/smith/2026-05-31T03-28-00-327Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-RLU2r6/home/.smith/runs/2026-05-31T03-24-51-336Z.trace`.
+
+Target reruns:
+
+- First `005-teleport` rerun after the runtime-limit broadening:
+  - Failed in `754338ms`.
+  - Log: `/tmp/smith/2026-05-31T03-21-28-039Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-aETuX0/home/.smith/runs/2026-05-31T03-09-02-235Z.trace`.
+  - Sandbox: `.smith-bench/run-aETuX0`.
+  - Usage: `2084620` input tokens, `1712384` cached input tokens, `65400` output tokens, `53934` reasoning output tokens, `2150020` total tokens.
+  - Final report shifted from "tool/runtime limits" to "subsequent run commands were rejected after the deadline threshold".
+- Second `005-teleport` rerun after adding the run-rejected wording:
+  - Failed in `736271ms`.
+  - Log: `/tmp/smith/2026-05-31T03-40-33-562Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`.
+  - Trace: `.smith-bench/run-ju6GnR/home/.smith/runs/2026-05-31T03-28-24-811Z.trace`.
+  - Sandbox: `.smith-bench/run-ju6GnR`.
+  - Usage: `2164824` input tokens, `1718656` cached input tokens, `63843` output tokens, `52355` reasoning output tokens, `2228667` total tokens.
+  - Trace evidence:
+    - `Finish rejected: the prompt has explicit requirements...` rejected incomplete non-external blockers.
+    - `Finish rejected: a task patch is still not validated as complete...` rejected over-complete validation claims.
+    - `Finish rejected: run is currently available...` rejected at least one blocker that still implied available inspection/validation work.
+  - Final accepted blocker claimed all post-deadline run inspection/validation commands were refused. At that late point the run still failed externally, and verifier evidence is more important than the final wording.
+
+Verifier failure:
+
+- Both `005` reruns still fail restored verifier/build the same way:
+  - `lib/kube/proxy/forwarder_test.go:47:3: unknown field 'cfg' in struct literal of type Forwarder`.
+  - `lib/kube/proxy/forwarder_test.go:546:3: unknown field 'clientCredentials' in struct literal of type Forwarder`.
+  - Additional `f.cfg undefined` and `f.clientCredentials undefined` errors.
+- Latest retained sandbox status includes modified `lib/kube/proxy/forwarder.go`, staged/modified `lib/kube/proxy/forwarder_test.go`, and modified `lib/service/kubernetes.go`; production diff is only `forwarder.go` and `kubernetes.go`.
+
+Decision:
+
+- Keep the guard broadening. It is a generic final-answer integrity improvement with focused/full integration coverage and representative benchmark validation.
+- Do not count this as a target recovery. `005` remains failed and should not be rerun again without a new generic runtime issue.
+- Do not run full SWE-bench Pro from this evidence; latest full-run source of truth remains `4/10`, with `008` as the only newly plausible targeted recovery.
+- Next direction: move away from `005`; inspect another Codex-passed failed task or decide whether existing targeted recoveries justify a later full run after one more high-value recovery.
+- Maintenance note: `.smith-bench` is about `27G`. Clean stale retained sandboxes before more long retained runs, preserving `run-ju6GnR`, `run-aETuX0`, `run-RLU2r6`, `run-zltk89`, and latest full-run evidence if still needed.
