@@ -3492,3 +3492,10 @@ Decision:
 - Stop chasing `005` unless a new generic runtime issue appears; repeated targeted runs have not recovered it.
 - Latest plausible score remains `6/10` from full-run passes plus targeted candidates `001` and `008`; not enough for a full SWE-bench Pro rerun.
 - Maintenance note: `.smith-bench` is about `19G`; cleanup is due soon, preserving current evidence first.
+
+## 2026-05-31 Current-Code `010-vuls` Evidence Check
+
+- Reran `010-vuls` after the pending-verification and compatibility-state fixes.
+- Result: failed verifier in `844601ms`, log `/tmp/smith/2026-05-31T06-04-59-238Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-mkx2LN/home/.smith/runs/2026-05-31T05-50-55-495Z.trace`.
+- The run reached external verifier instead of timing out, but restored tests still failed because source compatibility wrappers/methods were missing: `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`. `TestIsOvalDefAffected` also still failed.
+- Decision: do not count `010` as recovered and do not run the full SWE-bench Pro suite. This is now a concrete task implementation miss, and continuing to hand-tune Alpine parsing would violate the generic-improvements-only boundary.

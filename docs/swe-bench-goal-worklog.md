@@ -13415,3 +13415,36 @@ Decision:
 - Latest plausible score remains `6/10`: full-run passes `002`, `003`, `004`, `007` plus targeted recovery candidates `001` and `008`.
 - Do not run full SWE-bench Pro yet.
 - Maintenance: `.smith-bench` is about `19G`; prune stale retained sandboxes soon after preserving `run-KxtufR`, `run-IBz7NR`, `run-4Iwqwt`, `run-PiJP3X`, `run-zltk89`, and latest full-run evidence.
+
+## 2026-05-31 Worklog: Current-Code 010 Evidence Check
+
+Context:
+
+- The latest `010-vuls` timeout before the pending-verification classifier fix included finish-loop behavior around unvalidated patches.
+- After committing the pending-verification and struct-field compatibility fixes, a current-code rerun was warranted as a final evidence check before abandoning `010` as an implementation-specific rabbit hole.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro/010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Result:
+
+- Failed verifier in `844601ms`.
+  - Log: `/tmp/smith/2026-05-31T06-04-59-238Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`.
+  - Trace: `.smith-bench/run-mkx2LN/home/.smith/runs/2026-05-31T05-50-55-495Z.trace`.
+  - Sandbox: `.smith-bench/run-mkx2LN`.
+  - Usage: `1918039` input tokens, `1426048` cached input tokens, `59049` output tokens, `48892` reasoning output tokens, `1977088` total tokens.
+- Positive movement:
+  - The run reached the external verifier instead of timing out.
+- Remaining verifier failures:
+  - `scanner/alpine_test.go` could not compile because restored tests expected methods not present on `*alpine`:
+    `parseApkInstalledList`, `parseApkIndex`, `parseApkUpgradableList`.
+  - `TestIsOvalDefAffected` failed case `[85]`, expected `affected=false` and empty `fixedIn`, actual `affected=true` and `fixedIn=3.3.2-r0`.
+
+Decision:
+
+- Do not count `010` as recovered.
+- Do not continue hand-tuning Alpine parser/source wrappers because that would be task-specific benchmark work, not a generic Smith improvement.
+- Latest plausible score remains `6/10`; one more valid recovery is still needed before a full SWE-bench Pro run is justified.
