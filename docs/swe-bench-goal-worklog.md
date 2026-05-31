@@ -13749,3 +13749,94 @@ Decision:
 - Do not run the full suite yet. Full-run source of truth remains `3/10`; current targeted candidates now include `002`, `007`, and `008`, but additional recovery evidence is needed before another expensive run.
 - Next best direction is a generic investigation into timeout regressions on previously passing `003-ansible` and `006-navidrome`; avoid task-specific prompt changes or Codex-failed/flawed-task overfocus.
 - Maintenance: `.smith-bench` is now `38G`. Preserve `run-5qUIye` and `run-7koFyv` in addition to the latest full-run and targeted evidence dirs before pruning stale sandboxes.
+
+## 2026-05-31 Worklog: Generic Finish Guard Recovery for `003-ansible`
+
+Context:
+
+- Full-run `003-ansible` timed out after `900000ms` with empty `smith.stdout`/`smith.stderr` and no `smith.status`.
+- Trace `.smith-bench/run-JbKAEj/home/.smith/runs/2026-05-31T09-37-27-166Z.trace` showed Smith had made source/test edits and run a focused passing test slice, but repeated finish attempts were rejected because the finish guard treated focused-pass plus broader-suite-not-run wording as an invalid successful-validation claim.
+- This is a generic loop issue: an agent should be allowed to finish with an honest partial-validation report when broader validation is not run, instead of looping until an outer timeout.
+- No benchmark prompt, task prompt, selected tests, parsers, verifier, scoring, task IDs, or run scripts were changed.
+
+First implementation:
+
+- `src/loop.ts`: broadened `finishAcknowledgesPatchValidationStillPending` so scoped pending-validation language can include broader/project/package suites not run, tests/checks/build/lint/typecheck/verify, and failed checks.
+- `tests/integration.test.ts`: added coverage for a finish message that reports a focused passed command while explicitly saying broader package suites were not executed and complete patch validation remains incomplete.
+
+First validation:
+
+```sh
+npm run build
+npm test -- tests/integration.test.ts --testNamePattern "validation success claims|broader suite pending|external validation"
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+First validation results:
+
+- `npm run build`: passed.
+- Focused integration selector: passed `4` selected tests after rebuilding before test execution.
+- Representative project benchmark `091-command-router-refactor`: passed in `112504ms`.
+  - Log: `/tmp/smith/2026-05-31T11-58-52-556Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-z70aos/home/.smith/runs/2026-05-31T11-57-00-425Z.trace`.
+- Target `003-ansible`: still failed by Docker timeout in `908466ms`.
+  - Log: `/tmp/smith/2026-05-31T12-14-10-891Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`.
+  - Trace: `.smith-bench/run-JgORbZ/home/.smith/runs/2026-05-31T11-59-05-588Z.trace`.
+  - Usage: `1768214` input tokens, `1512320` cached input tokens, `75878` output tokens, `64571` reasoning output tokens, `1844092` total tokens.
+
+Follow-up diagnosis:
+
+- The first `003` rerun showed the pending-validation wording improvement was not sufficient.
+- The retained trace repeatedly rejected messages that accounted for compatibility using wording such as:
+  - removed helpers were private/internal
+  - public interface remained intact or unchanged
+  - no new external interface was introduced
+- Existing `finishAccountsForDeclarationCompatibility` only recognized narrower phrases like `existing callers`, `old signatures`, wrappers/adapters, and contiguous `public interface`.
+- Generic hypothesis: the compatibility finish guard should accept common compatibility-accounting language for private/internal helpers and unchanged public interfaces/signatures.
+
+Second implementation:
+
+- `src/loop.ts`: broadened `finishAccountsForDeclarationCompatibility` to recognize:
+  - `same signature` / `unchanged signature`
+  - `public ... interface`
+  - `interface ... unchanged|intact|preserved`
+  - `no new external interface` / `external interface`
+  - `private/internal`, `internal-only`, and private helper/function/method wording
+- `tests/integration.test.ts`: added a compatibility regression where a private helper is removed, validation passes, and the final report states the public parser interface remains unchanged with the same signature.
+
+Second validation:
+
+```sh
+npm test -- tests/integration.test.ts --testNamePattern "declaration compatibility|private helpers|validation success claims|broader suite pending|external validation"
+npm run build
+node bin/smith.js benchmark run benchmarks/091-command-router-refactor --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --timeout-ms 300000 --keep-sandbox --log-dir /tmp/smith --json
+node bin/smith.js benchmark run swe-bench-pro/003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5 --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Second validation results:
+
+- Focused integration selector: passed `6` selected tests.
+- `npm run build`: passed.
+- Representative project benchmark `091-command-router-refactor`: passed in `114764ms`.
+  - Log: `/tmp/smith/2026-05-31T12-20-34-045Z-smith-091-command-router-refactor.json`.
+  - Trace: `.smith-bench/run-OOAt3C/home/.smith/runs/2026-05-31T12-18-39-789Z.trace`.
+  - Usage: `44157` input tokens, `33152` cached input tokens, `10846` output tokens, `9412` reasoning output tokens, `55003` total tokens.
+- Target `003-ansible`: passed in `708555ms`.
+  - Log: `/tmp/smith/2026-05-31T12-32-33-314Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`.
+  - Trace: `.smith-bench/run-9VmL6L/home/.smith/runs/2026-05-31T12-20-47-745Z.trace`.
+  - Sandbox: `.smith-bench/run-9VmL6L`.
+  - Usage: `1479505` input tokens, `1290368` cached input tokens, `62532` output tokens, `53595` reasoning output tokens, `1542037` total tokens.
+- Verifier evidence:
+  - Selected tests: `test/units/utils/collection_loader/test_collection_loader.py` and `test/units/cli/test_galaxy.py`.
+  - Final verifier exit code: `0`.
+  - Unit-test output: `110 passed, 8 warnings in 3.42s`.
+  - Final verifier summary: `{"passed": 175}`.
+
+Decision:
+
+- Keep both generic finish-guard changes.
+- Count `003-ansible` as a targeted recovery candidate for current code.
+- Current plausible full-run evidence is still below target without another recovery: full source of truth remains `3/10`, with current targeted candidates `002`, `003`, `007`, and `008` plus full-run pass `004`.
+- Do not run a full SWE-bench Pro rerun yet; next target should be another generic regression candidate such as `006-navidrome` or `001-nodebb`.
+- Maintenance: `.smith-bench` remains around `38G`. Cleanup is overdue; preserve `run-9VmL6L`, `run-JgORbZ`, `run-OOAt3C`, `run-z70aos`, latest full-run dirs, and prior targeted evidence dirs before pruning stale sandboxes.

@@ -1706,7 +1706,7 @@ function promptRequestsInterfaceOrCompatibilityStability(prompt: string): boolea
 }
 
 function finishAccountsForDeclarationCompatibility(message: string): boolean {
-  return /\b(?:existing callers?|call sites?|old signatures?|previous signatures?|compatibility wrappers?|wrappers?|adapters?|backwards? compatibility|backward-compatible|compatible with existing|existing (?:api|interface)|public api|public interface|interface compatibility|api compatibility|no breaking changes?)\b/i.test(
+  return /\b(?:existing callers?|call sites?|old signatures?|previous signatures?|same signature|unchanged signature|compatibility wrappers?|wrappers?|adapters?|backwards? compatibility|backward-compatible|compatible with existing|existing (?:api|interface)|public api|public interface|public [^.\n]{0,80} interface|interface [^.\n]{0,80} (?:unchanged|intact|preserved)|no new external interface|external interface|interface compatibility|api compatibility|no breaking changes?|private[/ -]internal|internal-only|private (?:helpers?|functions?|methods?))\b/i.test(
     message
   );
 }
@@ -1737,11 +1737,11 @@ function finishClaimsValidationSuccess(message: string): boolean {
 
 function finishAcknowledgesPatchValidationStillPending(message: string): boolean {
   const pendingValidation =
-    "(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|not verified|not fully verified|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|could not verify|couldn't verify|unable to verify|not able to verify|could not be verified|couldn't be verified|cannot complete validation|can't complete validation|could not complete validation|couldn't complete validation|unable to complete validation|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)";
+    "(?:validation (?:is |remains )?pending|pending validation|not validated|not fully validated|not verified|not fully verified|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|could not verify|couldn't verify|unable to verify|not able to verify|could not be verified|couldn't be verified|cannot complete validation|can't complete validation|could not complete validation|couldn't complete validation|unable to complete validation|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation|not (?:run|executed|completed)|failed|fails?|build failed|tests? failed)";
   const pendingThenScopeValidation =
-    "(?:validation (?:is |remains )?pending|not validated|not fully validated|not verified|not fully verified|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|could not verify|couldn't verify|unable to verify|not able to verify|could not be verified|couldn't be verified|cannot complete validation|can't complete validation|could not complete validation|couldn't complete validation|unable to complete validation|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation)";
+    "(?:validation (?:is |remains )?pending|not validated|not fully validated|not verified|not fully verified|needs validation|need(?:s|ed)? (?:more )?validation|could not validate|couldn't validate|unable to validate|not able to validate|could not verify|couldn't verify|unable to verify|not able to verify|could not be verified|couldn't be verified|cannot complete validation|can't complete validation|could not complete validation|couldn't complete validation|unable to complete validation|validation did not run|no tests? (?:ran|were run)|ran no tests|without validation|not (?:run|executed|completed)|failed|fails?|build failed|tests? failed)";
   const patchScope =
-    "(?:patch|task patch|source patch|source|changes?|changed files?|broader validation|project validation|full validation|complete validation|narrow|selected|subset|no tests?|cached|dirty|modified tests?|uncovered)";
+    "(?:patch|task patch|source patch|source|changes?|changed files?|broader validation|project validation|full validation|complete validation|broader suites?|project suites?|package suites?|validation|tests?|checks?|build|compile|lint|typecheck|verify|narrow|selected|subset|no tests?|cached|dirty|modified tests?|uncovered)";
   return new RegExp(`\\b${patchScope}\\b[\\s\\S]{0,160}\\b${pendingValidation}\\b`, "i").test(message) ||
     new RegExp(`\\b${pendingThenScopeValidation}\\b[\\s\\S]{0,160}\\b${patchScope}\\b`, "i").test(message);
 }

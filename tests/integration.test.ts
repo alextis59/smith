@@ -1076,6 +1076,78 @@ timeout_ms = 5000
     );
   });
 
+  it("allows compatibility accounting for private helpers and unchanged public interfaces", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: parser.go",
+            "@@",
+            " func parseLine(input string) (string, error) {",
+            "-\treturn normalizeToken(input), nil",
+            "+\treturn input, nil",
+            " }",
+            "-",
+            "-func normalizeToken(input string) string {",
+            "-\treturn input",
+            "-}",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "npm test", timeout_ms: 5000 } },
+      {
+        name: "finish",
+        arguments: {
+          message:
+            "Done. npm test passed. Compatibility accounted for: the removed normalizeToken helper was private/internal, and the public parser interface remains unchanged with the same signature."
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-compat-private-helper-finish-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, "parser.go"),
+      "func parseLine(input string) (string, error) {\n\treturn normalizeToken(input), nil\n}\n\nfunc normalizeToken(input string) string {\n\treturn input\n}\n",
+      "utf8"
+    );
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ scripts: { test: "node test.js" } }), "utf8");
+    writeFileSync(join(cwd, "test.js"), "console.log('checked');\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+`,
+      "utf8"
+    );
+
+    const prompt = "Update parser.go. Requirements: preserve compatibility with existing callers and keep the public interface stable.";
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, prompt], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("public parser interface remains unchanged");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[1].body)).toContain("removes or renames declarations");
+    expect(userMessages(provider.requests[2].body)).not.toContain(
+      "Finish rejected: the prompt asks to preserve interface/API compatibility"
+    );
+  });
+
   it("warns when a patch changes struct fields that may break keyed callers", async () => {
     const provider = await startFakeProvider([
       {
@@ -3546,6 +3618,72 @@ max_turns = 30
     expect(userMessages(provider.requests[3].body)).toContain(
       "Finish rejected: a task patch is still not validated as complete"
     );
+  });
+
+  it("allows finish when validation success is paired with explicit broader suite pending state", async () => {
+    const provider = await startFakeProvider([
+      {
+        name: "patch",
+        arguments: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: note.txt",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      { name: "run", arguments: { command: "sleep 0.02; node test.js", timeout_ms: 5000 } },
+      {
+        name: "finish",
+        arguments: {
+          message: [
+            "Changed note.txt.",
+            "",
+            "Validation passed:",
+            "- `node test.js`",
+            "",
+            "Pending / not run:",
+            "- broader package suites were not executed, so complete patch validation remains incomplete."
+          ].join("\n")
+        }
+      }
+    ]);
+    servers.push(provider.server);
+
+    const cwd = mkdtempSync(join(tmpdir(), "smith-unvalidated-broader-suite-pending-"));
+    const home = mkdtempSync(join(tmpdir(), "smith-home-"));
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(join(cwd, "note.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "test.js"), "console.log('checked');\n", "utf8");
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `default_profile = "fake"
+
+[profiles.fake]
+adapter = "openai-chat"
+base_url = "${provider.baseUrl}/v1"
+model = "fake-model"
+
+[runtime]
+danger_review = "off"
+timeout_ms = 5000
+max_run_ms = 1
+max_turns = 30
+`,
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [join(process.cwd(), "bin/smith.js"), "--cwd", cwd, "patch and validate"], {
+      env: { ...process.env, HOME: home },
+      timeout: 10_000
+    });
+
+    expect(stdout).toContain("broader package suites were not executed");
+    expect(provider.requests).toHaveLength(3);
+    expect(userMessages(provider.requests[2].body)).toContain("Validation warning: this command selected a subset of checks");
   });
 
   it("rejects local validation success claims when only external validation is pending", async () => {

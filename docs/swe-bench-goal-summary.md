@@ -3596,3 +3596,32 @@ Decision:
 - Do not run full SWE-bench Pro yet; current source of truth remains `3/10`, and more regression recovery evidence is needed before another expensive full run.
 - Next highest-value direction is a generic cause for verifier timeouts on previously passing `003` and `006`, while avoiding overfocus on Codex-failed/flawed tasks.
 - Maintenance note: `.smith-bench` is now `38G`; prune stale sandboxes soon after preserving current evidence.
+
+## 2026-05-31 Generic Finish Acknowledgement Recovery for `003-ansible`
+
+Change:
+
+- Broadened generic finish-guard acknowledgement for honest partial validation reports, including broader/project/package suites not run or failed checks alongside a focused passing check.
+- Broadened generic declaration-compatibility accounting so finish reports that explicitly say removed helpers are private/internal and the public interface/signature is unchanged are accepted.
+- Added integration tests for both cases.
+- This is generic loop behavior for user tasks; no SWE-bench-specific prompt, parser, verifier, scoring, or task logic was changed.
+
+Validation:
+
+- `npm run build`: passed.
+- Focused integration selector for declaration compatibility and validation-pending finish paths: passed `6` selected tests.
+- Representative project benchmark `091-command-router-refactor`: passed in `114764ms`, log `/tmp/smith/2026-05-31T12-20-34-045Z-smith-091-command-router-refactor.json`, trace `.smith-bench/run-OOAt3C/home/.smith/runs/2026-05-31T12-18-39-789Z.trace`.
+
+Target evidence:
+
+- First `003-ansible` targeted rerun after the validation-pending change still timed out in `908466ms`, log `/tmp/smith/2026-05-31T12-14-10-891Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`, trace `.smith-bench/run-JgORbZ/home/.smith/runs/2026-05-31T11-59-05-588Z.trace`.
+- That trace showed remaining repeated compatibility-finish rejections for private/helper and public-interface wording.
+- After the generic compatibility-accounting change, target `003-ansible` passed in `708555ms`, log `/tmp/smith/2026-05-31T12-32-33-314Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`, trace `.smith-bench/run-9VmL6L/home/.smith/runs/2026-05-31T12-20-47-745Z.trace`.
+- Verifier selected `test/units/utils/collection_loader/test_collection_loader.py` and `test/units/cli/test_galaxy.py`; `110` tests passed and verifier returned `{"passed": 175}`.
+
+Decision:
+
+- Count `003-ansible` as a targeted recovery candidate for current code.
+- Current targeted/full evidence candidates are now `002`, `003`, `004`, `007`, and `008`, which is still short of the `>=7/10` full-run target.
+- Do not run the full suite yet. Next best target is another generic timeout/regression, likely `006-navidrome` or `001-nodebb`, while avoiding task-specific fixes.
+- Maintenance note: `.smith-bench` remains about `38G`; cleanup should happen soon after preserving `run-9VmL6L`, `run-JgORbZ`, `run-OOAt3C`, and previously listed evidence dirs.
