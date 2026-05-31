@@ -3556,3 +3556,20 @@ Decision:
 - This confirms `008` can still pass with current code after the full-run timeout. It is not conclusive for the full suite, but combined with current targeted recovery of `007` and the full-run passes for `001`, `002`, `003`, `004`, and `006`, it creates a plausible honest path to `>=7/10`.
 - Decision: a full SWE-bench Pro rerun is now justified. Do not update `LeaderBoard.md` unless that full run reaches the target.
 - Maintenance note: preserve `run-GhJ4iX`, `run-S4RIbL`, latest full-run dirs, and the representative `run-A4LcjE` before pruning `.smith-bench`; the directory is already in the tens of GB.
+
+## 2026-05-31 Full SWE-bench Pro Rerun After `007`/`008` Targeted Evidence
+
+- Ran the full SWE-bench Pro suite with Smith `gpt-5.4-mini` high at commit `a8ce76c`.
+- Result: `3/10`, exit code `1`, duration `7791953ms`, total usage `17261228` tokens.
+- Passed: `004-openlibrary`, `007-element-web`, `008-vuls`.
+- Failed: `001-nodebb`, `002-qutebrowser`, `003-ansible`, `005-teleport`, `006-navidrome`, `009-openlibrary`, `010-vuls`.
+- `007` and `008` reproduced in the full suite, validating the latest targeted evidence, but earlier full-run passes `001`, `002`, `003`, and `006` regressed.
+- `LeaderBoard.md` was not updated because the run missed the `>=7/10` target.
+- Notable failure signatures:
+  - `001-nodebb`: verifier hit `SyntaxError: Unexpected token ']'` in `src/controllers/admin/users.js:208` after Smith reported a Redis blocker.
+  - `002-qutebrowser`: Smith failed with `smith: shell is closed`.
+  - `003-ansible`, `005-teleport`, and `006-navidrome`: Docker verifier timed out after `900000ms`.
+  - `009-openlibrary`: two MARC parsing tests failed.
+  - `010-vuls`: missing Alpine parser methods plus `TestIsOvalDefAffected` failure remained.
+- Next direction: investigate generic run stability and shell/session handling first, especially the `002` `shell is closed` failure and timeout regressions on tasks that previously passed. Avoid adding SWE-specific prompt instructions.
+- Maintenance note: `.smith-bench` is now `37G`; cleanup should happen soon, preserving the latest full-run dirs and targeted evidence dirs before pruning.

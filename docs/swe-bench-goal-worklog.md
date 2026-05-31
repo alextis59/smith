@@ -13635,3 +13635,55 @@ Decision:
 - Do not update `LeaderBoard.md` until the full benchmark reaches `>=7/10`.
 - If the full run misses target again, classify failures from logs before making any further changes; avoid benchmark-specific task guidance.
 - Maintenance: `.smith-bench` is still growing into the tens of GB. Preserve `run-GhJ4iX`, `run-S4RIbL`, `run-A4LcjE`, the latest full-run dirs, and key older targeted evidence dirs before pruning stale sandboxes.
+
+## 2026-05-31 Worklog: Full SWE-bench Pro Rerun After `007`/`008` Targeted Evidence
+
+Context:
+
+- Current targeted evidence suggested an honest shot at `>=7/10`: full-run passes had previously included `001`, `002`, `003`, `004`, and `006`, and current targeted evidence recovered `007` and revalidated `008`.
+- The run used the standard full-suite command at commit `a8ce76c`.
+- No benchmark prompt, selected-test parser, verifier, scoring, task IDs, dataset files, or run scripts were changed.
+
+Command:
+
+```sh
+node bin/smith.js benchmark run swe-bench-pro --adapter chatgpt-codex --base-url https://chatgpt.com/backend-api/codex --model gpt-5.4-mini --reasoning-effort high --danger-review off --max-turns 240 --timeout-ms 900000 --keep-sandbox --log-dir /tmp/smith --provider-debug --json
+```
+
+Summary:
+
+- Result: failed target at `3/10`, exit code `1`.
+- Duration: `7791953ms`.
+- Total usage: `16659146` input tokens, `13569536` cached input tokens, `602082` output tokens, `507802` reasoning output tokens, `17261228` total tokens.
+- Passed:
+  - `004-internetarchive-openlibrary-v13642507b4fc1f8d234172bf8129942da2c2ca26`, log `/tmp/smith/2026-05-31T09-59-27-037Z-smith-004-internetarchive-openlibrary-v13642507b4fc1f8d234172bf8129942da2c2ca26.json`, trace `.smith-bench/run-o1e1B1/home/.smith/runs/2026-05-31T09-52-52-002Z.trace`.
+  - `007-element-hq-element-web-33e8edb3d508d6eefb354819ca693b7accc695e7`, log `/tmp/smith/2026-05-31T10-40-54-887Z-smith-007-element-hq-element-web-33e8edb3d508d6eefb354819ca693b7accc695e7.json`, trace `.smith-bench/run-mHu6bF/home/.smith/runs/2026-05-31T10-30-22-928Z.trace`.
+  - `008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904`, log `/tmp/smith/2026-05-31T10-54-40-714Z-smith-008-future-architect-vuls-407407d306e9431d6aa0ab566baa6e44e5ba2904.json`, trace `.smith-bench/run-REj3mb/home/.smith/runs/2026-05-31T10-40-56-093Z.trace`.
+- Failed:
+  - `001-nodebb-nodebb-vnan`, log `/tmp/smith/2026-05-31T09-27-57-010Z-smith-001-nodebb-nodebb-vnan.json`, trace `.smith-bench/run-hG2Ti1/home/.smith/runs/2026-05-31T09-13-51-390Z.trace`.
+  - `002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c`, log `/tmp/smith/2026-05-31T09-37-22-289Z-smith-002-qutebrowser-qutebrowser-v059c6fdc75567943479b23ebca7c07b5e9a7f34c.json`, trace `.smith-bench/run-otcmC1/home/.smith/runs/2026-05-31T09-27-58-225Z.trace`.
+  - `003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5`, log `/tmp/smith/2026-05-31T09-52-32-435Z-smith-003-ansible-ansible-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5.json`, trace `.smith-bench/run-JbKAEj/home/.smith/runs/2026-05-31T09-37-27-166Z.trace`.
+  - `005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037`, log `/tmp/smith/2026-05-31T10-14-39-553Z-smith-005-gravitational-teleport-v626ec2a48416b10a88641359a169d99e935ff037.json`, trace `.smith-bench/run-vE6dB5/home/.smith/runs/2026-05-31T09-59-34-253Z.trace`.
+  - `006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e`, log `/tmp/smith/2026-05-31T10-30-11-897Z-smith-006-navidrome-navidrome-7073d18b54da7e53274d11c9e2baef1242e8769e.json`, trace `.smith-bench/run-gnOttW/home/.smith/runs/2026-05-31T10-15-06-587Z.trace`.
+  - `009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59`, log `/tmp/smith/2026-05-31T11-08-44-922Z-smith-009-internetarchive-openlibrary-v2d9a6c849c60ed19fd0858ce9e40b7cc8e097e59.json`, trace `.smith-bench/run-0hddN3/home/.smith/runs/2026-05-31T10-54-42-781Z.trace`.
+  - `010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a`, log `/tmp/smith/2026-05-31T11-23-27-571Z-smith-010-future-architect-vuls-e6c0da61324a0c04026ffd1c031436ee2be9503a.json`, trace `.smith-bench/run-nFIqXn/home/.smith/runs/2026-05-31T11-08-45-795Z.trace`.
+
+Failure evidence:
+
+- `001-nodebb`: Smith stopped with a Redis blocker report, but the external verifier did start Redis and then failed on `SyntaxError: Unexpected token ']'` in `src/controllers/admin/users.js:208`. The syntax error caused many selected tests to be missing.
+- `002-qutebrowser`: failed with `smith: shell is closed`; no verifier stdout/stderr was present. This looks like a generic runtime/session stability failure worth investigating.
+- `003-ansible`: Docker verifier timed out after `900000ms` with no verifier stdout.
+- `005-teleport`: Docker verifier timed out after `900000ms` with no verifier stdout.
+- `006-navidrome`: Docker verifier timed out after `900000ms` with no verifier stdout, despite current targeted and prior full-run passes.
+- `009-openlibrary`: verifier ran and failed two MARC parsing tests: `TestParseMARCXML::test_xml[nybc200247]` and `TestParseMARCBinary::test_binary[880_arabic_french_many_linkages.mrc]`.
+- `010-vuls`: same concrete failures as before: missing `parseApkInstalledList`, `parseApkIndex`, and `parseApkUpgradableList`, plus `TestIsOvalDefAffected` case `[85]` expected unaffected/empty `fixedIn`.
+
+Decision:
+
+- Do not update `LeaderBoard.md`; this full-run source of truth is `3/10`, below the `>=7/10` target.
+- The generic exact-logic coverage reminder is still supported by evidence because `007` passed in the full run.
+- The `008` targeted pass also reproduced in the full run, so the remaining gap is not `007`/`008`.
+- The largest current issue is run stability/regression on previously passing tasks: `001`, `002`, `003`, and `006`.
+- Next investigation should start with the most generic failure, `002` `smith: shell is closed`, then compare timeout failures for common loop/runtime symptoms before changing prompts or task behavior.
+- Avoid spending more effort on Codex-failed/flawed-bucket task details unless a generic runtime issue is clearly implicated.
+- Maintenance: `.smith-bench` is now `37G`. Cleanup should happen soon after preserving the latest full-run dirs `run-hG2Ti1`, `run-otcmC1`, `run-JbKAEj`, `run-o1e1B1`, `run-vE6dB5`, `run-gnOttW`, `run-mHu6bF`, `run-REj3mb`, `run-0hddN3`, and `run-nFIqXn`, plus targeted evidence dirs `run-S4RIbL`, `run-GhJ4iX`, `run-A4LcjE`, `run-zltk89`, `run-4Iwqwt`, and `run-z16bgW`.
