@@ -54,6 +54,140 @@ describe("smith_patch", () => {
     ).toThrow("hunk context not found");
   });
 
+  it("shows unmatched hunk context when no nearby file context is found", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "file.txt"), "alpha\nbeta\n", "utf8");
+
+    expect(() =>
+      applySmithPatch(
+        `*** Begin Patch
+*** Update File: file.txt
+@@
+-missing one
+-missing two
++new
+*** End Patch`,
+        cwd
+      )
+    ).toThrow(/unmatched hunk expected context:[\s\S]*patch context 1: tabs=0 spaces=0 "missing one"[\s\S]*patch context 2: tabs=0 spaces=0 "missing two"/);
+  });
+
+  it("reports visible whitespace details when indentation-insensitive context is ambiguous", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "file.txt"), "\t\talpha\n\t\tbeta\nmiddle\n\t\talpha\n\t\tbeta\n", "utf8");
+
+    expect(() =>
+      applySmithPatch(
+        `*** Begin Patch
+*** Update File: file.txt
+@@
+-	alpha
+-	beta
++	alpha
++	gamma
+*** End Patch`,
+        cwd
+      )
+    ).toThrow(/indentation-insensitive context matched 2 locations[\s\S]*patch line 1: tabs=1 spaces=0[\s\S]*file  line 1: tabs=2 spaces=0/);
+  });
+
+  it("applies a unique indentation-insensitive hunk and preserves the file indentation", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "file.txt"), "before\n\t\talpha\n\t\tbeta\n", "utf8");
+
+    applySmithPatch(
+      `*** Begin Patch
+*** Update File: file.txt
+@@
+-	alpha
+-	beta
++	alpha
++		child
+*** End Patch`,
+      cwd
+    );
+
+    expect(readFileSync(join(cwd, "file.txt"), "utf8")).toBe("before\n\t\talpha\n\t\t\tchild\n");
+  });
+
+  it("does not leave partial changes when a later operation fails", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "first.txt"), "old\n", "utf8");
+    writeFileSync(join(cwd, "second.txt"), "actual\n", "utf8");
+
+    expect(() =>
+      applySmithPatch(
+        `*** Begin Patch
+*** Update File: first.txt
+@@
+-old
++new
+*** Update File: second.txt
+@@
+-missing
++changed
+*** End Patch`,
+        cwd
+      )
+    ).toThrow(/hunk context not found[\s\S]*No files were changed because Smith patches are atomic[\s\S]*split them into smaller patch calls/);
+
+    expect(readFileSync(join(cwd, "first.txt"), "utf8")).toBe("old\n");
+    expect(readFileSync(join(cwd, "second.txt"), "utf8")).toBe("actual\n");
+  });
+
+  it("applies multiple complete patch documents in one call", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "first.txt"), "old first\n", "utf8");
+    writeFileSync(join(cwd, "second.txt"), "old second\n", "utf8");
+
+    const result = applySmithPatch(
+      `*** Begin Patch
+*** Update File: first.txt
+@@
+-old first
++new first
+*** End Patch
+*** Begin Patch
+*** Update File: second.txt
+@@
+-old second
++new second
+*** End Patch`,
+      cwd
+    );
+
+    expect(result.changedFiles).toEqual(["first.txt", "second.txt"]);
+    expect(readFileSync(join(cwd, "first.txt"), "utf8")).toBe("new first\n");
+    expect(readFileSync(join(cwd, "second.txt"), "utf8")).toBe("new second\n");
+  });
+
+  it("keeps multiple patch documents atomic when a later document fails", () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, "first.txt"), "old first\n", "utf8");
+    writeFileSync(join(cwd, "second.txt"), "actual second\n", "utf8");
+
+    expect(() =>
+      applySmithPatch(
+        `*** Begin Patch
+*** Update File: first.txt
+@@
+-old first
++new first
+*** End Patch
+*** Begin Patch
+*** Update File: second.txt
+@@
+-missing second
++new second
+*** End Patch`,
+        cwd
+      )
+    ).toThrow(/hunk context not found[\s\S]*No files were changed because Smith patches are atomic/);
+
+    expect(readFileSync(join(cwd, "first.txt"), "utf8")).toBe("old first\n");
+    expect(readFileSync(join(cwd, "second.txt"), "utf8")).toBe("actual second\n");
+  });
+
   it("applies repeated update contexts in file order instead of matching earlier replacements", () => {
     const cwd = tempDir();
     writeFileSync(join(cwd, "file.txt"), "section\nvalue\nsection\nvalue\n", "utf8");

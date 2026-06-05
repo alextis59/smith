@@ -1,6 +1,6 @@
 # Smith
 
-Smith is a minimal terminal-first CLI coding agent. The model does not receive tools, function calls, MCP servers, skills, or JSON command schemas. It outputs shell input; Smith writes that input to a PTY-backed shell, captures terminal output, appends it to the transcript, and asks the model for the next shell input.
+Smith is a minimal terminal-first CLI coding agent. The model receives provider tools for `run`, `patch`, `sub_agent`, and `finish`. Smith executes workspace-changing tools in a PTY-backed shell, captures terminal output, appends it to the transcript, and asks the model for the next tool call until `finish` ends the run.
 
 ## Install
 
@@ -79,19 +79,24 @@ temperature = 0
 [runtime]
 shell = "bash"
 timeout_ms = 120000
-transcript_turns = 20
-max_context_chars = 120000
+max_run_ms = 0
+max_context_tokens = 128000
+max_tool_output_chars = 12000
 danger_review = "llm"
 danger_review_profile = "reviewer"
 max_turns = 20
 provider_retries = 2
 provider_retry_delay_ms = 250
+provider_timeout_ms = 300000
+sub_agent_enabled = true
+sub_agent_inherit_context = true
+sub_agent_max_turns = 12
 read_only = false
 # Optional session log directory; also settable with SMITH_LOG_DIR or --log-dir.
 # log_dir = "/tmp/smith"
 ```
 
-Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--codex-auth-path`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--danger-review`, `--read-only`, and `--log-dir`.
+Useful flags include `--cwd`, `--quiet`, `--json`, `--profile`, `--model`, `--adapter`, `--base-url`, `--api-key-env`, `--codex-auth-path`, `--temperature`, `--max-output-tokens`, `--reasoning-effort`, `--stop`, `--input-cost-per-million-tokens`, `--output-cost-per-million-tokens`, `--max-turns`, `--max-context-tokens`, `--max-tool-output-chars`, `--danger-review`, `--read-only`, `--no-sub-agent`, `--no-sub-agent-inherit-context`, and `--log-dir`.
 
 When a provider response includes token usage, Smith records per-turn and total usage in the run trace. If `input_cost_per_million_tokens` and/or `output_cost_per_million_tokens` are set on the active profile, traces also include estimated USD cost.
 
@@ -112,7 +117,7 @@ Smith implements API wire-format adapters:
 - `gemini`: POST `{base_url}/v1beta/models/{model}:generateContent`
 - `anthropic-messages`: POST `{base_url}/v1/messages`
 
-Each adapter supports custom base URLs, custom headers, custom body extras, configurable API key environment variables, and best-effort normalized options: `temperature`, `max_output_tokens`, `reasoning_effort`, and `stop`.
+Each adapter supports custom base URLs, custom headers, custom body extras, configurable API key environment variables, Smith tool calls, and best-effort normalized options: `temperature`, `max_output_tokens`, `reasoning_effort`, and `stop`.
 
 For ChatGPT subscription-backed Codex usage:
 
@@ -127,24 +132,20 @@ reasoning_effort = "high"
 ```
 
 Run `codex login` first and choose ChatGPT sign-in. Smith reuses that local Codex auth file and refreshes the OAuth token when needed.
+This adapter sends a deterministic per-run prompt cache key and matching Codex session headers by default.
 
-## chat_out
+## Provider Tools
 
-To speak to the user, the model runs:
+Smith exposes four model-visible tools:
 
-```sh
-chat_out "message"
-```
+- `run`: execute a terminal command in the current workspace.
+- `patch`: apply a focused Smith patch to workspace files.
+- `sub_agent`: launch an independent Smith child run for bounded repo-local work.
+- `finish`: end the run with the final answer, blocker report, or user question.
 
-For multiline output:
+Each tool call includes a required short `reason`, which Smith records in the transcript before the tool output. By default, `sub_agent` child runs inherit the parent transcript context, receive a narrowed delegated task as the final user input, and use up to `runtime.sub_agent_max_turns` turns from the parent run's budget; set `runtime.sub_agent_enabled = false` or pass `--no-sub-agent` to hide delegation for a run, and set `runtime.sub_agent_inherit_context = false` or pass `--no-sub-agent-inherit-context` to start child runs fresh. Set `runtime.sub_agent_max_turns = 0` to let children inherit the full parent budget. Sub-agent tasks can pass `read_only = true`; Smith also infers read-only mode from explicit do-not-edit wording, removes `patch`, and blocks common write commands for that child run. Smith removes the `sub_agent` tool from child runs once the maximum sub-agent depth is reached. `runtime.max_tool_output_chars` caps large terminal outputs before replaying them to the model. `runtime.max_run_ms` is an optional wall-clock budget; when set above `0`, Smith emits generic deadline reminders near the configured budget, then hides inspection and delegation tools after the budget elapses so the run can finalize. Benchmark runs that set `--timeout-ms` derive a shorter Smith `max_run_ms` and bounded provider request timeout by default, leaving process headroom for finalization, result capture, cleanup, and verification. If an actual task patch is still unvalidated when that deadline elapses, or if a task patch is applied after the deadline, Smith allows one bounded `run` call for validation before hiding inspection again. `runtime.provider_timeout_ms` bounds each provider attempt and retries transient stalls according to `runtime.provider_retries`. The first `finish` ends single-shot and remote runs. A legacy `chat_out` shell helper remains available for older traces and compatibility, but the packaged prompt directs models to use `finish`.
 
-```sh
-chat_out <<'SMITH'
-message
-SMITH
-```
-
-The first `chat_out` ends single-shot and remote runs. Smith keeps `chat_out` visible in the terminal transcript while hiding its internal sentinel markers.
+At startup, Smith checks whether `rg` is available on PATH. If it is missing, Smith runs a short bootstrap Smith agent that may attempt a straightforward ripgrep install, with explicit instructions to stop rather than use brittle or risky installation tricks. If `rg` is still unavailable afterward, Smith appends a system-prompt environment note telling the main agent to use alternatives such as `grep` or `find`.
 
 ## Remote Mode
 
@@ -154,7 +155,7 @@ Remote mode is script-friendly:
 smith remote --cwd ./packages/api "find why tests fail"
 ```
 
-Only the first child `chat_out` text is printed to stdout. Status lines go to stderr unless `--quiet` is set.
+Only the first child `finish` message is printed to stdout. Status lines go to stderr unless `--quiet` is set.
 
 Remote runs persist resumable state:
 
@@ -164,7 +165,7 @@ smith remote --cwd ./packages/api "inspect auth failures"
 smith remote --resume abc123 "Use the mock-token branch and continue"
 ```
 
-Resume starts a fresh shell, restores the transcript context, appends the new parent answer as `chat_in`, and continues.
+Resume starts a fresh shell, restores the transcript context, appends the new parent answer as user input, and continues.
 
 Remote sessions can be inspected and deleted:
 
@@ -176,7 +177,7 @@ smith remote delete abc123
 
 ## smith_patch
 
-Smith installs a terminal-native patch helper into the agent shell:
+Smith exposes a provider-level `patch` tool that runs the same terminal-native patch helper used by `smith_patch`. The shell helper remains available for compatibility:
 
 ```sh
 smith_patch <<'PATCH'
@@ -189,7 +190,7 @@ smith_patch <<'PATCH'
 PATCH
 ```
 
-It supports focused add, update, and delete operations, rejects malformed patches, and prevents paths from escaping the working directory.
+It supports focused add, update, and delete operations, rejects malformed patches, and prevents paths from escaping the working directory. Update hunks are exact, but when a hunk only misses because leading indentation differs, Smith can apply it against a single unique indentation-insensitive match and adjust the replacement indentation to the file. Ambiguous matches still fail, and the error includes visible tab/space counts plus a `cat -vet` inspection hint.
 
 ## Danger Review
 
@@ -213,7 +214,7 @@ Each run writes a plain text trace under:
 ~/.smith/runs/
 ```
 
-Traces include run metadata, model outputs, terminal outputs, and the final `chat_out`.
+Traces include run metadata, model outputs, terminal outputs, and the final `finish` message.
 
 Set `SMITH_LOG_DIR=/tmp/smith`, `runtime.log_dir = "/tmp/smith"`, or pass `--log-dir /tmp/smith` to write a redacted JSON session log. Benchmark logs include task id, command, stdout/stderr, trace path, sandbox path, usage, verifier result, model output, terminal output, and parsed provider event summaries.
 
@@ -237,9 +238,9 @@ smith benchmark run ./benchmarks --timeout-ms 120000 --image node:22-bookworm --
 smith benchmark validate ./benchmarks
 ```
 
-The default runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. With `--agent codex`, the runner executes `codex exec` on the copied workspace on the host, then runs the same verifier. Successful sandboxes are removed automatically; pass `--keep-sandbox` to preserve them for debugging.
+The default local-task runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. For SWE-bench Pro tasks, Smith first tries to run inside the task's own Docker image when that image can execute Smith with Node; otherwise it falls back to `node:22-bookworm`. Passing `--image` overrides the Smith editing image. With `--agent codex`, the runner executes `codex exec` on the copied workspace on the host, then runs the same verifier. Successful sandboxes are removed automatically; pass `--keep-sandbox` to preserve them for debugging.
 
-Benchmark output includes per-task and summary token/cost data when the agent reports usage and pricing is available. Smith uses the active profile's `input_cost_per_million_tokens` and `output_cost_per_million_tokens`; Codex includes built-in pricing for `gpt-5.4-mini`, and can be overridden with `--input-cost-per-million-tokens`, `--cached-input-cost-per-million-tokens`, and `--output-cost-per-million-tokens`.
+Benchmark output includes per-task and summary token/cost data when the agent reports usage and pricing is available. Smith uses the active profile's `input_cost_per_million_tokens`, optional `cached_input_cost_per_million_tokens`, and `output_cost_per_million_tokens`; Codex includes built-in pricing for `gpt-5.4-mini`, and pricing can be overridden with `--input-cost-per-million-tokens`, `--cached-input-cost-per-million-tokens`, and `--output-cost-per-million-tokens`.
 
 See [docs/benchmarks.md](docs/benchmarks.md) for the task taxonomy, authoring examples, maintenance workflow, and validation commands. See also [docs/architecture.md](docs/architecture.md), [docs/provider-configs.md](docs/provider-configs.md), and [docs/troubleshooting.md](docs/troubleshooting.md).
 

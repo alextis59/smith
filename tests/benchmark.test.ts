@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -7,32 +7,55 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   BENCHMARK_TASK_INSTRUCTIONS,
   BENCHMARK_PYTHON_SHIM_SCRIPT,
+  DEFAULT_SMITH_BENCHMARK_IMAGE,
   SWE_BENCH_PRO_TASK_INSTRUCTIONS,
+  buildSmithBenchmarkDockerArgs,
+  buildSweBenchProSmithImageProbeScript,
+  buildSweBenchProVerifierDockerArgs,
+  buildSweBenchProSmithScript,
   buildSweBenchProVerifierScript,
+  hideSweBenchProGitDir,
+  hostNodeDockerMountArgs,
+  parseSmithTraceUsage,
+  protectSweBenchProRestoredTestFiles,
+  restoreProtectedFileModes,
+  restoreSweBenchProGitDir,
   resolveBenchmarkTarget,
   runBenchmarkTask,
   runTasksWithConcurrency,
+  smithArgsWithBenchmarkMaxRun,
+  spawnFileWithInput,
   validateBenchmarkPath
 } from "../src/benchmark/runner.js";
 
 const hasDocker = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
 
 describe("Docker benchmark runner", () => {
-  const servers: Array<{ close: () => void }> = [];
+  const servers: Array<{ close: (callback: () => void) => void; closeAllConnections?: () => void }> = [];
 
   afterEach(async () => {
+    servers.forEach((server) => server.closeAllConnections?.());
     await Promise.all(servers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
     servers.length = 0;
   });
 
   it.skipIf(!hasDocker)("runs a minimal passing task in Docker", async () => {
-    const provider = await startFakeProvider(["printf done > result.txt", "chat_out \"done\""], {
-      prompt_tokens: 1000,
-      prompt_tokens_details: { cached_tokens: 800 },
-      completion_tokens: 500,
-      completion_tokens_details: { reasoning_tokens: 300 },
-      total_tokens: 1500
-    });
+    const provider = await startFakeProvider(
+      [
+        { name: "run", arguments: { command: "printf done > result.txt" } },
+        { name: "finish", arguments: { message: "done" } }
+      ],
+      {
+        prompt_tokens: 1000,
+        prompt_tokens_details: { cached_tokens: 800 },
+        completion_tokens: 500,
+        completion_tokens_details: { reasoning_tokens: 300 },
+        total_tokens: 1500
+      },
+      {
+        bootstrapToolCall: { name: "finish", arguments: { message: "rg remains unavailable" } }
+      }
+    );
     servers.push(provider.server);
 
     const task = mkdtempSync(join(tmpdir(), "smith-benchmark-task-"));
@@ -66,15 +89,37 @@ timeout_ms = 5000
     });
     expect(result.passed, result.stderr).toBe(true);
     expect(result.stdout).toContain("done");
+    const providerTurns = provider.requests.length;
     expect(result.usage).toEqual({
-      inputTokens: 2000,
-      cachedInputTokens: 1600,
-      outputTokens: 1000,
-      reasoningOutputTokens: 600,
-      totalTokens: 3000,
-      costUsd: 0.00256
+      inputTokens: 1000 * providerTurns,
+      cachedInputTokens: 800 * providerTurns,
+      outputTokens: 500 * providerTurns,
+      reasoningOutputTokens: 300 * providerTurns,
+      totalTokens: 1500 * providerTurns,
+      costUsd: Number((0.00128 * providerTurns).toFixed(8))
     });
   }, 180_000);
+
+  it("runs timeout cleanup hooks before force-killing a spawned benchmark process", async () => {
+    let cleanupCalled = false;
+
+    await expect(
+      spawnFileWithInput(
+        process.execPath,
+        ["-e", "setTimeout(() => {}, 30000)"],
+        "",
+        {
+          timeout: 50,
+          maxBuffer: 1024 * 1024,
+          onTimeout: () => {
+            cleanupCalled = true;
+          },
+          killGraceMs: 10
+        }
+      )
+    ).rejects.toThrow("timed out after 50ms");
+    expect(cleanupCalled).toBe(true);
+  });
 
   it("validates benchmark task structure", () => {
     const task = mkdtempSync(join(tmpdir(), "smith-benchmark-invalid-"));
@@ -83,6 +128,41 @@ timeout_ms = 5000
     expect(result.valid).toBe(false);
     expect(result.errors).toContain("missing workspace");
     expect(result.errors).toContain("missing verify.sh");
+  });
+
+  it("parses accumulated Smith usage from traces when run JSON is unavailable", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-usage-trace-"));
+    const trace = join(cwd, "run.trace");
+    writeFileSync(
+      trace,
+      `
+## model usage
+input_tokens: 1000
+cached_input_tokens: 600
+output_tokens: 200
+reasoning_output_tokens: 150
+total_tokens: 1200
+
+## terminal output
+done
+
+## danger review usage
+input_tokens: 300
+cached_input_tokens: 100
+output_tokens: 20
+reasoning_output_tokens: 0
+total_tokens: 320
+`,
+      "utf8"
+    );
+
+    expect(parseSmithTraceUsage(trace)).toEqual({
+      inputTokens: 1300,
+      cachedInputTokens: 700,
+      outputTokens: 220,
+      reasoningOutputTokens: 150,
+      totalTokens: 1520
+    });
   });
 
   it("validates SWE-bench Pro task structure", () => {
@@ -144,6 +224,28 @@ timeout_ms = 5000
     );
   });
 
+  it("adds a generic Smith max run deadline for benchmark timeouts", () => {
+    expect(smithArgsWithBenchmarkMaxRun(["--model", "fake"], 100_000)).toEqual([
+      "--model",
+      "fake",
+      "--max-run-ms",
+      "75000",
+      "--provider-timeout-ms",
+      "30000"
+    ]);
+    expect(smithArgsWithBenchmarkMaxRun(["--model", "fake"], 900_000)).toContain("180000");
+    expect(smithArgsWithBenchmarkMaxRun(["--max-run-ms", "123"], 100_000)).toEqual([
+      "--max-run-ms",
+      "123",
+      "--provider-timeout-ms",
+      "30000"
+    ]);
+    expect(smithArgsWithBenchmarkMaxRun(["--max-run-ms=123", "--provider-timeout-ms=777"], 100_000)).toEqual([
+      "--max-run-ms=123",
+      "--provider-timeout-ms=777"
+    ]);
+  });
+
   it("nudges agents away from optional status self-checks", () => {
     expect(BENCHMARK_TASK_INSTRUCTIONS).toContain(
       "When the task names implementation paths, functions, methods, or interfaces, treat those as primary source-code targets; do not satisfy the task with only documentation, localization, fixture, test, build, or generated-file changes unless those are explicitly requested."
@@ -159,18 +261,212 @@ timeout_ms = 5000
     );
   });
 
-  it("tells SWE-bench Pro agents not to churn on missing local dependencies", () => {
-    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toContain(
-      "After a local check fails because a test runner, Python module, package, or project dependency is missing, do not retry equivalent local test/import commands; use a lightweight syntax/static check when available or finish so the SWE-bench Pro verifier can run."
-    );
+  it("does not add SWE-bench Pro-specific coaching instructions", () => {
+    expect(SWE_BENCH_PRO_TASK_INSTRUCTIONS).toEqual([]);
   });
 
-  it("adds a python shim for benchmark editing containers with only python3", () => {
+  it("does not wrap SWE-bench Pro prompts in benchmark coaching", () => {
+    const script = buildSweBenchProSmithScript(
+      {
+        format: "swe-bench-pro-v1",
+        repo: "owner/repo",
+        instanceId: "instance_owner__repo-abc",
+        baseCommit: "abc123",
+        repoLanguage: "go",
+        dockerImage: "example/image:tag",
+        selectedTestFilesToRun: ["TestFeature"],
+        failToPass: ["TestFeature"],
+        passToPass: []
+      },
+      "node /smith/bin/smith.js --cwd /workspace --quiet --json \"$TASK\""
+    );
+
+    expect(script).not.toContain("Complete this benchmark task");
+    expect(script).not.toContain("primary source-code targets");
+    expect(script).not.toContain("/task/verify.sh");
+  });
+
+  it("hides SWE-bench Pro git history from editing agents and restores it for verification", () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "smith-swe-git-sandbox-"));
+    const workspace = join(sandbox, "workspace");
+    mkdirSync(join(workspace, ".git"), { recursive: true });
+    writeFileSync(join(workspace, ".git", "HEAD"), "ref: refs/heads/main\n");
+
+    const hidden = hideSweBenchProGitDir(workspace, sandbox);
+
+    expect(hidden).toBe(join(sandbox, "workspace.git"));
+    expect(existsSync(join(workspace, ".git"))).toBe(false);
+    expect(existsSync(join(sandbox, "workspace.git", "HEAD"))).toBe(true);
+
+    restoreSweBenchProGitDir(workspace, hidden);
+
+    expect(existsSync(join(workspace, ".git", "HEAD"))).toBe(true);
+    expect(existsSync(join(sandbox, "workspace.git"))).toBe(false);
+  });
+
+  it("makes SWE-bench Pro restored test files read-only during editing and restores their modes", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "smith-swe-test-protect-"));
+    mkdirSync(join(workspace, "tests"), { recursive: true });
+    const selectedTest = join(workspace, "tests", "feature_test.go");
+    const sourceFile = join(workspace, "src.go");
+    writeFileSync(selectedTest, "package tests\n", "utf8");
+    writeFileSync(sourceFile, "package main\n", "utf8");
+    chmodSync(selectedTest, 0o664);
+    chmodSync(sourceFile, 0o664);
+
+    const protectedFiles = protectSweBenchProRestoredTestFiles(
+      {
+        format: "swe-bench-pro-v1",
+        repo: "owner/repo",
+        instanceId: "instance_owner__repo-abc",
+        baseCommit: "abc123",
+        repoLanguage: "go",
+        dockerImage: "example/image:tag",
+        setupCommand: "git checkout abc123 -- tests/feature_test.go missing_test.go",
+        selectedTestFilesToRun: ["TestFeature"],
+        failToPass: ["TestFeature"],
+        passToPass: []
+      },
+      workspace
+    );
+
+    expect(protectedFiles).toHaveLength(1);
+    expect(protectedFiles[0]?.relativePath).toBe("tests/feature_test.go");
+    expect(statSync(selectedTest).mode & 0o222).toBe(0);
+    expect(statSync(sourceFile).mode & 0o222).not.toBe(0);
+
+    restoreProtectedFileModes(protectedFiles);
+
+    expect(statSync(selectedTest).mode & 0o777).toBe(0o664);
+  });
+
+  it("adds tool shims for benchmark editing containers with missing basics", () => {
     const script = BENCHMARK_PYTHON_SHIM_SCRIPT.join("\n");
 
     expect(script).toContain("command -v python3");
     expect(script).toContain("ln -sf \"$(command -v python3)\" \"$SHIM_DIR/python\"");
+    expect(script).toContain("if ! command -v rg >/dev/null 2>&1; then");
+    expect(script).toContain("grep_args=(-E -H)");
+    expect(script).toContain("-g|--glob)");
+    expect(script).toContain("find \"${paths[@]}\" -type f -print0");
     expect(script).toContain("export PATH=\"$SHIM_DIR:$PATH\"");
+  });
+
+  it("creates an rg fallback that supports common search globs and regex groups", () => {
+    const dir = mkdtempSync(join(tmpdir(), "smith-rg-shim-"));
+    const resultDir = join(dir, "result");
+    const workspace = join(dir, "workspace");
+    mkdirSync(join(workspace, "pkg"), { recursive: true });
+    writeFileSync(join(workspace, "pkg", "main.go"), "func NewForwarder() {}\nfunc ServeHTTP() {}\n", "utf8");
+    writeFileSync(join(workspace, "pkg", "main.txt"), "NewForwarder text\n", "utf8");
+
+    const script = [
+      "set -euo pipefail",
+      `RESULT_DIR=${JSON.stringify(resultDir)}`,
+      ...BENCHMARK_PYTHON_SHIM_SCRIPT
+    ].join("\n");
+    const setup = spawnSync("bash", ["-lc", script], { cwd: workspace, encoding: "utf8" });
+
+    expect(setup.status, setup.stderr).toBe(0);
+
+    const search = spawnSync(
+      "bash",
+      [
+        "-lc",
+        `PATH=${JSON.stringify(join(resultDir, "bin"))}:$PATH rg -n -g '*.go' 'NewForwarder\\(|ServeHTTP' .`
+      ],
+      { cwd: workspace, encoding: "utf8" }
+    );
+
+    expect(search.status, search.stderr).toBe(0);
+    expect(search.stdout).toContain("./pkg/main.go:1:func NewForwarder() {}");
+    expect(search.stdout).toContain("./pkg/main.go:2:func ServeHTTP() {}");
+    expect(search.stdout).not.toContain("main.txt");
+  });
+
+  it("prepares SWE-bench Pro Smith containers to use task-image tool paths", () => {
+    const script = buildSweBenchProSmithScript(
+      {
+        format: "swe-bench-pro-v1",
+        repo: "owner/repo",
+        instanceId: "instance_owner__repo-abc",
+        baseCommit: "abc123",
+        repoLanguage: "go",
+        dockerImage: "example/image:tag",
+        selectedTestFilesToRun: ["TestFeature"],
+        failToPass: ["TestFeature"],
+        passToPass: []
+      },
+      "node /smith/bin/smith.js --cwd /workspace --quiet --json \"$TASK\""
+    );
+
+    expect(script).toContain("export PATH=/usr/local/go/bin:/go/bin:$PATH");
+    expect(script).toContain("RESULT_DIR=/benchmark-results");
+    expect(script).toContain("mkdir -p \"$RESULT_DIR\"\nprintf '%s\\n' \"$smith_status\" > \"$RESULT_DIR/smith.status\"");
+    expect(script).toContain("[ -f \"$RESULT_DIR/smith.stdout\" ] || : > \"$RESULT_DIR/smith.stdout\"");
+    expect(script).toContain("node /smith/bin/smith.js --cwd /workspace --quiet --json \"$TASK\"");
+  });
+
+  it("uses the Smith smoke command as the SWE-bench Pro task-image compatibility check", () => {
+    const script = buildSweBenchProSmithImageProbeScript();
+
+    expect(script).toContain("command -v node");
+    expect(script).toContain("node /smith/bin/smith.js --version");
+    expect(script).not.toContain("process.versions.node");
+  });
+
+  it("can mount a managed host Node runtime into benchmark containers", () => {
+    const root = mkdtempSync(join(tmpdir(), "smith-node-root-"));
+    mkdirSync(join(root, "bin"), { recursive: true });
+    writeFileSync(join(root, "bin", "node"), "#!/bin/sh\n", "utf8");
+    const nvmRoot = join(root, ".nvm", "versions", "node", "v22.19.0");
+    mkdirSync(join(nvmRoot, "bin"), { recursive: true });
+    writeFileSync(join(nvmRoot, "bin", "node"), "#!/bin/sh\n", "utf8");
+
+    const args = hostNodeDockerMountArgs({}, join(nvmRoot, "bin", "node"));
+
+    expect(args).toEqual(["-v", `${nvmRoot}:${nvmRoot}:ro`]);
+    expect(hostNodeDockerMountArgs({}, "/usr/bin/node")).toEqual([]);
+    expect(hostNodeDockerMountArgs({ SMITH_BENCH_HOST_NODE_ROOT: root }, "/usr/bin/node")).toEqual([
+      "-v",
+      `${root}:${root}:ro`
+    ]);
+  });
+
+  it("runs SWE-bench Pro Smith containers through a bash entrypoint", () => {
+    const args = buildSmithBenchmarkDockerArgs({
+      containerName: "smith-bench-test",
+      image: DEFAULT_SMITH_BENCHMARK_IMAGE,
+      repoRoot: "/repo",
+      workspace: "/workspace-copy",
+      home: "/home-copy",
+      resultsDir: "/results-copy",
+      taskCopy: "/task-copy",
+      script: "echo ok",
+      readOnlyWorkspaceFiles: [{ path: "/workspace-copy/tests/feature_test.go", relativePath: "tests/feature_test.go", mode: 0o664 }]
+    });
+
+    expect(args).toContain("--entrypoint");
+    expect(args[args.indexOf("--entrypoint") + 1]).toBe("bash");
+    expect(args).toContain("/results-copy:/benchmark-results");
+    expect(args).toContain("/workspace-copy/tests/feature_test.go:/workspace/tests/feature_test.go:ro");
+    expect(args.slice(-3)).toEqual([DEFAULT_SMITH_BENCHMARK_IMAGE, "-lc", "echo ok"]);
+    expect(args).not.toContain("bash -lc");
+  });
+
+  it("runs SWE-bench Pro verifier containers through a bash entrypoint", () => {
+    const args = buildSweBenchProVerifierDockerArgs({
+      containerName: "smith-bench-verify-test",
+      image: "example/image:tag",
+      workspace: "/workspace-copy",
+      taskCopy: "/task-copy",
+      resultsDir: "/results-copy",
+      script: "echo verify"
+    });
+
+    expect(args).toContain("--entrypoint");
+    expect(args[args.indexOf("--entrypoint") + 1]).toBe("bash");
+    expect(args.slice(-3)).toEqual(["example/image:tag", "-lc", "echo verify"]);
   });
 
   it("marks mounted SWE-bench Pro workspaces as safe for git before verification", () => {
@@ -193,21 +489,62 @@ timeout_ms = 5000
   });
 });
 
-async function startFakeProvider(commands: string[], usage?: Record<string, unknown>): Promise<{
+type FakeToolCall = {
+  name: "run" | "patch" | "sub_agent" | "finish";
+  arguments: Record<string, unknown>;
+};
+
+async function startFakeProvider(
+  toolCalls: FakeToolCall[],
+  usage?: Record<string, unknown>,
+  options: { bootstrapToolCall?: FakeToolCall } = {}
+): Promise<{
   baseUrl: string;
+  requests: unknown[];
   server: { close: (callback: () => void) => void };
 }> {
   let count = 0;
-  const server = createServer((_request, response) => {
-    _request.resume();
-    const command = commands[Math.min(count, commands.length - 1)];
-    count += 1;
-    response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ choices: [{ message: { content: command } }], ...(usage ? { usage } : {}) }));
+  const requests: unknown[] = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += String(chunk);
+    });
+    request.on("end", () => {
+      const parsed = body ? JSON.parse(body) : {};
+      requests.push(parsed);
+      const bootstrapRequest = body.includes("ripgrep (`rg`) is not available");
+      const toolCall =
+        bootstrapRequest && options.bootstrapToolCall
+          ? options.bootstrapToolCall
+          : toolCalls[Math.min(count++, toolCalls.length - 1)];
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                tool_calls: [
+                  {
+                    id: `call_${requests.length}`,
+                    type: "function",
+                    function: {
+                      name: toolCall.name,
+                      arguments: JSON.stringify({ reason: "test tool call", ...toolCall.arguments })
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          ...(usage ? { usage } : {})
+        })
+      );
+    });
   });
 
   await new Promise<void>((resolve) => server.listen(0, "0.0.0.0", () => resolve()));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("expected TCP server address");
-  return { baseUrl: `http://host.docker.internal:${address.port}`, server };
+  return { baseUrl: `http://host.docker.internal:${address.port}`, requests, server };
 }

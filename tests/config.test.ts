@@ -19,6 +19,10 @@ describe("config loading", () => {
     expect(resolveProfile(config).adapter).toBe("openai-chat");
     expect(config.runtime.dangerReview).toBe("llm");
     expect(config.runtime.dangerReviewProfile).toBe("reviewer");
+    expect(config.runtime.maxRunMs).toBe(0);
+    expect(config.runtime.maxToolOutputChars).toBe(12000);
+    expect(config.runtime.subAgentEnabled).toBe(true);
+    expect(config.runtime.subAgentInheritContext).toBe(true);
   });
 
   it("merges user config, project config, and CLI overrides in order", () => {
@@ -58,6 +62,9 @@ provider = { sort = "throughput" }
 
 [runtime]
 timeout_ms = 20
+max_run_ms = 40
+sub_agent_enabled = false
+sub_agent_inherit_context = false
 `,
       "utf8"
     );
@@ -65,7 +72,7 @@ timeout_ms = 20
     const config = loadConfig({
       homeDir: home,
       cwd,
-      cli: { model: "cli-model", temperature: 0.1, timeoutMs: 30 }
+      cli: { model: "cli-model", temperature: 0.1, timeoutMs: 30, maxRunMs: 50 }
     });
     const profile = resolveProfile(config);
 
@@ -77,6 +84,9 @@ timeout_ms = 20
     expect(profile.headers["X-Test"]).toBe("project");
     expect(profile.body).toEqual({ provider: { sort: "throughput" } });
     expect(config.runtime.timeoutMs).toBe(30);
+    expect(config.runtime.maxRunMs).toBe(50);
+    expect(config.runtime.subAgentEnabled).toBe(false);
+    expect(config.runtime.subAgentInheritContext).toBe(false);
     expect(config.files).toHaveLength(2);
   });
 
@@ -98,6 +108,11 @@ timeout_ms = 20
       "GATEWAY_KEY",
       "--model",
       "gemini-test",
+      "--stateful-responses",
+      "--prompt-cache-key",
+      "auto",
+      "--prompt-cache-retention",
+      "24h",
       "--temperature",
       "0",
       "--max-output-tokens",
@@ -108,14 +123,28 @@ timeout_ms = 20
       "STOP",
       "--input-cost-per-million-tokens",
       "1.25",
+      "--cached-input-cost-per-million-tokens",
+      "0.125",
       "--output-cost-per-million-tokens=10",
       "--max-turns",
       "7",
-      "--transcript-compaction-chars=500",
+      "--max-run-ms",
+      "2222",
+      "--max-context-tokens",
+      "12000",
+      "--max-tool-output-chars",
+      "4096",
       "--read-only",
       "--provider-retries",
       "3",
+      "--provider-timeout-ms",
+      "12345",
       "--provider-debug",
+      "--no-sub-agent",
+      "--no-sub-agent-inherit-context",
+      "--sub-agent-max-turns",
+      "9",
+      "--provider-message-chain",
       "--log-dir",
       "/tmp/smith",
       "--danger-review",
@@ -130,20 +159,31 @@ timeout_ms = 20
       baseUrl: "https://gateway",
       apiKeyEnv: "GATEWAY_KEY",
       model: "gemini-test",
+      statefulResponses: true,
+      promptCacheKey: "auto",
+      promptCacheRetention: "24h",
       temperature: 0,
       maxOutputTokens: 64,
       reasoningEffort: "low",
       stop: ["STOP"],
       inputCostPerMillionTokens: 1.25,
+      cachedInputCostPerMillionTokens: 0.125,
       outputCostPerMillionTokens: 10,
       maxTurns: 7,
-      transcriptCompactionChars: 500,
+      maxRunMs: 2222,
+      maxContextTokens: 12000,
+      maxToolOutputChars: 4096,
       readOnly: true,
       providerRetries: 3,
+      providerTimeoutMs: 12345,
       providerDebug: true,
+      subAgentEnabled: false,
+      subAgentInheritContext: false,
+      subAgentMaxTurns: 9,
       logDir: "/tmp/smith",
       dangerReview: "deterministic"
     });
+    expect(parsed.overrides).not.toHaveProperty("providerMessageChain");
     expect(parsed.rest).toEqual(["task"]);
   });
 
@@ -160,6 +200,7 @@ timeout_ms = 20
       join(cwd, ".smith", "config.toml"),
       `[profiles.default]
 input_cost_per_million_tokens = 1.25
+cached_input_cost_per_million_tokens = 0.125
 output_cost_per_million_tokens = 10
 `,
       "utf8"
@@ -167,7 +208,37 @@ output_cost_per_million_tokens = 10
 
     const profile = resolveProfile(loadConfig({ homeDir: tempDir(), cwd }));
     expect(profile.inputCostPerMillionTokens).toBe(1.25);
+    expect(profile.cachedInputCostPerMillionTokens).toBe(0.125);
     expect(profile.outputCostPerMillionTokens).toBe(10);
+  });
+
+  it("loads max context tokens, max tool output chars, and migrates legacy max context chars", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".smith", "config.toml"),
+      `[runtime]
+max_context_tokens = 12345
+max_tool_output_chars = 6789
+`,
+      "utf8"
+    );
+
+    const runtime = loadConfig({ homeDir: tempDir(), cwd }).runtime;
+    expect(runtime.maxContextTokens).toBe(12345);
+    expect(runtime.maxToolOutputChars).toBe(6789);
+
+    const legacyCwd = tempDir();
+    mkdirSync(join(legacyCwd, ".smith"), { recursive: true });
+    writeFileSync(
+      join(legacyCwd, ".smith", "config.toml"),
+      `[runtime]
+max_context_chars = 120000
+`,
+      "utf8"
+    );
+
+    expect(loadConfig({ homeDir: tempDir(), cwd: legacyCwd }).runtime.maxContextTokens).toBe(30000);
   });
 
   it("loads ChatGPT Codex auth profile fields", () => {
@@ -180,6 +251,9 @@ adapter = "chatgpt-codex"
 base_url = "https://chatgpt.com/backend-api/codex"
 model = "gpt-5.4-mini"
 codex_auth_path = "/tmp/codex-auth.json"
+stateful_responses = true
+prompt_cache_key = "auto"
+prompt_cache_retention = "24h"
 `,
       "utf8"
     );
@@ -187,6 +261,9 @@ codex_auth_path = "/tmp/codex-auth.json"
     const profile = resolveProfile(loadConfig({ homeDir: tempDir(), cwd }), "codex-chatgpt");
     expect(profile.adapter).toBe("chatgpt-codex");
     expect(profile.codexAuthPath).toBe("/tmp/codex-auth.json");
+    expect(profile.statefulResponses).toBe(true);
+    expect(profile.promptCacheKey).toBe("auto");
+    expect(profile.promptCacheRetention).toBe("24h");
   });
 
   it("loads per-project default benchmark profile", () => {

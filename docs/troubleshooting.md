@@ -28,7 +28,7 @@ If a command hangs, Smith reports the command, elapsed time, and recent terminal
 
 ## Read-Only And Danger Review
 
-`--read-only` blocks common write commands such as redirects, `touch`, `rm`, `mv`, `sed -i`, package installs, and `smith_patch`. It is intended for inspection tasks and can block legitimate commands that have unusual syntax.
+`--read-only` blocks common write commands such as redirects, script file writes, `touch`, `rm`, `mv`, `sed -i`, package installs, the provider `patch` tool, and `smith_patch`. It is intended for inspection tasks and can block legitimate commands that have unusual syntax.
 
 `danger_review = "deterministic"` blocks known dangerous command patterns locally. `danger_review = "llm"` asks the reviewer profile only after a local pattern matches.
 

@@ -1,0 +1,15 @@
+{
+  "plans": {
+    "free": { "requiredApprovals": 1, "approvers": ["owner"] },
+    "team": { "requiredApprovals": 3, "approvers": ["ops-lead", "security", "service-owner"] },
+    "enterprise": { "requiredApprovals": 10, "approvers": ["ops-lead", "security", "compliance", "director"] }
+  },
+  "routes": {
+    "deploy.requested": "ops",
+    "incident.opened": "incident",
+    "billing.failed": "finance"
+  },
+  "billing": {
+    "criticalAmount": 1000
+  }
+}

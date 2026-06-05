@@ -173,7 +173,7 @@ const families = [
     key: "hard",
     title: "Coherent Multi-step Task",
     tags: ["hard", "multi-step", "refactor"],
-    count: 10,
+    count: 11,
     names: [
       "command-router-refactor",
       "plugin-registry-upgrade",
@@ -184,7 +184,8 @@ const families = [
       "release-planner-refactor",
       "config-loader-validation",
       "markdown-indexer",
-      "billing-rules-update"
+      "billing-rules-update",
+      "workflow-policy-engine"
     ]
   }
 ];
@@ -513,18 +514,26 @@ function hardSpec(base, index) {
     ["release", "Plan stable and beta releases from manifest files", "planRelease"],
     ["loader", "Merge config defaults, project overrides, and validation errors", "loadConfig"],
     ["indexer", "Index Markdown headings with duplicate anchor suffixes", "indexMarkdown"],
-    ["billing", "Apply tiered rates, minimum charges, and discounts", "calculateInvoice"]
+    ["billing", "Apply tiered rates, minimum charges, and discounts", "calculateInvoice"],
+    ["workflow", "Compile workflow events from scattered policy docs, JSON config, fixtures, and source modules", "compileWorkflow"]
   ][index];
   return {
     ...base,
-    prompt: `Complete the ${scenario[0]} utility. ${scenario[1]}. This is intentionally multi-step: inspect all files, update implementation and docs, then run the test script.`,
+    prompt:
+      scenario[0] === "workflow"
+        ? "Complete the workflow policy engine. The behavior is spread across docs, JSON config, fixtures, tests, and multiple source modules: normalize events, apply plan-specific deployment approvals, block high-risk deployments without emergency override, emit workflow actions, summarize audit counts, and update the README. This is intentionally challenging; broad discovery across independent files is useful before editing."
+        : `Complete the ${scenario[0]} utility. ${scenario[1]}. This is intentionally multi-step: inspect all files, update implementation and docs, then run the test script.`,
     files: hardInitial(scenario[0], scenario[2]),
     solution: hardSolution(scenario[0], scenario[2]),
-    verify: `set -euo pipefail\nnode test.js\nnode --check src/${scenario[0]}.js\ngrep -q "## Verification" README.md\n`
+    verify:
+      scenario[0] === "workflow"
+        ? workflowVerifier()
+        : `set -euo pipefail\nnode test.js\nnode --check src/${scenario[0]}.js\ngrep -q "## Verification" README.md\n`
   };
 }
 
 function hardInitial(name, fn) {
+  if (name === "workflow") return workflowInitial();
   return {
     "package.json": `{"type":"module","scripts":{"test":"node test.js"}}\n`,
     "README.md": `# ${toTitle(name)} Utility\n\nDocument the finished behavior.\n`,
@@ -534,6 +543,7 @@ function hardInitial(name, fn) {
 }
 
 function hardSolution(name, fn) {
+  if (name === "workflow") return workflowSolution();
   return {
     "README.md": `# ${toTitle(name)} Utility\n\nThe utility implements the requested behavior and is covered by the local test script.\n\n## Verification\n\nRun \`node test.js\` from the workspace.\n`,
     [`src/${name}.js`]: hardImplementation(name, fn)
@@ -541,6 +551,7 @@ function hardSolution(name, fn) {
 }
 
 function hardTest(name, fn) {
+  if (name === "workflow") return workflowTest();
   const assertions = {
     router: `assert.deepEqual(${fn}(["start", "s", "missing"]), [{command:"start"},{command:"start"},{error:"unknown command: missing"}]);`,
     plugins: `assert.deepEqual(${fn}([{id:"b"},{id:"a"}]).map((p)=>p.id), ["a","b"]); assert.throws(()=>${fn}([{id:"a"},{id:"a"}]), /duplicate/);`,
@@ -557,6 +568,7 @@ function hardTest(name, fn) {
 }
 
 function hardImplementation(name, fn) {
+  if (name === "workflow") return workflowSolution()["src/workflow.js"];
   const implementations = {
     router: `const aliases = new Map([["s", "start"], ["t", "test"], ["b", "build"]]);\nconst commands = new Set(["start", "test", "build", "help"]);\n\nexport function ${fn}(input) {\n  return input.map((raw) => {\n    const command = aliases.get(raw) ?? raw;\n    return commands.has(command) ? { command } : { error: ` + "`unknown command: ${raw}`" + ` };\n  });\n}\n`,
     plugins: `export function ${fn}(plugins) {\n  const seen = new Set();\n  for (const plugin of plugins) {\n    if (seen.has(plugin.id)) throw new Error(` + "`duplicate plugin id: ${plugin.id}`" + `);\n    seen.add(plugin.id);\n  }\n  return [...plugins].sort((a, b) => a.id.localeCompare(b.id));\n}\n`,
@@ -570,6 +582,84 @@ function hardImplementation(name, fn) {
     billing: `export function ${fn}({ units, discount = 0 }) {\n  const first = Math.min(units, 10) * 2;\n  const extra = Math.max(0, units - 10) * 1;\n  const subtotal = Math.max(5, first + extra);\n  return { subtotal, total: subtotal * (1 - discount) };\n}\n`
   };
   return implementations[name];
+}
+
+function workflowInitial() {
+  return {
+    "package.json": `{"type":"module","scripts":{"test":"node test.js"}}\n`,
+    "README.md": `# Workflow Policy Engine\n\nCompile incoming product events into workflow decisions.\n\nTODO: document the finished behavior.\n`,
+    "docs/policies.md": `# Workflow Policies\n\nDeployment events use plan-specific approval thresholds:\n\n- free plans require 1 approval.\n- team plans require 3 approvals.\n- enterprise plans require 10 approvals.\n\nHigh-risk deployments are blocked unless the event has an emergency override. Billing failures are warning severity below 1000 and critical severity at 1000 or higher. Unknown events should be kept visible as ignored triage decisions.\n`,
+    "docs/actions.md": `# Action Contract\n\nThe engine emits action objects for decisions that can proceed:\n\n- ready deployments schedule a deploy.\n- deployments missing approvals request approval from configured approvers who have not already approved.\n- incidents page the owning on-call team.\n- billing failures notify finance with the account and severity.\n\nBlocked and ignored decisions do not emit actions.\n`,
+    "config/workflows.json": `{
+  "plans": {
+    "free": { "requiredApprovals": 1, "approvers": ["owner"] },
+    "team": { "requiredApprovals": 3, "approvers": ["ops-lead", "security", "service-owner"] },
+    "enterprise": { "requiredApprovals": 10, "approvers": ["ops-lead", "security", "compliance", "director"] }
+  },
+  "routes": {
+    "deploy.requested": "ops",
+    "incident.opened": "incident",
+    "billing.failed": "finance"
+  },
+  "billing": {
+    "criticalAmount": 1000
+  }
+}
+`,
+    "fixtures/events.json": `[
+  {
+    "id": "deploy-high",
+    "type": " deploy.requested ",
+    "plan": "TEAM",
+    "risk": "HIGH",
+    "approvals": ["ops-lead"]
+  },
+  {
+    "id": "deploy-ready",
+    "type": "deploy.requested",
+    "plan": "free",
+    "risk": "normal",
+    "approvals": ["owner"]
+  },
+  {
+    "id": "incident-1",
+    "type": "incident.opened",
+    "team": "payments"
+  },
+  {
+    "id": "billing-1",
+    "type": "billing.failed",
+    "account": "acct_1",
+    "amount": 1200
+  }
+]
+`,
+    "src/events.js": `export function normalizeEvent(raw) {\n  return raw;\n}\n`,
+    "src/policy.js": `import { readFileSync } from "node:fs";\n\nexport function loadWorkflowConfig() {\n  return JSON.parse(readFileSync(new URL("../config/workflows.json", import.meta.url), "utf8"));\n}\n\nexport function resolvePolicy(event, config = loadWorkflowConfig()) {\n  return {\n    route: config.routes[event.type] ?? "triage",\n    status: "ready",\n    severity: "normal",\n    requiredApprovals: 0,\n    missingApprovals: 0,\n    reasons: [],\n    approvers: []\n  };\n}\n`,
+    "src/actions.js": `export function buildActions(event, policy) {\n  return [];\n}\n`,
+    "src/audit.js": `export function summarizeAudit(decisions) {\n  return { total: decisions.length };\n}\n`,
+    "src/workflow.js": `import { summarizeAudit } from "./audit.js";\n\nexport function compileWorkflow(events, options = {}) {\n  return {\n    generatedAt: options.now ?? null,\n    decisions: events,\n    audit: summarizeAudit(events)\n  };\n}\n`,
+    "test.js": workflowTest()
+  };
+}
+
+function workflowSolution() {
+  return {
+    "README.md": `# Workflow Policy Engine\n\nCompile incoming product events into workflow decisions by normalizing event input, applying configured plan policies, emitting follow-up actions, and producing an audit summary.\n\nDeployments use plan-specific approval thresholds. High-risk deployments are blocked unless they carry an emergency override. Incidents page the owning on-call team, billing failures notify finance, and unknown event types are retained as ignored triage decisions.\n\n## Verification\n\nRun \`node test.js\` from the workspace.\n`,
+    "src/events.js": `export function normalizeEvent(raw) {\n  const type = String(raw.type ?? "").trim();\n  const planValue = String(raw.plan ?? "free").trim().toLowerCase();\n  const riskValue = String(raw.risk ?? "normal").trim().toLowerCase();\n  const amount = Number(raw.amount ?? 0);\n  return {\n    ...raw,\n    type,\n    plan: planValue || "free",\n    risk: riskValue || "normal",\n    approvals: Array.isArray(raw.approvals) ? raw.approvals.filter(Boolean) : [],\n    amount: Number.isFinite(amount) ? amount : 0,\n    emergency: raw.emergency === true\n  };\n}\n`,
+    "src/policy.js": `import { readFileSync } from "node:fs";\n\nexport function loadWorkflowConfig() {\n  return JSON.parse(readFileSync(new URL("../config/workflows.json", import.meta.url), "utf8"));\n}\n\nexport function resolvePolicy(event, config = loadWorkflowConfig()) {\n  const route = config.routes[event.type] ?? "triage";\n  if (event.type === "deploy.requested") {\n    const plan = config.plans[event.plan] ?? config.plans.free;\n    const requiredApprovals = plan.requiredApprovals;\n    const missingApprovals = Math.max(0, requiredApprovals - event.approvals.length);\n    const reasons = event.risk === "high" && !event.emergency ? ["high risk deployment requires emergency override"] : [];\n    return {\n      route,\n      status: reasons.length > 0 ? "blocked" : missingApprovals > 0 ? "pending" : "ready",\n      severity: event.risk === "high" ? "critical" : "normal",\n      requiredApprovals,\n      missingApprovals,\n      reasons,\n      approvers: plan.approvers\n    };\n  }\n  if (event.type === "incident.opened") {\n    return { route, status: "ready", severity: "critical", requiredApprovals: 0, missingApprovals: 0, reasons: [], approvers: [] };\n  }\n  if (event.type === "billing.failed") {\n    const severity = event.amount >= config.billing.criticalAmount ? "critical" : "warning";\n    return { route, status: "ready", severity, requiredApprovals: 0, missingApprovals: 0, reasons: [], approvers: [] };\n  }\n  return {\n    route,\n    status: "ignored",\n    severity: "normal",\n    requiredApprovals: 0,\n    missingApprovals: 0,\n    reasons: [` + "`unsupported event type: ${event.type || \"unknown\"}`" + `],\n    approvers: []\n  };\n}\n`,
+    "src/actions.js": `export function buildActions(event, policy) {\n  if (policy.status === "blocked" || policy.status === "ignored") return [];\n  if (event.type === "deploy.requested") {\n    if (policy.missingApprovals > 0) {\n      const approved = new Set(event.approvals);\n      return [\n        {\n          type: "request_approval",\n          route: policy.route,\n          approvers: policy.approvers.filter((approver) => !approved.has(approver)).slice(0, policy.missingApprovals)\n        }\n      ];\n    }\n    return [{ type: "schedule_deploy", route: policy.route }];\n  }\n  if (event.type === "incident.opened") {\n    return [{ type: "page_oncall", route: policy.route, team: event.team ?? "platform" }];\n  }\n  if (event.type === "billing.failed") {\n    return [{ type: "notify_finance", route: policy.route, account: event.account ?? "unknown", severity: policy.severity }];\n  }\n  return [];\n}\n`,
+    "src/audit.js": `export function summarizeAudit(decisions) {\n  const byStatus = {};\n  const byRoute = {};\n  let actionCount = 0;\n  for (const decision of decisions) {\n    byStatus[decision.status] = (byStatus[decision.status] ?? 0) + 1;\n    byRoute[decision.route] = (byRoute[decision.route] ?? 0) + 1;\n    actionCount += decision.actions.length;\n  }\n  return { total: decisions.length, actionCount, byStatus, byRoute };\n}\n`,
+    "src/workflow.js": `import { buildActions } from "./actions.js";\nimport { summarizeAudit } from "./audit.js";\nimport { normalizeEvent } from "./events.js";\nimport { loadWorkflowConfig, resolvePolicy } from "./policy.js";\n\nexport function compileWorkflow(events, options = {}) {\n  const config = loadWorkflowConfig();\n  const decisions = events.map((raw) => {\n    const event = normalizeEvent(raw);\n    const policy = resolvePolicy(event, config);\n    const actions = buildActions(event, policy);\n    return {\n      id: event.id,\n      type: event.type,\n      route: policy.route,\n      status: policy.status,\n      severity: policy.severity,\n      requiredApprovals: policy.requiredApprovals,\n      missingApprovals: policy.missingApprovals,\n      reasons: policy.reasons,\n      actions\n    };\n  });\n  return { generatedAt: options.now ?? null, decisions, audit: summarizeAudit(decisions) };\n}\n`
+  };
+}
+
+function workflowTest() {
+  return `import assert from "node:assert/strict";\nimport { readFileSync } from "node:fs";\nimport { compileWorkflow } from "./src/workflow.js";\n\nconst events = JSON.parse(readFileSync(new URL("./fixtures/events.json", import.meta.url), "utf8"));\nconst result = compileWorkflow(events, { now: "2026-05-23T12:00:00Z" });\nconst decisions = new Map(result.decisions.map((decision) => [decision.id, decision]));\n\nassert.equal(result.generatedAt, "2026-05-23T12:00:00Z");\nassert.deepEqual(decisions.get("deploy-high"), {\n  id: "deploy-high",\n  type: "deploy.requested",\n  route: "ops",\n  status: "blocked",\n  severity: "critical",\n  requiredApprovals: 3,\n  missingApprovals: 2,\n  reasons: ["high risk deployment requires emergency override"],\n  actions: []\n});\nassert.deepEqual(decisions.get("deploy-ready").actions, [{ type: "schedule_deploy", route: "ops" }]);\nassert.deepEqual(decisions.get("incident-1").actions, [{ type: "page_oncall", route: "incident", team: "payments" }]);\nassert.deepEqual(decisions.get("billing-1").actions, [\n  { type: "notify_finance", route: "finance", account: "acct_1", severity: "critical" }\n]);\nassert.deepEqual(result.audit, {\n  total: 4,\n  actionCount: 3,\n  byStatus: { blocked: 1, ready: 3 },\n  byRoute: { ops: 2, incident: 1, finance: 1 }\n});\n`;
+}
+
+function workflowVerifier() {
+  return `set -euo pipefail\nnode test.js\nfind src -name '*.js' -print0 | xargs -0 -n1 node --check\ngrep -q "## Verification" README.md\nnode --input-type=module <<'NODE'\nimport assert from "node:assert/strict";\nimport { compileWorkflow } from "./src/workflow.js";\n\nconst result = compileWorkflow([\n  { id: "enterprise-emergency", type: "deploy.requested", plan: "enterprise", risk: "high", emergency: true, approvals: ["ops-lead", "security"] },\n  { id: "billing-warning", type: "billing.failed", account: "acct_2", amount: 999 },\n  { id: "unknown-1", type: "data.exported" }\n]);\nconst decisions = new Map(result.decisions.map((decision) => [decision.id, decision]));\nassert.equal(decisions.get("enterprise-emergency").status, "pending");\nassert.equal(decisions.get("enterprise-emergency").requiredApprovals, 10);\nassert.equal(decisions.get("enterprise-emergency").missingApprovals, 8);\nassert.deepEqual(decisions.get("enterprise-emergency").actions, [\n  { type: "request_approval", route: "ops", approvers: ["compliance", "director"] }\n]);\nassert.equal(decisions.get("billing-warning").severity, "warning");\nassert.equal(decisions.get("unknown-1").route, "triage");\nassert.equal(decisions.get("unknown-1").status, "ignored");\nassert.deepEqual(decisions.get("unknown-1").actions, []);\nassert.deepEqual(result.audit.byStatus, { pending: 1, ready: 1, ignored: 1 });\nNODE\n`;
 }
 
 function expectedMulti(index) {

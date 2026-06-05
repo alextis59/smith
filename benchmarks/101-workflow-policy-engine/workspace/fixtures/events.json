@@ -1,0 +1,27 @@
+[
+  {
+    "id": "deploy-high",
+    "type": " deploy.requested ",
+    "plan": "TEAM",
+    "risk": "HIGH",
+    "approvals": ["ops-lead"]
+  },
+  {
+    "id": "deploy-ready",
+    "type": "deploy.requested",
+    "plan": "free",
+    "risk": "normal",
+    "approvals": ["owner"]
+  },
+  {
+    "id": "incident-1",
+    "type": "incident.opened",
+    "team": "payments"
+  },
+  {
+    "id": "billing-1",
+    "type": "billing.failed",
+    "account": "acct_1",
+    "amount": 1200
+  }
+]

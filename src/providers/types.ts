@@ -5,6 +5,25 @@ export type SmithMessage = {
   content: string;
 };
 
+export type SmithToolName = "run" | "patch" | "sub_agent" | "finish";
+
+export type SmithToolDefinition = {
+  name: SmithToolName;
+  description: string;
+  parameters: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: string[];
+    additionalProperties?: boolean;
+  };
+};
+
+export type SmithToolCall = {
+  id?: string;
+  name: string;
+  arguments: Record<string, unknown>;
+};
+
 export type SmithModelRequest = {
   messages: SmithMessage[];
   model: string;
@@ -13,10 +32,24 @@ export type SmithModelRequest = {
   reasoningEffort?: "low" | "medium" | "high";
   stop?: string[];
   extra?: Record<string, unknown>;
+  providerState?: SmithProviderState;
+  tools?: SmithToolDefinition[];
+};
+
+export type SmithProviderState = {
+  statefulResponses?: boolean;
+  previousResponseId?: string;
+  previousToolCallId?: string;
+  toolOutput?: string;
+  promptCacheKey?: string;
+  promptCacheRetention?: "in_memory" | "24h";
+  responsesInputItems?: Record<string, unknown>[];
+  codexTurnState?: string;
 };
 
 export type SmithModelResponse = {
   text: string;
+  toolCalls?: SmithToolCall[];
   raw: unknown;
   usage?: {
     inputTokens?: number;
@@ -25,16 +58,19 @@ export type SmithModelResponse = {
     reasoningOutputTokens?: number;
     totalTokens?: number;
   };
+  providerState?: SmithProviderState;
 };
 
 export type ProviderFetch = typeof fetch;
 
 export type ProviderDebugLog = (section: string, content: string) => void;
+export type ProviderDebugJsonLog = (record: Record<string, unknown>) => void;
 
 export type ProviderCompleteOptions = {
   fetch?: ProviderFetch;
   apiKey?: string;
   debugLog?: ProviderDebugLog;
+  debugJson?: ProviderDebugJsonLog;
 };
 
 export type ProviderAdapter = {

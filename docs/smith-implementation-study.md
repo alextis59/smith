@@ -426,8 +426,7 @@ model = "gemini-2.5-pro"
 [runtime]
 shell = "bash"
 timeout_ms = 120000
-transcript_turns = 20
-max_context_chars = 120000
+max_context_tokens = 128000
 danger_review = "llm"
 danger_review_profile = "reviewer"
 

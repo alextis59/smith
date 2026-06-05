@@ -29,6 +29,14 @@ describe("PTY shell runner", () => {
       expect(failed.output).not.toContain("SMITH_EXIT_STATUS");
       expect(failed.output).not.toContain("printf");
 
+      const exited = await runner.run("printf before-exit; exit 7", 2000);
+      expect(exited.exitCode).toBe(7);
+      expect(exited.output).toContain("before-exit");
+
+      const afterExit = await runner.run("echo still-open", 2000);
+      expect(afterExit.exitCode).toBe(0);
+      expect(afterExit.output).toContain("still-open");
+
       const heredocFailed = await runner.run("cat > sample.txt <<'EOF'\nhello\nEOF\nfalse", 2000);
       expect(heredocFailed.exitCode).toBe(1);
       expect(heredocFailed.output).not.toContain("SMITH_EXIT_STATUS");
@@ -64,10 +72,42 @@ NODE
       expect(multilineOutput.exitCode).toBe(0);
       expect(multilineOutput.output).toBe("hello\nworld");
 
+      const errexitFailed = await runner.run("set -e\nfalse", 2000);
+      expect(errexitFailed.exitCode).toBe(1);
+
+      const afterErrexit = await runner.run("echo shell-survived", 2000);
+      expect(afterErrexit.exitCode).toBe(0);
+      expect(afterErrexit.output).toContain("shell-survived");
+
       const result = await runner.run("chat_out done", 2000);
       expect(result.chatOut).toBe("done");
       expect(result.output).toContain("done");
       expect(result.output).not.toContain("__SMITH_CHAT_OUT_START__");
+    } finally {
+      runner.kill();
+    }
+  });
+
+  it("falls back to a plain shell runner when PTY is disabled", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "smith-basic-shell-"));
+    const runner = await PtyShellRunner.start({
+      cwd,
+      shell: "bash",
+      timeoutMs: 2000,
+      env: { ...process.env, SMITH_FORCE_BASIC_SHELL: "1" }
+    });
+    try {
+      const output = await runner.run("printf '%s\\n' hello\nprintf '%s\\n' world", 2000);
+      expect(output.output).toBe("hello\nworld");
+      expect(output.exitCode).toBe(0);
+
+      const failed = await runner.run("false", 2000);
+      expect(failed.exitCode).toBe(1);
+
+      const chatOut = await runner.run("chat_out done", 2000);
+      expect(chatOut.chatOut).toBe("done");
+      expect(chatOut.output).toContain("done");
+      expect(chatOut.output).not.toContain("__SMITH_CHAT_OUT_START__");
     } finally {
       runner.kill();
     }

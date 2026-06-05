@@ -20,7 +20,7 @@ verify.sh
 
 ## Taxonomy
 
-The 100-task suite is organized into ten groups:
+The 101-task suite is organized into ten groups:
 
 | Range | Category | Focus |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ The 100-task suite is organized into ten groups:
 | 061-070 | Data transformation | Deterministic report generation from local data files |
 | 071-080 | Edge cases | Boundary conditions in small utility functions |
 | 081-090 | Documentation | Verified docs updates tied to concrete project behavior |
-| 091-100 | Hard tasks | Multi-step refactors with implementation, tests, and docs |
+| 091-101 | Hard tasks | Multi-step refactors with implementation, tests, docs, and cross-file discovery |
 
 ## Running Benchmarks
 
@@ -69,7 +69,7 @@ smith benchmark run ./benchmarks/011-parse-port-default --log-dir /tmp/smith --j
 smith benchmark validate ./benchmarks
 ```
 
-The default benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. With `--agent codex`, the runner executes `codex exec` against the copied workspace on the host, then runs the same verifier. Tasks run in stable sorted order. Successful sandboxes are removed automatically; failed sandboxes are retained for inspection.
+The default benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. For Smith runs with `--timeout-ms`, the runner also supplies a generic `--max-run-ms` deadline at 75% of the task timeout and a bounded `--provider-timeout-ms` unless the caller already set them, leaving time for finalization, result capture, verifier execution, and cleanup. Smith emits deadline reminders as that budget approaches and hides inspection/delegation tools after it elapses so the run can finalize. If an actual task patch is still unvalidated when that deadline elapses, or if a task patch is applied after the deadline, Smith allows one bounded `run` call for validation before hiding inspection again. With `--agent codex`, the runner executes `codex exec` against the copied workspace on the host, then runs the same verifier. Tasks run in stable sorted order. Successful sandboxes are removed automatically; failed sandboxes are retained for inspection.
 
 Use `--concurrency <count>` to run multiple task sandboxes at once. Result JSON and summaries preserve the stable task order, while execution is limited to the requested number of concurrent tasks.
 

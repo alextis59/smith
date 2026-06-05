@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stdin as input, stdout as output } from "node:process";
 import { initConfig, loadConfig, parseCliConfigOverrides, resolveApiKey, resolveProfile, userConfigPath } from "./config.js";
-import { runSmithTask } from "./loop.js";
+import { prepareSmithEnvironment, runSmithTask } from "./loop.js";
 import { loadSystemPrompt } from "./prompt.js";
 import { runRemoteCommand } from "./remote.js";
 import { summarizeTrace, writeSessionLog } from "./session-log.js";
@@ -88,6 +88,9 @@ Options:
   --json
   --profile <name>
   --model <model>
+  --stateful-responses
+  --prompt-cache-key <key|auto>
+  --prompt-cache-retention <in_memory|24h>
   --adapter <openai-chat|openai-responses|chatgpt-codex|gemini|anthropic-messages>
   --base-url <url>
   --api-key-env <name>
@@ -99,12 +102,18 @@ Options:
   --input-cost-per-million-tokens <usd>
   --output-cost-per-million-tokens <usd>
   --max-turns <count>
+  --max-context-tokens <tokens>
   --danger-review <off|ask|deterministic|llm>
   --read-only
+  --provider-debug
   --log-dir <dir>
+  --no-sub-agent
   --agent <smith|codex>
   --concurrency <count>
   --cached-input-cost-per-million-tokens <usd>
+  --provider-timeout-ms <milliseconds>
+  --max-run-ms <milliseconds>
+  --sub-agent-max-turns <count>
 
 Examples:
   smith --profile fast "summarize failing tests"
@@ -144,7 +153,7 @@ async function runCommand(args: string[]): Promise<void> {
       return;
     }
 
-    const result = await runSmithTask({
+    const environment = await prepareSmithEnvironment({
       cwd,
       prompt,
       profile,
@@ -153,6 +162,19 @@ async function runCommand(args: string[]): Promise<void> {
       systemPrompt,
       reloadSystemPrompt: () => loadSystemPrompt(cwd),
       trace,
+      env: process.env
+    });
+
+    const result = await runSmithTask({
+      cwd,
+      prompt,
+      profile,
+      reviewerProfile,
+      runtime: config.runtime,
+      systemPrompt: environment.systemPrompt,
+      reloadSystemPrompt: () => loadSystemPrompt(cwd),
+      trace,
+      initialUsage: environment.usage,
       env: process.env,
       onTerminalOutput: (terminalOutput) => {
         if (!outputOptions.quiet && !outputOptions.json) process.stdout.write(`${terminalOutput}\n`);
@@ -175,7 +197,7 @@ async function runCommand(args: string[]): Promise<void> {
     });
     if (outputOptions.json) {
       process.stdout.write(`${JSON.stringify({ chatOut: result.chatOut, turns: result.turns, usage: result.usage, tracePath: trace.path, logPath }, null, 2)}\n`);
-    } else if (outputOptions.quiet) {
+    } else {
       process.stdout.write(`${result.chatOut}\n`);
     }
   } finally {
@@ -192,6 +214,20 @@ async function runInteractive(
 ): Promise<void> {
   const rl = createInterface({ input, output });
   try {
+    const trace = createTraceLogger({ cwd, profileName: "interactive-startup", profile, runtime, systemPrompt });
+    const environment = await prepareSmithEnvironment({
+      cwd,
+      prompt: "Prepare this interactive Smith session environment.",
+      profile,
+      reviewerProfile,
+      runtime,
+      systemPrompt,
+      reloadSystemPrompt: () => loadSystemPrompt(cwd),
+      trace,
+      env: process.env
+    });
+    systemPrompt = environment.systemPrompt;
+    let initialUsage = environment.usage;
     while (true) {
       const prompt = (await rl.question("smith> ")).trim();
       if (!prompt || prompt === "exit" || prompt === "quit") return;
@@ -202,6 +238,7 @@ async function runInteractive(
         reviewerProfile,
         runtime,
         systemPrompt,
+        initialUsage,
         reloadSystemPrompt: () => loadSystemPrompt(cwd),
         trace: createTraceLogger({ cwd, profileName: "interactive", profile, runtime, systemPrompt }),
         env: process.env,
@@ -209,6 +246,7 @@ async function runInteractive(
           process.stdout.write(`${terminalOutput}\n`);
         }
       });
+      initialUsage = undefined;
     }
   } finally {
     rl.close();
@@ -293,6 +331,7 @@ async function runBenchmarkCommand(args: string[]): Promise<void> {
     profileCost: resolvedProfile
       ? {
           inputCostPerMillionTokens: resolvedProfile.inputCostPerMillionTokens,
+          cachedInputCostPerMillionTokens: resolvedProfile.cachedInputCostPerMillionTokens,
           outputCostPerMillionTokens: resolvedProfile.outputCostPerMillionTokens
         }
       : undefined
@@ -380,8 +419,12 @@ function parseBenchmarkOptions(args: string[]): {
     else if (flag === "--json") json = true;
     else if (flag === "--keep-sandbox") keepSandbox = true;
     else if (flag === "--concurrency") concurrency = parsePositiveInteger(readValue(), "--concurrency");
-    else if (flag === "--cached-input-cost-per-million-tokens") cachedInputCostPerMillionTokens = Number(readValue());
-    else if (flag === "--log-dir") logDir = readValue();
+    else if (flag === "--cached-input-cost-per-million-tokens") {
+      const value = readValue();
+      cachedInputCostPerMillionTokens = Number(value);
+      if (inline !== undefined) smithArgs.push(arg);
+      else smithArgs.push(flag, value);
+    } else if (flag === "--log-dir") logDir = readValue();
     else smithArgs.push(arg);
   }
   return {
@@ -451,6 +494,7 @@ function benchmarkCostRates(options: {
   cliOutputCost?: number;
   profileCost?: {
     inputCostPerMillionTokens?: number;
+    cachedInputCostPerMillionTokens?: number;
     outputCostPerMillionTokens?: number;
   };
 }): BenchmarkCostRates | undefined {
@@ -458,7 +502,10 @@ function benchmarkCostRates(options: {
   const rates = {
     inputCostPerMillionTokens:
       options.cliInputCost ?? options.profileCost?.inputCostPerMillionTokens ?? modelRates?.inputCostPerMillionTokens,
-    cachedInputCostPerMillionTokens: options.cliCachedInputCost ?? modelRates?.cachedInputCostPerMillionTokens,
+    cachedInputCostPerMillionTokens:
+      options.cliCachedInputCost ??
+      options.profileCost?.cachedInputCostPerMillionTokens ??
+      modelRates?.cachedInputCostPerMillionTokens,
     outputCostPerMillionTokens:
       options.cliOutputCost ?? options.profileCost?.outputCostPerMillionTokens ?? modelRates?.outputCostPerMillionTokens
   };

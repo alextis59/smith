@@ -1,5 +1,6 @@
 import type { ProviderAdapter, SmithMessage, SmithModelRequest } from "./types.js";
 import { isRecord, joinUrl, mergeBody, numberValue, postJson, requireText, textValue } from "./types.js";
+import { parseToolArguments, toolCallSummary } from "./tools.js";
 
 export const anthropicMessagesAdapter: ProviderAdapter = {
   name: "anthropic-messages",
@@ -11,7 +12,14 @@ export const anthropicMessagesAdapter: ProviderAdapter = {
       ...profile.headers
     };
     const raw = await postJson(joinUrl(profile.baseUrl, "v1/messages"), headers, body, options.fetch, options.debugLog);
-    return { text: requireText("anthropic-messages", extractAnthropicMessagesText(raw)), raw, usage: extractUsage(raw) };
+    const toolCalls = extractAnthropicToolCalls(raw);
+    const text = extractAnthropicMessagesText(raw);
+    return {
+      text: toolCalls.length > 0 ? toolCallSummary(toolCalls) : requireText("anthropic-messages", text),
+      ...(toolCalls.length > 0 ? { toolCalls } : {}),
+      raw,
+      usage: extractUsage(raw)
+    };
   }
 };
 
@@ -26,6 +34,16 @@ function buildBody(request: SmithModelRequest): Record<string, unknown> {
     ...(system ? { system } : {}),
     messages: mergeAdjacentMessages(request.messages.filter((message) => message.role !== "system")),
     max_tokens: request.maxOutputTokens ?? 4096,
+    ...(request.tools && request.tools.length > 0
+      ? {
+          tools: request.tools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.parameters
+          })),
+          tool_choice: { type: "any" }
+        }
+      : {}),
     ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
     ...(request.stop ? { stop_sequences: request.stop } : {})
   };
@@ -51,6 +69,22 @@ export function extractAnthropicMessagesText(raw: unknown): string {
     .map((item) => (isRecord(item) ? textValue(item.text) : undefined))
     .filter((text): text is string => Boolean(text))
     .join("\n");
+}
+
+export function extractAnthropicToolCalls(raw: unknown) {
+  if (!isRecord(raw) || !Array.isArray(raw.content)) return [];
+  return raw.content
+    .map((item): { id?: string; name: string; arguments: Record<string, unknown> } | undefined => {
+      if (!isRecord(item) || item.type !== "tool_use") return undefined;
+      const name = textValue(item.name);
+      if (!name) return undefined;
+      return {
+        id: textValue(item.id),
+        name,
+        arguments: parseToolArguments(item.input)
+      };
+    })
+    .filter((item): item is { id?: string; name: string; arguments: Record<string, unknown> } => Boolean(item));
 }
 
 function extractUsage(raw: unknown) {

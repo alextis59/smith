@@ -6,7 +6,14 @@ import { geminiAdapter } from "./gemini.js";
 import { openAiChatAdapter } from "./openai-chat.js";
 import { openAiResponsesAdapter } from "./openai-responses.js";
 import { ProviderError } from "./types.js";
-import type { ProviderAdapter, ProviderDebugLog, ProviderFetch, SmithModelRequest, SmithModelResponse } from "./types.js";
+import type {
+  ProviderAdapter,
+  ProviderDebugJsonLog,
+  ProviderDebugLog,
+  ProviderFetch,
+  SmithModelRequest,
+  SmithModelResponse
+} from "./types.js";
 
 const adapters: Record<ProfileConfig["adapter"], ProviderAdapter> = {
   "openai-chat": openAiChatAdapter,
@@ -28,7 +35,9 @@ export async function completeWithProfile(
     fetch?: ProviderFetch;
     retries?: number;
     retryDelayMs?: number;
+    timeoutMs?: number;
     debugLog?: ProviderDebugLog;
+    debugJson?: ProviderDebugJsonLog;
   } = {}
 ): Promise<SmithModelResponse> {
   const normalizedRequest = {
@@ -44,11 +53,20 @@ export async function completeWithProfile(
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       if (attempt > 1) options.debugLog?.("provider retry", `attempt: ${attempt}\nmax_attempts: ${attempts}`);
-      return await getAdapter(profile.adapter).complete(normalizedRequest, profile, {
-        apiKey: resolveApiKey(profile, options.env),
-        fetch: options.fetch,
-        debugLog: options.debugLog
-      });
+      const abortController = options.timeoutMs && options.timeoutMs > 0 ? new AbortController() : undefined;
+      return await completeAttemptWithTimeout(
+        () =>
+          getAdapter(profile.adapter).complete(normalizedRequest, profile, {
+            apiKey: resolveApiKey(profile, options.env),
+            fetch: abortController
+              ? fetchWithAbort(options.fetch ?? fetch, abortController.signal)
+              : options.fetch,
+            debugLog: options.debugLog,
+            debugJson: options.debugJson
+          }),
+        options.timeoutMs,
+        abortController
+      );
     } catch (error) {
       lastError = error;
       if (!isRetryable(error) || attempt === attempts) break;
@@ -60,6 +78,53 @@ export async function completeWithProfile(
 
 export { ProviderError } from "./types.js";
 export type { ProviderAdapter, ProviderFetch, SmithMessage, SmithModelRequest, SmithModelResponse } from "./types.js";
+
+function completeAttemptWithTimeout<T>(
+  run: () => Promise<T>,
+  timeoutMs: number | undefined,
+  abortController: AbortController | undefined
+): Promise<T> {
+  if (!timeoutMs || timeoutMs <= 0) return run();
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      abortController?.abort();
+      reject(new ProviderError(`provider request timed out after ${timeoutMs}ms`, { transient: true }));
+    }, timeoutMs);
+    run().then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
+function fetchWithAbort(fetchImpl: ProviderFetch, signal: AbortSignal): ProviderFetch {
+  return ((input: Parameters<ProviderFetch>[0], init?: Parameters<ProviderFetch>[1]) =>
+    fetchImpl(input, {
+      ...init,
+      signal: mergeAbortSignals(init?.signal, signal)
+    })) as ProviderFetch;
+}
+
+function mergeAbortSignals(existing: AbortSignal | null | undefined, next: AbortSignal): AbortSignal {
+  if (!existing) return next;
+  if (existing === next) return next;
+  if (typeof AbortSignal.any === "function") return AbortSignal.any([existing, next]);
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  if (existing.aborted || next.aborted) {
+    controller.abort();
+  } else {
+    existing.addEventListener("abort", abort, { once: true });
+    next.addEventListener("abort", abort, { once: true });
+  }
+  return controller.signal;
+}
 
 function isRetryable(error: unknown): boolean {
   return error instanceof ProviderError && error.transient;

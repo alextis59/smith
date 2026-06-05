@@ -48,7 +48,7 @@ function summarizeInitialTask(task?: string): string {
   const trimmedTask = task?.trim();
   if (!trimmedTask) return "(interactive Smith session)";
   return [
-    "(initial request is preserved in the first chat_in transcript; do not copy it here)",
+    "(initial request is preserved in the first user input transcript; do not copy it here)",
     "If this run becomes long enough to need task memory, replace this with a one-line objective."
   ].join("\n");
 }

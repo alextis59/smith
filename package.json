@@ -11,6 +11,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "analyze:provider-debug": "node scripts/analyze-provider-debug.mjs",
     "build": "tsc -p tsconfig.json",
     "prepare": "npm run build",
     "test": "vitest run",

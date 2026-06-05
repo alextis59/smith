@@ -10,7 +10,7 @@ export type DangerReviewResult = {
 
 const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\brm\s+(?:-[^\s]*[rf][^\s]*\s+){0,2}(?:\/|~|\$HOME)(?:\s|$)/, reason: "destructive rm target" },
-  { pattern: /\bsudo\b/, reason: "privileged command" },
+  { pattern: /(?:^|[;&|]\s*)sudo(?:\s|$)/, reason: "privileged command" },
   { pattern: /\b(?:curl|wget)\b[\s\S]*\|\s*(?:sh|bash|zsh)\b/, reason: "downloaded script execution" },
   { pattern: /\bmkfs(?:\.[a-z0-9]+)?\b|\bdd\b[\s\S]*\bof=\/dev\//, reason: "disk formatting or raw disk write" },
   { pattern: /(?:^|\s)(?:cat|sed|awk|grep|rg|less|more|tail|head)\b[\s\S]*(?:\.ssh\/|id_rsa|id_ed25519|\.gnupg|\.aws\/credentials|\.env\b)/, reason: "credential file access" },
@@ -21,6 +21,7 @@ const WRITE_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\b(?:rm|rmdir|mv|cp|install|touch|mkdir)\b/, reason: "read-only mode blocks filesystem writes" },
   { pattern: /(?:^|[\s;&|])(?:cat|printf|echo|node|python|python3|bash|sh)\b[\s\S]*(?:>|>>)\s*\S+/, reason: "read-only mode blocks redirection writes" },
   { pattern: /\b(?:tee|sed\s+-i|perl\s+-pi|npm\s+(?:install|i|update)|pnpm\s+(?:install|add|update)|yarn\s+(?:add|install|upgrade))\b/, reason: "read-only mode blocks write-oriented commands" },
+  { pattern: /\b(?:node|python|python3)\b[\s\S]*\b(?:writeFileSync|writeFile|appendFileSync|appendFile|write_text|write_bytes|open\s*\([^)]*,\s*['"][wax+])\b/, reason: "read-only mode blocks script file writes" },
   { pattern: /\bsmith_patch\b/, reason: "read-only mode blocks smith_patch" }
 ];
 

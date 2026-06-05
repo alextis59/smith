@@ -48,6 +48,31 @@ Results:
 
 The Docker benchmark runner normally evaluates Smith with a configured model provider. To keep validation deterministic and avoid external APIs, secrets, or internet access, `scripts/run-benchmark-sample.mjs` starts a local OpenAI-compatible fake provider and injects temporary task-local Smith config into copied task workspaces. This exercises the existing Docker benchmark runner path, workspace copying, Smith execution, and each task verifier without depending on a live model.
 
+## 101-Task Update
+
+Date: 2026-05-23
+
+Task `101-workflow-policy-engine` extends the hard-task group with a larger cross-file workflow-policy exercise intended to produce richer traces for patch and sub-agent behavior. The validation script now derives the expected task count from `scripts/generate-benchmarks.mjs`.
+
+Validation commands:
+
+```sh
+node --check scripts/generate-benchmarks.mjs
+node --check scripts/validate-benchmarks.mjs
+node --check scripts/run-benchmark-sample.mjs
+node scripts/generate-benchmarks.mjs
+node scripts/validate-benchmarks.mjs
+npm run build
+node scripts/run-benchmark-sample.mjs
+npm test -- tests/benchmark.test.ts
+```
+
+Results:
+
+- `node scripts/validate-benchmarks.mjs`: passed for all 101 solved-state verifiers.
+- `node scripts/run-benchmark-sample.mjs`: 9 representative Docker-backed tasks passed, including `101-workflow-policy-engine`.
+- `npm test -- tests/benchmark.test.ts`: 13 tests passed.
+
 ## Milestone Commits
 
 - `7c61381` Add benchmark taxonomy and generator scaffolding
