@@ -1,22 +1,20 @@
 {
   "$schema": "https://opencode.ai/config.json",
 
-  // Efficient default: GPT for normal implementation work.
-  "model": "mygateway/gpt-5.2",
-  "small_model": "mygateway/gpt-5-mini",
+  "model": "mygateway-openai/gpt-5.2",
+  "small_model": "mygateway-openai/gpt-5-mini",
 
-  // Limit OpenCode to the providers you actually want.
-  "enabled_providers": ["mygateway", "openai", "anthropic"],
+  "enabled_providers": [
+    "mygateway-openai",
+    "mygateway-anthropic"
+  ],
 
   "provider": {
-    // Your custom OpenAI-compatible gateway.
-    // Use @ai-sdk/openai-compatible for /v1/chat/completions.
-    // If your gateway exposes OpenAI /v1/responses, use @ai-sdk/openai instead.
-    "mygateway": {
+    "mygateway-openai": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "My Gateway",
+      "name": "My Gateway OpenAI Schema",
       "options": {
-        "baseURL": "https://YOUR_GATEWAY_HOST/v1",
+        "baseURL": "https://YOUR_GATEWAY_HOST/openai/v1",
         "apiKey": "{env:MY_GATEWAY_API_KEY}",
         "timeout": 600000,
         "chunkTimeout": 30000,
@@ -24,7 +22,7 @@
       },
       "models": {
         "gpt-5.2": {
-          "name": "GPT-5.2 via Gateway",
+          "name": "GPT-5.2",
           "limit": {
             "context": 128000,
             "output": 65536
@@ -32,39 +30,11 @@
           "options": {
             "reasoningEffort": "medium",
             "textVerbosity": "low",
-            "reasoningSummary": "auto",
-            "include": ["reasoning.encrypted_content"]
-          },
-          "variants": {
-            "cheap": {
-              "reasoningEffort": "low",
-              "textVerbosity": "low",
-              "reasoningSummary": "auto"
-            },
-            "hard": {
-              "reasoningEffort": "high",
-              "textVerbosity": "low",
-              "reasoningSummary": "auto"
-            }
+            "reasoningSummary": "auto"
           }
         },
-
-        "gpt-5.1-codex": {
-          "name": "GPT-5.1 Codex via Gateway",
-          "limit": {
-            "context": 128000,
-            "output": 65536
-          },
-          "options": {
-            "reasoningEffort": "medium",
-            "textVerbosity": "low",
-            "reasoningSummary": "auto",
-            "include": ["reasoning.encrypted_content"]
-          }
-        },
-
         "gpt-5-mini": {
-          "name": "GPT-5 Mini via Gateway",
+          "name": "GPT-5 Mini",
           "limit": {
             "context": 128000,
             "output": 32768
@@ -74,9 +44,8 @@
             "textVerbosity": "low"
           }
         },
-
         "gpt-5-nano": {
-          "name": "GPT-5 Nano via Gateway",
+          "name": "GPT-5 Nano",
           "limit": {
             "context": 128000,
             "output": 16384
@@ -85,124 +54,48 @@
             "reasoningEffort": "minimal",
             "textVerbosity": "low"
           }
-        },
-
-        "claude-sonnet-4-6": {
-          "name": "Claude Sonnet 4.6 via Gateway",
-          "limit": {
-            "context": 200000,
-            "output": 64000
-          },
-          "options": {
-            "thinking": { "type": "adaptive" },
-            "output_config": { "effort": "medium" }
-          },
-          "variants": {
-            "cheap": {
-              "thinking": { "type": "adaptive" },
-              "output_config": { "effort": "low" }
-            },
-            "hard": {
-              "thinking": { "type": "adaptive" },
-              "output_config": { "effort": "high" }
-            }
-          }
-        },
-
-        "claude-opus-4-8": {
-          "name": "Claude Opus 4.8 via Gateway",
-          "limit": {
-            "context": 200000,
-            "output": 64000
-          },
-          "options": {
-            "thinking": { "type": "adaptive" },
-            "output_config": { "effort": "medium" }
-          },
-          "variants": {
-            "cheap": {
-              "thinking": { "type": "adaptive" },
-              "output_config": { "effort": "low" }
-            },
-            "hard": {
-              "thinking": { "type": "adaptive" },
-              "output_config": { "effort": "high" }
-            }
-          }
-        },
-
-        "claude-fable-5": {
-          "name": "Claude Fable 5 via Gateway",
-          "limit": {
-            "context": 200000,
-            "output": 64000
-          },
-          "options": {
-            // Do NOT set thinking here. Anthropic says it is always on.
-            "output_config": { "effort": "medium" }
-          },
-          "variants": {
-            "cheap": {
-              "output_config": { "effort": "low" }
-            },
-            "hard": {
-              "output_config": { "effort": "high" }
-            }
-          }
         }
       }
     },
 
-    // Native OpenAI provider, optional fallback.
-    "openai": {
+    "mygateway-anthropic": {
+      "npm": "@ai-sdk/anthropic",
+      "name": "My Gateway Anthropic Schema",
       "options": {
-        "apiKey": "{env:OPENAI_API_KEY}",
-        "timeout": 600000,
-        "chunkTimeout": 30000,
-        "setCacheKey": true
-      },
-      "models": {
-        "gpt-5.2": {
-          "options": {
-            "reasoningEffort": "medium",
-            "textVerbosity": "low",
-            "reasoningSummary": "auto",
-            "include": ["reasoning.encrypted_content"]
-          }
-        },
-        "gpt-5-mini": {
-          "options": {
-            "reasoningEffort": "low",
-            "textVerbosity": "low"
-          }
-        }
-      }
-    },
-
-    // Native Anthropic provider, optional fallback.
-    "anthropic": {
-      "options": {
-        "apiKey": "{env:ANTHROPIC_API_KEY}",
+        "baseURL": "https://YOUR_GATEWAY_HOST/anthropic/v1",
+        "apiKey": "{env:MY_GATEWAY_API_KEY}",
         "timeout": 600000,
         "chunkTimeout": 30000,
         "setCacheKey": true
       },
       "models": {
         "claude-sonnet-4-6": {
+          "name": "Claude Sonnet 4.6",
+          "limit": {
+            "context": 200000,
+            "output": 64000
+          },
           "options": {
             "thinking": { "type": "adaptive" },
             "output_config": { "effort": "medium" }
           }
         },
         "claude-opus-4-8": {
+          "name": "Claude Opus 4.8",
+          "limit": {
+            "context": 200000,
+            "output": 64000
+          },
           "options": {
             "thinking": { "type": "adaptive" },
-            "output_config": { "effort": "medium" }
+            "output_config": { "effort": "high" }
           }
         },
-        "claude-fable-5": {
-          "options": {
-            "output_config": { "effort": "medium" }
+        "claude-haiku-4-5": {
+          "name": "Claude Haiku 4.5",
+          "limit": {
+            "context": 200000,
+            "output": 32000
           }
         }
       }
@@ -211,91 +104,60 @@
 
   "agent": {
     "build": {
-      "description": "Default implementation agent. Optimized for cost and speed.",
-      "model": "mygateway/gpt-5.2",
-      "reasoningEffort": "medium",
-      "textVerbosity": "low",
+      "model": "mygateway-openai/gpt-5.2",
       "temperature": 0.2,
       "steps": 40
     },
 
     "explore": {
-      "description": "Cheap repo exploration and context gathering.",
-      "model": "mygateway/gpt-5-mini",
-      "reasoningEffort": "low",
-      "textVerbosity": "low",
+      "model": "mygateway-openai/gpt-5-mini",
       "temperature": 0,
       "steps": 10,
-      "permission": {
-        "edit": "deny",
-        "bash": "ask"
+      "tools": {
+        "write": false,
+        "edit": false
       }
     },
 
     "scout": {
-      "description": "Very cheap quick search/subagent.",
-      "model": "mygateway/gpt-5-nano",
-      "reasoningEffort": "minimal",
-      "textVerbosity": "low",
+      "model": "mygateway-openai/gpt-5-nano",
       "temperature": 0,
       "steps": 6,
-      "permission": {
-        "edit": "deny",
-        "bash": "ask"
+      "tools": {
+        "write": false,
+        "edit": false
       }
     },
 
     "plan": {
-      "description": "Claude planning agent for architecture and complex task decomposition.",
-      "model": "mygateway/claude-sonnet-4-6",
-      "thinking": { "type": "adaptive" },
-      "output_config": { "effort": "medium" },
+      "model": "mygateway-anthropic/claude-sonnet-4-6",
       "temperature": 0.1,
       "steps": 14,
-      "permission": {
-        "edit": "deny",
-        "bash": "ask"
+      "tools": {
+        "write": false,
+        "edit": false
       }
     },
 
     "review": {
-      "description": "Claude review agent for catching bugs and regressions.",
       "mode": "subagent",
-      "model": "mygateway/claude-sonnet-4-6",
-      "thinking": { "type": "adaptive" },
-      "output_config": { "effort": "medium" },
+      "model": "mygateway-anthropic/claude-sonnet-4-6",
       "temperature": 0.1,
       "steps": 12,
-      "permission": {
-        "edit": "deny",
-        "bash": "ask"
+      "tools": {
+        "write": false,
+        "edit": false
       }
     },
 
     "hard-debug": {
-      "description": "Expensive agent for difficult debugging only.",
       "mode": "subagent",
-      "model": "mygateway/claude-opus-4-8",
-      "thinking": { "type": "adaptive" },
-      "output_config": { "effort": "high" },
+      "model": "mygateway-anthropic/claude-opus-4-8",
       "temperature": 0.1,
       "steps": 18,
-      "permission": {
-        "edit": "deny",
-        "bash": "ask"
-      }
-    },
-
-    "fable-hard": {
-      "description": "Use only if you have access to Claude Fable 5 and want maximum reasoning.",
-      "mode": "subagent",
-      "model": "mygateway/claude-fable-5",
-      "output_config": { "effort": "high" },
-      "temperature": 0.1,
-      "steps": 18,
-      "permission": {
-        "edit": "deny",
-        "bash": "ask"
+      "tools": {
+        "write": false,
+        "edit": false
       }
     }
   },
