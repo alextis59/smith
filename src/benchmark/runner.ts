@@ -1430,6 +1430,9 @@ function opencodeRetryFeedback(context: {
 }): string {
   const sections = [
     "Previous attempt failed. Use this feedback to return a corrected JSON files map. Keep unchanged files out of the map.",
+    "Do not edit tests, package metadata, or verifier files to satisfy failing assertions unless the task explicitly asks for that.",
+    "If the verifier rejected the previous implementation, do not return the same implementation again; make a material source-code change.",
+    "When an assertion shows actual and expected values, change the implementation so the actual value becomes the expected value.",
     `Failure: ${limitPromptText(context.errorMessage, 1_500)}`
   ];
   if (context.verifier) {
