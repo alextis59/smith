@@ -42,6 +42,11 @@ Run one task:
 ```sh
 smith benchmark run ./benchmarks/011-parse-port-default --profile fast
 smith benchmark run ./benchmarks/011-parse-port-default --agent codex --model gpt-5.4-mini --reasoning-effort high
+smith benchmark run ./benchmarks/001-release-note-summary --agent opencode \
+  --model vibethinker-local/vibethinker-3b \
+  --opencode-project /home/alextis/Work/Git/alextis59/local-opencode \
+  --opencode-mode file-output \
+  --timeout-ms 240000 --concurrency 1 --dry-run
 ```
 
 Run a named dataset:
@@ -66,10 +71,11 @@ smith benchmark run ./benchmarks --concurrency 5 --timeout-ms 120000
 smith benchmark run ./benchmarks --json
 smith benchmark run ./benchmarks/011-parse-port-default --keep-sandbox
 smith benchmark run ./benchmarks/011-parse-port-default --log-dir /tmp/smith --json
+smith benchmark run ./benchmarks/001-release-note-summary --agent opencode --opencode-mode file-output --dry-run
 smith benchmark validate ./benchmarks
 ```
 
-The default benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. For Smith runs with `--timeout-ms`, the runner also supplies a generic `--max-run-ms` deadline at 75% of the task timeout and a bounded `--provider-timeout-ms` unless the caller already set them, leaving time for finalization, result capture, verifier execution, and cleanup. Smith emits deadline reminders as that budget approaches and hides inspection/delegation tools after it elapses so the run can finalize. If an actual task patch is still unvalidated when that deadline elapses, or if a task patch is applied after the deadline, Smith allows one bounded `run` call for validation before hiding inspection again. With `--agent codex`, the runner executes `codex exec` against the copied workspace on the host, then runs the same verifier. Tasks run in stable sorted order. Successful sandboxes are removed automatically; failed sandboxes are retained for inspection.
+The default benchmark runner copies the task workspace into a Docker-backed sandbox, runs Smith in `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. For Smith runs with `--timeout-ms`, the runner also supplies a generic `--max-run-ms` deadline at 75% of the task timeout and a bounded `--provider-timeout-ms` unless the caller already set them, leaving time for finalization, result capture, verifier execution, and cleanup. Smith emits deadline reminders as that budget approaches and hides inspection/delegation tools after it elapses so the run can finalize. If an actual task patch is still unvalidated when that deadline elapses, or if a task patch is applied after the deadline, Smith allows one bounded `run` call for validation before hiding inspection again. With `--agent codex`, the runner executes `codex exec` against the copied workspace on the host, then runs the same verifier. With `--agent opencode`, the runner executes `opencode run` against the copied local-task workspace on the host, stages the selected project's `opencode.json` into that sandbox while the run is active, then removes or restores that file before executing the verifier. The opencode path defaults to `vibethinker-local/vibethinker-3b`; use `--opencode-project <dir>` or `SMITH_OPENCODE_PROJECT=<dir>` to point at the project that contains the provider config, such as `/home/alextis/Work/Git/alextis59/local-opencode`. The default `--opencode-mode tools` relies on OpenCode tool calls. `--opencode-mode file-output` is a fallback for local models that produce useful text but not reliable tool calls: Smith includes a bounded small-file workspace snapshot in the prompt, asks OpenCode for strict JSON final file contents, writes those files into the sandbox, and then runs the normal verifier. The local gateway for VibeThinker file-output runs should listen on `127.0.0.1:8088` with `VIBETHINKER_FORWARD_TOOLS=false`, `VIBETHINKER_RESPONSE_FORMAT=json_object`, a conservative token cap such as `VIBETHINKER_MAX_TOKENS=512`, and OS-level CPU pinning if needed. Keep `--concurrency 1` and conservative `--timeout-ms` values for CPU-only runs. `--dry-run` validates task selection and command construction without invoking an agent or verifier. Tasks run in stable sorted order. Successful sandboxes are removed automatically; failed sandboxes are retained for inspection.
 
 Use `--concurrency <count>` to run multiple task sandboxes at once. Result JSON and summaries preserve the stable task order, while execution is limited to the requested number of concurrent tasks.
 

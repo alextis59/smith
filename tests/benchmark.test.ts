@@ -8,7 +8,9 @@ import {
   BENCHMARK_TASK_INSTRUCTIONS,
   BENCHMARK_PYTHON_SHIM_SCRIPT,
   DEFAULT_SMITH_BENCHMARK_IMAGE,
+  OPENCODE_BENCHMARK_TASK_INSTRUCTIONS,
   SWE_BENCH_PRO_TASK_INSTRUCTIONS,
+  buildOpencodeBenchmarkRunPlan,
   buildSmithBenchmarkDockerArgs,
   buildSweBenchProSmithImageProbeScript,
   buildSweBenchProVerifierDockerArgs,
@@ -224,6 +226,33 @@ total_tokens: 320
     );
   });
 
+  it("builds opencode benchmark runs with the local VibeThinker model and sandboxed state", () => {
+    const project = mkdtempSync(join(tmpdir(), "smith-opencode-project-"));
+    writeFileSync(join(project, "opencode.json"), "{}", "utf8");
+    const home = mkdtempSync(join(tmpdir(), "smith-opencode-home-"));
+    const workspace = mkdtempSync(join(tmpdir(), "smith-opencode-workspace-"));
+
+    const plan = buildOpencodeBenchmarkRunPlan({
+      workspace,
+      home,
+      prompt: "Do the benchmark task.",
+      opencodeProject: project
+    });
+
+    expect(plan.args).toContain("--model");
+    expect(plan.args[plan.args.indexOf("--model") + 1]).toBe("vibethinker-local/vibethinker-3b");
+    expect(plan.args).toContain("--dir");
+    expect(plan.args[plan.args.indexOf("--dir") + 1]).toBe(workspace);
+    expect(plan.args).toContain("--dangerously-skip-permissions");
+    expect(plan.args.at(-1)).toBe("Do the benchmark task.");
+    expect(plan.command).toContain("'opencode'");
+    expect(plan.command).toContain("'<benchmark prompt>'");
+    expect(plan.configSource).toBe(join(project, "opencode.json"));
+    expect(plan.configTarget).toBe(join(workspace, "opencode.json"));
+    expect(plan.env.HOME).toBe(home);
+    expect(plan.env.XDG_DATA_HOME).toBe(join(home, ".local", "share"));
+  });
+
   it("adds a generic Smith max run deadline for benchmark timeouts", () => {
     expect(smithArgsWithBenchmarkMaxRun(["--model", "fake"], 100_000)).toEqual([
       "--model",
@@ -259,6 +288,13 @@ total_tokens: 320
     expect(BENCHMARK_TASK_INSTRUCTIONS).toContain(
       "Do not read /task/verify.sh before the first verifier run; inspect it only after a verifier failure or when you are blocked."
     );
+  });
+
+  it("uses OpenCode-native tool guidance for opencode benchmark prompts", () => {
+    expect(OPENCODE_BENCHMARK_TASK_INSTRUCTIONS).toContain(
+      "For new or replacement files, use the write tool with arguments like {\"filePath\":\"relative/path\",\"content\":\"...\"}."
+    );
+    expect(OPENCODE_BENCHMARK_TASK_INSTRUCTIONS.join("\n")).not.toContain("finish");
   });
 
   it("does not add SWE-bench Pro-specific coaching instructions", () => {

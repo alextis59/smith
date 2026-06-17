@@ -234,11 +234,16 @@ Run one task or a directory of task folders:
 smith benchmark run ./benchmarks/basic-edit
 smith benchmark run ./benchmarks --profile fast
 smith benchmark run ./benchmarks --agent codex --model gpt-5.4-mini --reasoning-effort high
+smith benchmark run ./benchmarks/001-release-note-summary --agent opencode \
+  --model vibethinker-local/vibethinker-3b \
+  --opencode-project /home/alextis/Work/Git/alextis59/local-opencode \
+  --opencode-mode file-output \
+  --timeout-ms 240000 --concurrency 1 --dry-run
 smith benchmark run ./benchmarks --timeout-ms 120000 --image node:22-bookworm --log-dir /tmp/smith --json
 smith benchmark validate ./benchmarks
 ```
 
-The default local-task runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. For SWE-bench Pro tasks, Smith first tries to run inside the task's own Docker image when that image can execute Smith with Node; otherwise it falls back to `node:22-bookworm`. Passing `--image` overrides the Smith editing image. With `--agent codex`, the runner executes `codex exec` on the copied workspace on the host, then runs the same verifier. Successful sandboxes are removed automatically; pass `--keep-sandbox` to preserve them for debugging.
+The default local-task runner copies `workspace/` into a Docker-backed sandbox, runs Smith inside `node:22-bookworm`, then executes `verify.sh` in the sandboxed workspace. For SWE-bench Pro tasks, Smith first tries to run inside the task's own Docker image when that image can execute Smith with Node; otherwise it falls back to `node:22-bookworm`. Passing `--image` overrides the Smith editing image. With `--agent codex`, the runner executes `codex exec` on the copied workspace on the host, then runs the same verifier. With `--agent opencode`, the runner executes `opencode run` on the copied local-task workspace on the host, stages the selected project's `opencode.json` into that sandbox for the run, removes or restores it before verification, and defaults to `vibethinker-local/vibethinker-3b`. Use `--opencode-project` or `SMITH_OPENCODE_PROJECT` to point at the local provider config; on this machine that project is `/home/alextis/Work/Git/alextis59/local-opencode` and the gateway should already be listening on `127.0.0.1:8088`. The default `--opencode-mode tools` asks OpenCode to edit with tools. `--opencode-mode file-output` is a CPU-friendlier fallback for local models that do not reliably emit tool calls: the runner provides a bounded small-file workspace snapshot, asks OpenCode for a JSON map of final file contents, materializes those files in the sandbox, then runs the verifier. For VibeThinker file-output runs, use a pinned no-tool gateway with `VIBETHINKER_RESPONSE_FORMAT=json_object`. `--dry-run` validates task discovery and command construction without invoking the agent or verifier. Successful sandboxes are removed automatically; pass `--keep-sandbox` to preserve them for debugging.
 
 Benchmark output includes per-task and summary token/cost data when the agent reports usage and pricing is available. Smith uses the active profile's `input_cost_per_million_tokens`, optional `cached_input_cost_per_million_tokens`, and `output_cost_per_million_tokens`; Codex includes built-in pricing for `gpt-5.4-mini`, and pricing can be overridden with `--input-cost-per-million-tokens`, `--cached-input-cost-per-million-tokens`, and `--output-cost-per-million-tokens`.
 

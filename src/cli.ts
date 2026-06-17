@@ -15,6 +15,7 @@ import {
   validateBenchmarkPath,
   type BenchmarkAgent,
   type BenchmarkCostRates,
+  type BenchmarkOpencodeMode,
   type BenchmarkUsage
 } from "./benchmark/runner.js";
 
@@ -108,7 +109,10 @@ Options:
   --provider-debug
   --log-dir <dir>
   --no-sub-agent
-  --agent <smith|codex>
+  --agent <smith|codex|opencode>
+  --opencode-project <dir>
+  --opencode-mode <tools|file-output>
+  --dry-run
   --concurrency <count>
   --cached-input-cost-per-million-tokens <usd>
   --provider-timeout-ms <milliseconds>
@@ -121,6 +125,7 @@ Examples:
   smith config doctor --profile default
   smith benchmark run ./benchmarks/001-release-note-summary --timeout-ms 120000
   smith benchmark run ./benchmarks --agent codex --model gpt-5.4-mini --reasoning-effort high --concurrency 5
+  smith benchmark run ./benchmarks/001-release-note-summary --agent opencode --model vibethinker-local/vibethinker-3b --opencode-project ../local-opencode --dry-run
   smith benchmark run swe-bench-pro --timeout-ms 900000
   smith benchmark run swe-bench-pro/001-nodebb-nodebb-vnan --timeout-ms 900000
 `;
@@ -347,7 +352,10 @@ async function runBenchmarkCommand(args: string[]): Promise<void> {
     keepSandbox: options.keepSandbox,
     concurrency: options.concurrency,
     cost,
-    logDir: options.logDir
+    logDir: options.logDir,
+    dryRun: options.dryRun,
+    opencodeProject: options.opencodeProject,
+    opencodeMode: options.opencodeMode
   });
   if (options.json) {
     process.stdout.write(`${JSON.stringify({ summary: benchmarkSummary(results), results }, null, 2)}\n`);
@@ -393,6 +401,9 @@ function parseBenchmarkOptions(args: string[]): {
   concurrency?: number;
   cachedInputCostPerMillionTokens?: number;
   logDir?: string;
+  dryRun: boolean;
+  opencodeProject?: string;
+  opencodeMode?: BenchmarkOpencodeMode;
 } {
   const smithArgs: string[] = [];
   let timeoutMs: number | undefined;
@@ -403,6 +414,9 @@ function parseBenchmarkOptions(args: string[]): {
   let concurrency: number | undefined;
   let cachedInputCostPerMillionTokens: number | undefined;
   let logDir: string | undefined;
+  let dryRun = false;
+  let opencodeProject: string | undefined;
+  let opencodeMode: BenchmarkOpencodeMode | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     const [flag, inline] = arg.startsWith("--") ? splitFlag(arg) : [arg, undefined];
@@ -425,6 +439,9 @@ function parseBenchmarkOptions(args: string[]): {
       if (inline !== undefined) smithArgs.push(arg);
       else smithArgs.push(flag, value);
     } else if (flag === "--log-dir") logDir = readValue();
+    else if (flag === "--dry-run") dryRun = true;
+    else if (flag === "--opencode-project") opencodeProject = readValue();
+    else if (flag === "--opencode-mode") opencodeMode = parseOpencodeMode(readValue());
     else smithArgs.push(arg);
   }
   return {
@@ -437,7 +454,10 @@ function parseBenchmarkOptions(args: string[]): {
     keepSandbox,
     concurrency,
     cachedInputCostPerMillionTokens,
-    logDir
+    logDir,
+    dryRun,
+    opencodeProject,
+    opencodeMode
   };
 }
 
@@ -450,8 +470,13 @@ function parsePositiveInteger(value: string, flag: string): number {
 }
 
 function parseBenchmarkAgent(value: string): BenchmarkAgent {
-  if (value === "smith" || value === "codex") return value;
+  if (value === "smith" || value === "codex" || value === "opencode") return value;
   throw new Error(`unsupported benchmark agent '${value}'`);
+}
+
+function parseOpencodeMode(value: string): BenchmarkOpencodeMode {
+  if (value === "tools" || value === "file-output") return value;
+  throw new Error(`unsupported opencode benchmark mode '${value}'`);
 }
 
 function benchmarkSummary(results: Array<{ passed: boolean; durationMs: number; task: string; usage?: BenchmarkUsage }>) {

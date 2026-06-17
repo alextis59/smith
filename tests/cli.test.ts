@@ -33,5 +33,9 @@ describe("CLI skeleton", () => {
     expect(helpText()).toContain("--log-dir");
     expect(helpText()).toContain("--no-sub-agent");
     expect(helpText()).toContain("--concurrency");
+    expect(helpText()).toContain("--agent <smith|codex|opencode>");
+    expect(helpText()).toContain("--opencode-project");
+    expect(helpText()).toContain("--opencode-mode");
+    expect(helpText()).toContain("--dry-run");
   });
 });

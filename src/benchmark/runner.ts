@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { configuredLogDir, summarizeTrace, tracePathFromContainerPath, writeSessionLog } from "../session-log.js";
@@ -23,7 +23,8 @@ export type BenchmarkTaskResult = {
   logPath?: string;
 };
 
-export type BenchmarkAgent = "smith" | "codex";
+export type BenchmarkAgent = "smith" | "codex" | "opencode";
+export type BenchmarkOpencodeMode = "tools" | "file-output";
 
 export type BenchmarkUsage = {
   inputTokens: number;
@@ -53,6 +54,9 @@ export type BenchmarkRunOptions = {
   concurrency?: number;
   cost?: BenchmarkCostRates;
   logDir?: string;
+  dryRun?: boolean;
+  opencodeProject?: string;
+  opencodeMode?: BenchmarkOpencodeMode;
 };
 
 type BenchmarkTaskKind = "local" | "swe-bench-pro";
@@ -77,6 +81,8 @@ type ProtectedFileMode = {
 };
 
 export const DEFAULT_SMITH_BENCHMARK_IMAGE = "node:22-bookworm";
+export const DEFAULT_OPENCODE_BENCHMARK_MODEL = "vibethinker-local/vibethinker-3b";
+export const OPENCODE_PROJECT_ENV = "SMITH_OPENCODE_PROJECT";
 const HOST_NODE_ROOT_ENV = "SMITH_BENCH_HOST_NODE_ROOT";
 
 export type BenchmarkCostRates = {
@@ -98,6 +104,32 @@ export const BENCHMARK_TASK_INSTRUCTIONS = [
 ];
 
 export const SWE_BENCH_PRO_TASK_INSTRUCTIONS: string[] = [];
+export const OPENCODE_BENCHMARK_TASK_INSTRUCTIONS = [
+  "Complete this benchmark task in the current workspace.",
+  "Use OpenCode tools to inspect and edit files. Do not just describe the change.",
+  "For new or replacement files, use the write tool with arguments like {\"filePath\":\"relative/path\",\"content\":\"...\"}.",
+  "For shell commands, use the bash tool with arguments like {\"description\":\"short purpose\",\"command\":\"...\"}.",
+  "For edits, use the edit tool with arguments like {\"filePath\":\"relative/path\",\"oldString\":\"...\",\"newString\":\"...\"}.",
+  "Keep changes self-contained in the current workspace. Do not use network access, secrets, package installs, or privileged commands.",
+  "Make a tool call promptly instead of restating these instructions."
+];
+export const OPENCODE_FILE_OUTPUT_TASK_INSTRUCTIONS = [
+  "Complete this benchmark task by returning final file contents.",
+  "Use the workspace snapshot below as your source of truth.",
+  "Return only JSON shaped as an object with one top-level key named files.",
+  "Inside files, keys must be real workspace-relative paths requested by the task, such as summary.md, not placeholders.",
+  "Inside files, values must be the complete final content for each created or changed file, not placeholder text.",
+  "Include every file that must be created or changed. Do not include unchanged files.",
+  "When changing existing source files, use the exact relative path shown in the snapshot; do not create root-level copies.",
+  "Do not include test files, fixtures, or verifier files unless the task explicitly asks to change them.",
+  "Preserve exact wording, casing, identifiers, and version labels from the workspace snapshot for concrete facts.",
+  "For reports or summaries, copy the important bullet phrases from source notes verbatim before adding any surrounding prose.",
+  "If a source line starts with '- ', copy the important text after '- ' exactly as written, including lowercase letters and punctuation.",
+  "Do not invent details, metrics, support contacts, headings, or risks that are not present in the snapshot.",
+  "Use relative paths inside the current workspace. Do not use absolute paths or parent directories.",
+  "Never output the literal placeholder path relative/path or the literal placeholder content complete file content.",
+  "Do not wrap the JSON in markdown fences and do not add explanatory prose."
+];
 
 export const BENCHMARK_PYTHON_SHIM_SCRIPT = [
   "SHIM_DIR=\"$RESULT_DIR/bin\"",
@@ -221,13 +253,24 @@ export async function runBenchmarkTask(taskPath: string, options: BenchmarkRunOp
   cpSync(task, taskCopy, { recursive: true });
   const taskKind = benchmarkTaskKind(taskCopy);
   if (taskKind === "swe-bench-pro") {
+    if (agent === "opencode") {
+      cleanupSandbox(sandbox);
+      throw new Error("opencode benchmark agent supports local benchmark tasks only; SWE-bench Pro is intentionally unsupported");
+    }
     return runSweBenchProBenchmarkTask({ task, taskCopy, workspace, home, resultsDir, sandbox, options, repoRoot });
   }
 
   cpSync(join(taskCopy, "workspace"), workspace, { recursive: true });
 
+  if (options.dryRun) {
+    return runBenchmarkDryRun({ task, taskCopy, workspace, home, resultsDir, sandbox, options, repoRoot, agent });
+  }
+
   if (agent === "codex") {
     return runCodexBenchmarkTask({ task, taskCopy, workspace, home, resultsDir, sandbox, options });
+  }
+  if (agent === "opencode") {
+    return runOpencodeBenchmarkTask({ task, taskCopy, workspace, home, resultsDir, sandbox, options, repoRoot });
   }
   return runSmithBenchmarkTask({ task, taskCopy, workspace, home, resultsDir, sandbox, options, repoRoot });
 }
@@ -923,22 +966,7 @@ async function runCodexBenchmarkTask(context: BenchmarkTaskContext): Promise<Ben
     ? ["-c", `model_reasoning_effort="${options.reasoningEffort}"`]
     : [];
   const prompt = benchmarkPrompt(taskPrompt);
-  const command = [
-    "codex",
-    "exec",
-    "--json",
-    "--color",
-    "never",
-    "--ephemeral",
-    "--ignore-rules",
-    "--skip-git-repo-check",
-    "--dangerously-bypass-approvals-and-sandbox",
-    "--cd",
-    workspace,
-    ...modelArgs,
-    ...reasoningArgs,
-    "-"
-  ].join(" ");
+  const command = codexBenchmarkCommand({ workspace, model: options.model, reasoningEffort: options.reasoningEffort });
 
   let codexStdout = "";
   let codexStderr = "";
@@ -1039,6 +1067,280 @@ async function runCodexBenchmarkTask(context: BenchmarkTaskContext): Promise<Ben
   }
 }
 
+async function runOpencodeBenchmarkTask(context: BenchmarkTaskContext & { repoRoot: string }): Promise<BenchmarkTaskResult> {
+  const { task, taskCopy, workspace, home, sandbox, options, repoRoot } = context;
+  const started = Date.now();
+  const taskPrompt = readFileSync(join(taskCopy, "Task.md"), "utf8");
+  const opencodeMode = options.opencodeMode ?? "tools";
+  const prompt =
+    opencodeMode === "file-output"
+      ? opencodeFileOutputBenchmarkPrompt(taskPrompt, workspace)
+      : opencodeBenchmarkPrompt(taskPrompt, join(taskCopy, "verify.sh"));
+  const plan = buildOpencodeBenchmarkRunPlan({
+    workspace,
+    home,
+    prompt,
+    model: options.model,
+    opencodeProject: options.opencodeProject,
+    repoRoot
+  });
+
+  let opencodeStdout = "";
+  let opencodeStderr = "";
+  let verifyStdout = "";
+  let verifyStderr = "";
+  let verifier: BenchmarkVerifierResult | undefined;
+  let opencodeCompleted = false;
+  let configRestore: (() => void) | undefined;
+  try {
+    configRestore = installOpencodeProjectConfig(plan);
+    const opencode = await spawnFileWithInput("opencode", plan.args, "", {
+      timeout: options.timeoutMs ?? 120_000,
+      maxBuffer: 1024 * 1024 * 50,
+      env: plan.env,
+      cwd: plan.cwd
+    });
+    opencodeStdout = opencode.stdout;
+    opencodeStderr = opencode.stderr;
+    opencodeCompleted = true;
+    configRestore();
+    configRestore = undefined;
+    if (opencodeMode === "file-output") {
+      applyOpencodeFileOutput(workspace, opencodeStdout);
+    }
+
+    const verify = await execFileAsync("bash", [join(taskCopy, "verify.sh")], {
+      cwd: workspace,
+      timeout: options.timeoutMs ?? 120_000,
+      maxBuffer: 1024 * 1024 * 10
+    });
+    verifyStdout = verify.stdout;
+    verifyStderr = verify.stderr;
+    verifier = { command: `bash ${join(taskCopy, "verify.sh")}`, exitCode: 0, stdout: verifyStdout, stderr: verifyStderr };
+    const taskResult: BenchmarkTaskResult = {
+      task,
+      agent: "opencode" as const,
+      passed: true,
+      durationMs: Date.now() - started,
+      stdout: `${opencodeStdout}${verifyStdout}`,
+      stderr: `${opencodeStderr}${verifyStderr}`,
+      traceDir: opencodeTraceDir(home),
+      sandboxDir: sandbox,
+      usage: parseOpencodeUsage(opencodeStdout),
+      verifier
+    };
+    taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
+      command: plan.command,
+      stdout: taskResult.stdout,
+      stderr: taskResult.stderr,
+      sandboxRetained: Boolean(options.keepSandbox)
+    });
+    if (!options.keepSandbox) cleanupSandbox(sandbox);
+    return taskResult;
+  } catch (error) {
+    configRestore?.();
+    const failed = error as { stdout?: string; stderr?: string; code?: number };
+    if (opencodeCompleted) {
+      verifyStdout = failed.stdout ?? "";
+      verifyStderr = errorStderr(failed, error);
+      verifier = {
+        command: `bash ${join(taskCopy, "verify.sh")}`,
+        exitCode: typeof failed.code === "number" ? failed.code : undefined,
+        stdout: verifyStdout,
+        stderr: verifyStderr
+      };
+    }
+    const stdout = `${opencodeStdout}${opencodeCompleted ? verifyStdout : failed.stdout ?? ""}`;
+    const stderr = `${opencodeStderr}${opencodeCompleted ? verifyStderr : errorStderr(failed, error)}`;
+    const taskResult: BenchmarkTaskResult = {
+      task,
+      agent: "opencode",
+      passed: false,
+      durationMs: Date.now() - started,
+      stdout,
+      stderr,
+      traceDir: opencodeTraceDir(home),
+      sandboxDir: sandbox,
+      usage: parseOpencodeUsage(opencodeStdout || failed.stdout || ""),
+      ...(verifier ? { verifier } : {})
+    };
+    taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
+      command: plan.command,
+      stdout,
+      stderr,
+      sandboxRetained: true
+    });
+    return taskResult;
+  }
+}
+
+export type OpencodeBenchmarkRunPlan = {
+  args: string[];
+  command: string;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  model: string;
+  configSource: string;
+  configTarget: string;
+  opencodeProject: string;
+};
+
+export function buildOpencodeBenchmarkRunPlan(context: {
+  workspace: string;
+  home: string;
+  prompt: string;
+  model?: string;
+  opencodeProject?: string;
+  repoRoot?: string;
+}): OpencodeBenchmarkRunPlan {
+  const model = context.model ?? DEFAULT_OPENCODE_BENCHMARK_MODEL;
+  const opencodeProject = resolveOpencodeProject(context.opencodeProject, context.repoRoot);
+  const configSource = join(opencodeProject, "opencode.json");
+  if (!existsSync(configSource)) {
+    throw new Error(`opencode project config not found at ${configSource}`);
+  }
+  const args = [
+    "run",
+    "--pure",
+    "--format",
+    "json",
+    "--model",
+    model,
+    "--dir",
+    context.workspace,
+    "--title",
+    `smith-benchmark-${basename(context.workspace)}`,
+    "--no-replay",
+    "--dangerously-skip-permissions",
+    context.prompt
+  ];
+  return {
+    args,
+    command: shellCommandForLog("opencode", args.slice(0, -1), "<benchmark prompt>"),
+    cwd: context.workspace,
+    env: opencodeBenchmarkEnv(context.home),
+    model,
+    configSource,
+    configTarget: join(context.workspace, "opencode.json"),
+    opencodeProject
+  };
+}
+
+function resolveOpencodeProject(opencodeProject: string | undefined, repoRoot: string | undefined): string {
+  const explicit = opencodeProject ?? process.env[OPENCODE_PROJECT_ENV];
+  if (explicit) return resolve(explicit);
+  if (repoRoot) {
+    const sibling = resolve(repoRoot, "../local-opencode");
+    if (existsSync(join(sibling, "opencode.json"))) return sibling;
+  }
+  return process.cwd();
+}
+
+function opencodeBenchmarkEnv(home: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    HOME: home,
+    XDG_DATA_HOME: join(home, ".local", "share"),
+    XDG_CACHE_HOME: join(home, ".cache"),
+    XDG_CONFIG_HOME: join(home, ".config"),
+    XDG_STATE_HOME: join(home, ".local", "state"),
+    CI: "1",
+    NO_COLOR: "1"
+  };
+}
+
+function installOpencodeProjectConfig(plan: OpencodeBenchmarkRunPlan): () => void {
+  const backup = `${plan.configTarget}.smith-benchmark-original`;
+  const hadConfig = existsSync(plan.configTarget);
+  if (hadConfig) cpSync(plan.configTarget, backup);
+  cpSync(plan.configSource, plan.configTarget);
+  return () => {
+    if (hadConfig) {
+      cpSync(backup, plan.configTarget);
+      rmSync(backup, { force: true });
+    } else {
+      rmSync(plan.configTarget, { force: true });
+    }
+  };
+}
+
+async function runBenchmarkDryRun(
+  context: BenchmarkTaskContext & { repoRoot: string; agent: BenchmarkAgent }
+): Promise<BenchmarkTaskResult> {
+  const { task, taskCopy, workspace, home, sandbox, options, repoRoot, agent } = context;
+  const started = Date.now();
+  const prompt =
+    agent === "opencode"
+      ? options.opencodeMode === "file-output"
+        ? opencodeFileOutputBenchmarkPrompt(readFileSync(join(taskCopy, "Task.md"), "utf8"), workspace)
+        : opencodeBenchmarkPrompt(readFileSync(join(taskCopy, "Task.md"), "utf8"), join(taskCopy, "verify.sh"))
+      : benchmarkPrompt(readFileSync(join(taskCopy, "Task.md"), "utf8"));
+  const command =
+    agent === "opencode"
+      ? buildOpencodeBenchmarkRunPlan({
+          workspace,
+          home,
+          prompt,
+          model: options.model,
+          opencodeProject: options.opencodeProject,
+          repoRoot
+        }).command
+      : agent === "codex"
+        ? codexBenchmarkCommand({ workspace, model: options.model, reasoningEffort: options.reasoningEffort })
+        : "docker run <smith benchmark container>";
+  const stdout = [
+    "DRY RUN",
+    `task=${task}`,
+    `agent=${agent}`,
+    `workspace=${workspace}`,
+    `command=${command}`,
+    `verifier=bash ${join(taskCopy, "verify.sh")}`
+  ].join("\n") + "\n";
+  const taskResult: BenchmarkTaskResult = {
+    task,
+    agent,
+    passed: true,
+    durationMs: Date.now() - started,
+    stdout,
+    stderr: "",
+    traceDir: agent === "smith" ? join(home, ".smith", "runs") : agent === "codex" ? codexTraceDir() : opencodeTraceDir(home),
+    sandboxDir: sandbox
+  };
+  taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
+    command,
+    stdout,
+    stderr: "",
+    sandboxRetained: Boolean(options.keepSandbox)
+  });
+  if (!options.keepSandbox) cleanupSandbox(sandbox);
+  return taskResult;
+}
+
+function codexBenchmarkCommand(context: { workspace: string; model?: string; reasoningEffort?: string }): string {
+  const modelArgs = context.model ? ["--model", context.model] : [];
+  const reasoningArgs = context.reasoningEffort
+    ? ["-c", `model_reasoning_effort="${context.reasoningEffort}"`]
+    : [];
+  return shellCommandForLog(
+    "codex",
+    [
+      "exec",
+      "--json",
+      "--color",
+      "never",
+      "--ephemeral",
+      "--ignore-rules",
+      "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--cd",
+      context.workspace,
+      ...modelArgs,
+      ...reasoningArgs,
+      "-"
+    ]
+  );
+}
+
 function benchmarkPrompt(taskPrompt: string, instructions = BENCHMARK_TASK_INSTRUCTIONS): string {
   if (instructions.length === 0) return taskPrompt;
   return [
@@ -1046,6 +1348,123 @@ function benchmarkPrompt(taskPrompt: string, instructions = BENCHMARK_TASK_INSTR
     "",
     taskPrompt
   ].join("\n");
+}
+
+function opencodeBenchmarkPrompt(taskPrompt: string, verifierPath: string): string {
+  return [
+    ...OPENCODE_BENCHMARK_TASK_INSTRUCTIONS,
+    `When practical after editing, run the verifier with bash: bash ${verifierPath}`,
+    "",
+    taskPrompt
+  ].join("\n");
+}
+
+function opencodeFileOutputBenchmarkPrompt(taskPrompt: string, workspace: string): string {
+  return [
+    ...OPENCODE_FILE_OUTPUT_TASK_INSTRUCTIONS,
+    "",
+    taskPrompt,
+    "",
+    workspaceSnapshotForPrompt(workspace)
+  ].join("\n");
+}
+
+const OPENCODE_WORKSPACE_SNAPSHOT_MAX_FILES = 40;
+const OPENCODE_WORKSPACE_SNAPSHOT_MAX_CHARS = 60_000;
+const OPENCODE_WORKSPACE_SNAPSHOT_MAX_FILE_CHARS = 16_000;
+
+function workspaceSnapshotForPrompt(workspace: string): string {
+  const files = listWorkspaceTextFiles(workspace).slice(0, OPENCODE_WORKSPACE_SNAPSHOT_MAX_FILES);
+  const sections: string[] = ["Workspace snapshot:"];
+  let remaining = OPENCODE_WORKSPACE_SNAPSHOT_MAX_CHARS;
+  for (const file of files) {
+    if (remaining <= 0) break;
+    const absolute = join(workspace, file);
+    let content = readFileSync(absolute, "utf8");
+    if (content.length > OPENCODE_WORKSPACE_SNAPSHOT_MAX_FILE_CHARS) {
+      content = content.slice(0, OPENCODE_WORKSPACE_SNAPSHOT_MAX_FILE_CHARS) + "\n[truncated]\n";
+    }
+    const section = [`--- ${file} ---`, content].join("\n");
+    if (section.length > remaining) break;
+    sections.push(section);
+    remaining -= section.length;
+  }
+  return sections.join("\n\n");
+}
+
+function listWorkspaceTextFiles(workspace: string): string[] {
+  const files: string[] = [];
+  const visit = (dir: string) => {
+    for (const entry of readdirSync(dir).sort((left, right) => left.localeCompare(right))) {
+      if (entry === ".git" || entry === "node_modules" || entry === "opencode.json") continue;
+      const absolute = join(dir, entry);
+      const stats = statSync(absolute);
+      if (stats.isDirectory()) {
+        visit(absolute);
+        continue;
+      }
+      if (!stats.isFile() || stats.size > OPENCODE_WORKSPACE_SNAPSHOT_MAX_FILE_CHARS) continue;
+      const relativePath = relative(workspace, absolute);
+      const content = readFileSync(absolute);
+      if (content.includes(0)) continue;
+      files.push(relativePath);
+    }
+  };
+  visit(workspace);
+  return files;
+}
+
+function applyOpencodeFileOutput(workspace: string, stdout: string): string[] {
+  const text = opencodeTextOutput(stdout);
+  const parsed = parseFirstJsonObject(stripMarkdownFence(text)) as { files?: unknown } | undefined;
+  if (!parsed?.files || typeof parsed.files !== "object" || Array.isArray(parsed.files)) {
+    throw new Error("opencode file-output mode did not return a JSON object with a files map");
+  }
+
+  const written: string[] = [];
+  for (const [filePath, content] of Object.entries(parsed.files as Record<string, unknown>)) {
+    if (typeof content !== "string") {
+      throw new Error(`opencode file-output content for ${filePath} must be a string`);
+    }
+    const safePath = safeWorkspaceRelativePath(filePath);
+    const target = join(workspace, safePath);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content, "utf8");
+    written.push(safePath);
+  }
+  if (written.length === 0) {
+    throw new Error("opencode file-output mode returned an empty files map");
+  }
+  return written;
+}
+
+function opencodeTextOutput(stdout: string): string {
+  const parts: string[] = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const event = parseJsonObject(line) as { type?: string; part?: { type?: string; text?: unknown } } | undefined;
+    if (event?.type === "text" && event.part?.type === "text" && typeof event.part.text === "string") {
+      parts.push(event.part.text);
+    }
+  }
+  return parts.join("\n").trim();
+}
+
+function stripMarkdownFence(text: string): string {
+  const trimmed = text.trim();
+  const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+  return match ? match[1].trim() : trimmed;
+}
+
+function safeWorkspaceRelativePath(filePath: string): string {
+  if (!filePath || isAbsolute(filePath)) {
+    throw new Error(`unsafe opencode file-output path: ${filePath}`);
+  }
+  const normalized = normalize(filePath);
+  if (normalized === "." || normalized.startsWith("..") || isAbsolute(normalized) || normalized === "opencode.json") {
+    throw new Error(`unsafe opencode file-output path: ${filePath}`);
+  }
+  return normalized;
 }
 
 function discoverTasks(path: string): string[] {
@@ -1326,6 +1745,10 @@ function codexTraceDir(): string {
   return process.env.CODEX_HOME ?? join(process.env.HOME ?? "", ".codex");
 }
 
+function opencodeTraceDir(home: string): string {
+  return join(home, ".local", "share", "opencode");
+}
+
 function parseSmithUsage(stdout: string): BenchmarkUsage | undefined {
   const parsed = (parseJsonObject(stdout) ?? parseFirstJsonObject(stdout)) as { usage?: Partial<BenchmarkUsage> } | undefined;
   if (!parsed?.usage) return undefined;
@@ -1395,6 +1818,18 @@ function parseCodexUsage(stdout: string): BenchmarkUsage | undefined {
     } else if (event?.type === "turn.completed" && event.usage) {
       latest = event.usage;
     }
+  }
+  return normalizeUsage(latest);
+}
+
+function parseOpencodeUsage(stdout: string): BenchmarkUsage | undefined {
+  let latest: unknown;
+  for (const line of stdout.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const event = parseJsonObject(line) as { type?: string; properties?: unknown; usage?: unknown } | undefined;
+    if (event?.usage) latest = event.usage;
+    const properties = event?.properties as { usage?: unknown } | undefined;
+    if (properties?.usage) latest = properties.usage;
   }
   return normalizeUsage(latest);
 }
@@ -1510,6 +1945,10 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+function shellCommandForLog(command: string, args: string[], finalArg?: string): string {
+  return [command, ...args, ...(finalArg !== undefined ? [finalArg] : [])].map(shellQuote).join(" ");
+}
+
 export function spawnFileWithInput(
   command: string,
   args: string[],
@@ -1518,12 +1957,13 @@ export function spawnFileWithInput(
     timeout: number;
     maxBuffer: number;
     env?: NodeJS.ProcessEnv;
+    cwd?: string;
     onTimeout?: () => void | Promise<void>;
     killGraceMs?: number;
   }
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env: options.env, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(command, args, { cwd: options.cwd, env: options.env, stdio: ["pipe", "pipe", "pipe"] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let stdoutLength = 0;
