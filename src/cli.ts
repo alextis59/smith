@@ -112,6 +112,7 @@ Options:
   --agent <smith|codex|opencode>
   --opencode-project <dir>
   --opencode-mode <tools|file-output>
+  --opencode-retries <count>
   --dry-run
   --concurrency <count>
   --cached-input-cost-per-million-tokens <usd>
@@ -355,7 +356,8 @@ async function runBenchmarkCommand(args: string[]): Promise<void> {
     logDir: options.logDir,
     dryRun: options.dryRun,
     opencodeProject: options.opencodeProject,
-    opencodeMode: options.opencodeMode
+    opencodeMode: options.opencodeMode,
+    opencodeRetries: options.opencodeRetries
   });
   if (options.json) {
     process.stdout.write(`${JSON.stringify({ summary: benchmarkSummary(results), results }, null, 2)}\n`);
@@ -404,6 +406,7 @@ function parseBenchmarkOptions(args: string[]): {
   dryRun: boolean;
   opencodeProject?: string;
   opencodeMode?: BenchmarkOpencodeMode;
+  opencodeRetries?: number;
 } {
   const smithArgs: string[] = [];
   let timeoutMs: number | undefined;
@@ -417,6 +420,7 @@ function parseBenchmarkOptions(args: string[]): {
   let dryRun = false;
   let opencodeProject: string | undefined;
   let opencodeMode: BenchmarkOpencodeMode | undefined;
+  let opencodeRetries: number | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     const [flag, inline] = arg.startsWith("--") ? splitFlag(arg) : [arg, undefined];
@@ -442,6 +446,7 @@ function parseBenchmarkOptions(args: string[]): {
     else if (flag === "--dry-run") dryRun = true;
     else if (flag === "--opencode-project") opencodeProject = readValue();
     else if (flag === "--opencode-mode") opencodeMode = parseOpencodeMode(readValue());
+    else if (flag === "--opencode-retries") opencodeRetries = parseNonNegativeInteger(readValue(), "--opencode-retries");
     else smithArgs.push(arg);
   }
   return {
@@ -457,8 +462,17 @@ function parseBenchmarkOptions(args: string[]): {
     logDir,
     dryRun,
     opencodeProject,
-    opencodeMode
+    opencodeMode,
+    opencodeRetries
   };
+}
+
+function parseNonNegativeInteger(value: string, flag: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0 || String(parsed) !== value) {
+    throw new Error(`${flag} must be a non-negative integer`);
+  }
+  return parsed;
 }
 
 function parsePositiveInteger(value: string, flag: string): number {

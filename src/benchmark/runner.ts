@@ -57,6 +57,7 @@ export type BenchmarkRunOptions = {
   dryRun?: boolean;
   opencodeProject?: string;
   opencodeMode?: BenchmarkOpencodeMode;
+  opencodeRetries?: number;
 };
 
 type BenchmarkTaskKind = "local" | "swe-bench-pro";
@@ -1072,106 +1073,155 @@ async function runOpencodeBenchmarkTask(context: BenchmarkTaskContext & { repoRo
   const started = Date.now();
   const taskPrompt = readFileSync(join(taskCopy, "Task.md"), "utf8");
   const opencodeMode = options.opencodeMode ?? "tools";
-  const prompt =
-    opencodeMode === "file-output"
-      ? opencodeFileOutputBenchmarkPrompt(taskPrompt, workspace)
-      : opencodeBenchmarkPrompt(taskPrompt, join(taskCopy, "verify.sh"));
-  const plan = buildOpencodeBenchmarkRunPlan({
-    workspace,
-    home,
-    prompt,
-    model: options.model,
-    opencodeProject: options.opencodeProject,
-    repoRoot
-  });
+  const maxAttempts = opencodeMode === "file-output" ? 1 + (options.opencodeRetries ?? 0) : 1;
+  const verifierCommand = `bash ${join(taskCopy, "verify.sh")}`;
+  let retryFeedback: string | undefined;
+  let combinedStdout = "";
+  let combinedStderr = "";
+  let lastVerifier: BenchmarkVerifierResult | undefined;
+  let command = "";
 
-  let opencodeStdout = "";
-  let opencodeStderr = "";
-  let verifyStdout = "";
-  let verifyStderr = "";
-  let verifier: BenchmarkVerifierResult | undefined;
-  let opencodeCompleted = false;
-  let configRestore: (() => void) | undefined;
-  try {
-    configRestore = installOpencodeProjectConfig(plan);
-    const opencode = await spawnFileWithInput("opencode", plan.args, "", {
-      timeout: options.timeoutMs ?? 120_000,
-      maxBuffer: 1024 * 1024 * 50,
-      env: plan.env,
-      cwd: plan.cwd
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const prompt =
+      opencodeMode === "file-output"
+        ? opencodeFileOutputBenchmarkPrompt(taskPrompt, workspace, retryFeedback)
+        : opencodeBenchmarkPrompt(taskPrompt, join(taskCopy, "verify.sh"));
+    const plan = buildOpencodeBenchmarkRunPlan({
+      workspace,
+      home,
+      prompt,
+      model: options.model,
+      opencodeProject: options.opencodeProject,
+      repoRoot
     });
-    opencodeStdout = opencode.stdout;
-    opencodeStderr = opencode.stderr;
-    opencodeCompleted = true;
-    configRestore();
-    configRestore = undefined;
-    if (opencodeMode === "file-output") {
-      applyOpencodeFileOutput(workspace, opencodeStdout);
-    }
+    command ||= plan.command;
 
-    const verify = await execFileAsync("bash", [join(taskCopy, "verify.sh")], {
-      cwd: workspace,
-      timeout: options.timeoutMs ?? 120_000,
-      maxBuffer: 1024 * 1024 * 10
-    });
-    verifyStdout = verify.stdout;
-    verifyStderr = verify.stderr;
-    verifier = { command: `bash ${join(taskCopy, "verify.sh")}`, exitCode: 0, stdout: verifyStdout, stderr: verifyStderr };
-    const taskResult: BenchmarkTaskResult = {
-      task,
-      agent: "opencode" as const,
-      passed: true,
-      durationMs: Date.now() - started,
-      stdout: `${opencodeStdout}${verifyStdout}`,
-      stderr: `${opencodeStderr}${verifyStderr}`,
-      traceDir: opencodeTraceDir(home),
-      sandboxDir: sandbox,
-      usage: parseOpencodeUsage(opencodeStdout),
-      verifier
+    let opencodeStdout = "";
+    let opencodeStderr = "";
+    let opencodeCompleted = false;
+    let opencodeOutputRecorded = false;
+    let configRestore: (() => void) | undefined;
+    const recordOpencodeOutput = () => {
+      if (opencodeOutputRecorded) return;
+      combinedStdout = appendAttemptOutput(combinedStdout, `opencode attempt ${attempt}/${maxAttempts}`, opencodeStdout);
+      combinedStderr = appendAttemptOutput(combinedStderr, `opencode attempt ${attempt}/${maxAttempts}`, opencodeStderr);
+      opencodeOutputRecorded = true;
     };
-    taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
-      command: plan.command,
-      stdout: taskResult.stdout,
-      stderr: taskResult.stderr,
-      sandboxRetained: Boolean(options.keepSandbox)
-    });
-    if (!options.keepSandbox) cleanupSandbox(sandbox);
-    return taskResult;
-  } catch (error) {
-    configRestore?.();
-    const failed = error as { stdout?: string; stderr?: string; code?: number };
-    if (opencodeCompleted) {
-      verifyStdout = failed.stdout ?? "";
-      verifyStderr = errorStderr(failed, error);
-      verifier = {
-        command: `bash ${join(taskCopy, "verify.sh")}`,
-        exitCode: typeof failed.code === "number" ? failed.code : undefined,
-        stdout: verifyStdout,
-        stderr: verifyStderr
+
+    try {
+      configRestore = installOpencodeProjectConfig(plan);
+      const opencode = await spawnFileWithInput("opencode", plan.args, "", {
+        timeout: options.timeoutMs ?? 120_000,
+        maxBuffer: 1024 * 1024 * 50,
+        env: plan.env,
+        cwd: plan.cwd
+      });
+      opencodeStdout = opencode.stdout;
+      opencodeStderr = opencode.stderr;
+      opencodeCompleted = true;
+      recordOpencodeOutput();
+      configRestore();
+      configRestore = undefined;
+      if (opencodeMode === "file-output") {
+        applyOpencodeFileOutput(workspace, opencodeStdout);
+      }
+
+      const verify = await execFileAsync("bash", [join(taskCopy, "verify.sh")], {
+        cwd: workspace,
+        timeout: options.timeoutMs ?? 120_000,
+        maxBuffer: 1024 * 1024 * 10
+      });
+      const verifier = { command: verifierCommand, exitCode: 0, stdout: verify.stdout, stderr: verify.stderr };
+      combinedStdout = appendAttemptOutput(combinedStdout, `verifier attempt ${attempt}/${maxAttempts}`, verify.stdout);
+      combinedStderr = appendAttemptOutput(combinedStderr, `verifier attempt ${attempt}/${maxAttempts}`, verify.stderr);
+      const taskResult: BenchmarkTaskResult = {
+        task,
+        agent: "opencode" as const,
+        passed: true,
+        durationMs: Date.now() - started,
+        stdout: combinedStdout,
+        stderr: combinedStderr,
+        traceDir: opencodeTraceDir(home),
+        sandboxDir: sandbox,
+        usage: parseOpencodeUsage(combinedStdout),
+        verifier
       };
+      taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
+        command,
+        stdout: taskResult.stdout,
+        stderr: taskResult.stderr,
+        sandboxRetained: Boolean(options.keepSandbox)
+      });
+      if (!options.keepSandbox) cleanupSandbox(sandbox);
+      return taskResult;
+    } catch (error) {
+      configRestore?.();
+      const failed = error as { stdout?: string; stderr?: string; code?: number };
+      if (!opencodeCompleted) {
+        opencodeStdout = failed.stdout ?? opencodeStdout;
+        opencodeStderr = failed.stderr ?? opencodeStderr;
+      }
+      recordOpencodeOutput();
+
+      const verifierFailed =
+        opencodeCompleted && (failed.stdout !== undefined || failed.stderr !== undefined || typeof failed.code === "number");
+      if (verifierFailed) {
+        lastVerifier = {
+          command: verifierCommand,
+          exitCode: typeof failed.code === "number" ? failed.code : undefined,
+          stdout: failed.stdout ?? "",
+          stderr: errorStderr(failed, error)
+        };
+        combinedStdout = appendAttemptOutput(combinedStdout, `verifier attempt ${attempt}/${maxAttempts}`, lastVerifier.stdout);
+        combinedStderr = appendAttemptOutput(combinedStderr, `verifier attempt ${attempt}/${maxAttempts}`, lastVerifier.stderr);
+      } else {
+        lastVerifier = undefined;
+        const failureMessage =
+          !opencodeCompleted && opencodeStderr
+            ? error instanceof Error
+              ? error.message
+              : String(error)
+            : errorStderr(failed, error);
+        combinedStderr = appendAttemptOutput(
+          combinedStderr,
+          opencodeCompleted ? `file-output attempt ${attempt}/${maxAttempts}` : `opencode attempt ${attempt}/${maxAttempts}`,
+          failureMessage
+        );
+      }
+
+      if (opencodeMode === "file-output" && opencodeCompleted && attempt < maxAttempts) {
+        retryFeedback = opencodeRetryFeedback({
+          errorMessage: errorStderr(failed, error),
+          opencodeStdout,
+          opencodeStderr,
+          verifier: lastVerifier
+        });
+        continue;
+      }
+
+      const taskResult: BenchmarkTaskResult = {
+        task,
+        agent: "opencode",
+        passed: false,
+        durationMs: Date.now() - started,
+        stdout: combinedStdout,
+        stderr: combinedStderr,
+        traceDir: opencodeTraceDir(home),
+        sandboxDir: sandbox,
+        usage: parseOpencodeUsage(combinedStdout || failed.stdout || ""),
+        ...(lastVerifier ? { verifier: lastVerifier } : {})
+      };
+      taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
+        command,
+        stdout: combinedStdout,
+        stderr: combinedStderr,
+        sandboxRetained: true
+      });
+      return taskResult;
     }
-    const stdout = `${opencodeStdout}${opencodeCompleted ? verifyStdout : failed.stdout ?? ""}`;
-    const stderr = `${opencodeStderr}${opencodeCompleted ? verifyStderr : errorStderr(failed, error)}`;
-    const taskResult: BenchmarkTaskResult = {
-      task,
-      agent: "opencode",
-      passed: false,
-      durationMs: Date.now() - started,
-      stdout,
-      stderr,
-      traceDir: opencodeTraceDir(home),
-      sandboxDir: sandbox,
-      usage: parseOpencodeUsage(opencodeStdout || failed.stdout || ""),
-      ...(verifier ? { verifier } : {})
-    };
-    taskResult.logPath = writeBenchmarkSessionLog(taskResult, options.logDir, {
-      command: plan.command,
-      stdout,
-      stderr,
-      sandboxRetained: true
-    });
-    return taskResult;
   }
+
+  throw new Error("opencode benchmark retry loop exited unexpectedly");
 }
 
 export type OpencodeBenchmarkRunPlan = {
@@ -1359,14 +1409,56 @@ function opencodeBenchmarkPrompt(taskPrompt: string, verifierPath: string): stri
   ].join("\n");
 }
 
-function opencodeFileOutputBenchmarkPrompt(taskPrompt: string, workspace: string): string {
+function opencodeFileOutputBenchmarkPrompt(taskPrompt: string, workspace: string, retryFeedback?: string): string {
   return [
     ...OPENCODE_FILE_OUTPUT_TASK_INSTRUCTIONS,
+    ...(retryFeedback ? ["", retryFeedback] : []),
     "",
     taskPrompt,
     "",
     workspaceSnapshotForPrompt(workspace)
   ].join("\n");
+}
+
+const OPENCODE_RETRY_FEEDBACK_MAX_CHARS = 10_000;
+
+function opencodeRetryFeedback(context: {
+  errorMessage: string;
+  opencodeStdout: string;
+  opencodeStderr: string;
+  verifier?: BenchmarkVerifierResult;
+}): string {
+  const sections = [
+    "Previous attempt failed. Use this feedback to return a corrected JSON files map. Keep unchanged files out of the map.",
+    `Failure: ${limitPromptText(context.errorMessage, 1_500)}`
+  ];
+  if (context.verifier) {
+    sections.push(
+      "Verifier stdout:",
+      limitPromptText(context.verifier.stdout || "(empty)", 3_000),
+      "Verifier stderr:",
+      limitPromptText(context.verifier.stderr || "(empty)", 3_000)
+    );
+  }
+  const textOutput = opencodeTextOutput(context.opencodeStdout);
+  if (textOutput) {
+    sections.push("Previous JSON/text output:", limitPromptText(textOutput, 2_000));
+  }
+  if (context.opencodeStderr) {
+    sections.push("OpenCode stderr:", limitPromptText(context.opencodeStderr, 1_000));
+  }
+  return limitPromptText(sections.join("\n"), OPENCODE_RETRY_FEEDBACK_MAX_CHARS);
+}
+
+function appendAttemptOutput(current: string, label: string, output: string): string {
+  if (!output) return current;
+  const section = `[${label}]\n${output}`;
+  return current ? `${current}\n${section}` : section;
+}
+
+function limitPromptText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n[truncated]\n`;
 }
 
 const OPENCODE_WORKSPACE_SNAPSHOT_MAX_FILES = 40;
