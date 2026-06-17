@@ -119,12 +119,17 @@ export const OPENCODE_FILE_OUTPUT_TASK_INSTRUCTIONS = [
   "Use the workspace snapshot below as your source of truth.",
   "Return only JSON shaped as an object with one top-level key named files.",
   "Inside files, keys must be real workspace-relative paths requested by the task, such as summary.md, not placeholders.",
+  "Use the exact output filename named in the task prompt; if the task says write audit.md, the files key must be audit.md, not summary.md.",
   "Inside files, values must be the complete final content for each created or changed file, not placeholder text.",
   "Include every file that must be created or changed. Do not include unchanged files.",
   "When changing existing source files, use the exact relative path shown in the snapshot; do not create root-level copies.",
   "Do not include test files, fixtures, or verifier files unless the task explicitly asks to change them.",
   "Preserve exact wording, casing, identifiers, and version labels from the workspace snapshot for concrete facts.",
   "For reports or summaries, copy the important bullet phrases from source notes verbatim before adding any surrounding prose.",
+  "For summary.md tasks, prefer one compact heading followed by one bullet for each source-note bullet in the snapshot.",
+  "Use source notes as facts; do not summarize the README or task instructions as if they were source facts.",
+  "For report headings, use the workspace README H1 exactly when a README H1 is present.",
+  "If a source note contains a short bullet phrase, include that exact phrase instead of replacing it with synonyms.",
   "If a source line starts with '- ', copy the important text after '- ' exactly as written, including lowercase letters and punctuation.",
   "Do not invent details, metrics, support contacts, headings, or risks that are not present in the snapshot.",
   "Use relative paths inside the current workspace. Do not use absolute paths or parent directories.",
@@ -1414,10 +1419,33 @@ function opencodeFileOutputBenchmarkPrompt(taskPrompt: string, workspace: string
     ...OPENCODE_FILE_OUTPUT_TASK_INSTRUCTIONS,
     ...(retryFeedback ? ["", retryFeedback] : []),
     "",
+    opencodeFileOutputHints(taskPrompt, workspace),
+    "",
     taskPrompt,
     "",
     workspaceSnapshotForPrompt(workspace)
   ].join("\n");
+}
+
+function opencodeFileOutputHints(taskPrompt: string, workspace: string): string {
+  const hints: string[] = [];
+  const outputFile = outputFileFromTaskPrompt(taskPrompt);
+  if (outputFile) hints.push(`Use this exact output file path: ${outputFile}`);
+  const readmeHeading = readmeHeadingFromWorkspace(workspace);
+  if (readmeHeading) hints.push(`Use this exact report heading from README.md: ${readmeHeading}`);
+  return hints.length > 0 ? ["Detected file-output hints:", ...hints].join("\n") : "Detected file-output hints: none";
+}
+
+function outputFileFromTaskPrompt(taskPrompt: string): string | undefined {
+  const match = /\bwrite\s+([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)\b/i.exec(taskPrompt);
+  return match?.[1];
+}
+
+function readmeHeadingFromWorkspace(workspace: string): string | undefined {
+  const readme = join(workspace, "README.md");
+  if (!existsSync(readme)) return undefined;
+  const match = /^#\s+(.+?)\s*$/m.exec(readFileSync(readme, "utf8"));
+  return match?.[1];
 }
 
 const OPENCODE_RETRY_FEEDBACK_MAX_CHARS = 10_000;
@@ -1433,6 +1461,8 @@ function opencodeRetryFeedback(context: {
     "Do not edit tests, package metadata, or verifier files to satisfy failing assertions unless the task explicitly asks for that.",
     "If the verifier rejected the previous implementation, do not return the same implementation again; make a material source-code change.",
     "When an assertion shows actual and expected values, change the implementation so the actual value becomes the expected value.",
+    "If the verifier says missing expected content, include that missing phrase literally in the corrected file content.",
+    "If verification fails without a detailed message, re-check that the exact output filename requested by the task exists in the files map.",
     `Failure: ${limitPromptText(context.errorMessage, 1_500)}`
   ];
   if (context.verifier) {

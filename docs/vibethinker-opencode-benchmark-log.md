@@ -274,3 +274,67 @@ pgrep -af 'opencode run|serve_gateway|local_opencode_gateway|uvicorn|python3 scr
 
 - Result: Smith passed `213` tests across `13` files; local-opencode passed `9` tests.
 - Process state: the managed gateway was stopped after experiments; no `opencode run` or gateway process remained.
+
+## Continued Reliability Iteration - 2026-06-17
+
+### LocalLLaMA Notes Checked
+
+- VibeThinker-3B is presented as a small verifiable-reasoning model with strong benchmark claims, but the LocalLLaMA thread also reports chat-template parsing trouble around `<think></think>` output: <https://www.reddit.com/r/LocalLLaMA/comments/1u7d2ga/a_3b_model_with_943_score_on_aime_2026/>
+- A reliable function-calling discussion recommends building a test suite first and validating/retrying when a model fails to perform the requested action: <https://www.reddit.com/r/LocalLLaMA/comments/1j21koe/reliable_function_calling/>
+- Qwen coder threads emphasize avoiding repetition penalties above `1` and using lower temperatures for coding-model experiments: <https://www.reddit.com/r/LocalLLaMA/comments/1gpwrq1/how_to_use_qwen25coderinstruct_without/> and <https://www.reddit.com/r/LocalLLaMA/comments/1r3aod7/qwen3_coder_next_loop_fix/>
+- Some Qwen thinking-mode advice warns that greedy decoding can hurt quality, so `temperature=0.6`, `top_p=0.95`, `top_k=20`, `min_p=0`, and repeat penalty `1` was also tested: <https://www.reddit.com/r/LocalLLaMA/comments/1re1b4a/you_can_use_qwen35_without_thinking/>
+
+### Changes Added
+
+- Added Smith `--opencode-retries <count>` for file-output mode. On verifier or JSON-parse failure, Smith reruns OpenCode with bounded feedback from the failed attempt.
+- Added detected file-output hints:
+  - exact output filename from `Task.md`, such as `audit.md`
+  - exact README H1 for report headings, such as `Runtime Config`
+- Tightened file-output report prompting:
+  - copy one bullet per source-note bullet
+  - keep exact casing and identifiers
+  - use README H1 as the report heading when present
+- Added gateway sampling controls and logging:
+  - `VIBETHINKER_TEMPERATURE`
+  - `VIBETHINKER_TOP_P`
+  - `VIBETHINKER_TOP_K`
+  - `VIBETHINKER_MIN_P`
+  - `VIBETHINKER_REPEAT_PENALTY`
+
+### Sampling Experiments
+
+- Stable reporting profile:
+
+```sh
+taskset -c 0,1 env \
+  OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 NUMEXPR_NUM_THREADS=2 \
+  VIBETHINKER_FORWARD_TOOLS=false \
+  VIBETHINKER_RESPONSE_FORMAT=json_object \
+  VIBETHINKER_TEMPERATURE=0.2 \
+  VIBETHINKER_TOP_P=0.95 \
+  VIBETHINKER_TOP_K=40 \
+  VIBETHINKER_MIN_P=0.05 \
+  VIBETHINKER_REPEAT_PENALTY=1 \
+  VIBETHINKER_DEFAULT_MAX_TOKENS=512 \
+  VIBETHINKER_MAX_TOKENS=512 \
+  VIBETHINKER_N_THREADS=2 \
+  VIBETHINKER_N_CTX=8192 \
+  VIBETHINKER_LOG_COMPLETIONS=true \
+  python3 scripts/serve_gateway.py
+```
+
+- `temperature=0`, `top_p=1`, `repeat_penalty=1` did not fix `011-parse-port-default`; the model repeated `Number(value) || 3000`.
+- `temperature=0.6`, `top_p=0.95`, `top_k=20`, `min_p=0`, `repeat_penalty=1` also did not fix `011`, and regressed `001-release-note-summary` by summarizing task instructions instead of copying source-note facts.
+- Decision: keep the stable reporting profile above for this CPU-only setup.
+
+### Latest Reporting Results
+
+- `001-release-note-summary`: passed first attempt in `31660ms`; log `/tmp/smith-vibethinker/2026-06-17T05-49-47-045Z-opencode-001-release-note-summary.json`.
+- `002-config-inventory`: initially failed by writing `summary.md`, then by missing the README H1. After detected hints, passed first attempt in `33342ms`; log `/tmp/smith-vibethinker/2026-06-17T05-56-07-513Z-opencode-002-config-inventory.json`.
+- `003-incident-timeline`: passed first attempt in `33715ms`; log `/tmp/smith-vibethinker/2026-06-17T05-50-34-060Z-opencode-003-incident-timeline.json`.
+- `004-api-surface-report`: passed first attempt in `32858ms`; log `/tmp/smith-vibethinker/2026-06-17T05-56-51-976Z-opencode-004-api-surface-report.json`.
+
+### Current Boundary
+
+- `011-parse-port-default` remains unsatisfying for this model and integration. The retry loop worked mechanically, and verifier feedback included `3000 !== 0`, but the model kept returning the same `Number(value) || 3000` implementation and often included test files despite instructions.
+- Recommended use: score this VibeThinker/OpenCode path on inspection/reporting tasks first. Treat code-fix tasks as out of scope until the model can make material implementation changes after verifier feedback.
