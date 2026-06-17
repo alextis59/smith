@@ -124,6 +124,11 @@ export const OPENCODE_FILE_OUTPUT_TASK_INSTRUCTIONS = [
   "Include every file that must be created or changed. Do not include unchanged files.",
   "When changing existing source files, use the exact relative path shown in the snapshot; do not create root-level copies.",
   "Do not include test files, fixtures, or verifier files unless the task explicitly asks to change them.",
+  "For code fixes, treat detected test expectations as hard requirements and change implementation files so those expectations pass.",
+  "If the task says to fix a bug, assume the current implementation is intentionally wrong; do not return it unchanged.",
+  "For parser or default-value fixes, handle missing input separately from valid parsed values.",
+  "Do not use truthiness-based defaults when tests expect falsy values such as 0, false, or an empty string to be preserved.",
+  "When tests contain assert.throws expectations, add validation paths in implementation code that throw for those inputs.",
   "Preserve exact wording, casing, identifiers, and version labels from the workspace snapshot for concrete facts.",
   "For reports or summaries, copy the important bullet phrases from source notes verbatim before adding any surrounding prose.",
   "For summary.md tasks, prefer one compact heading followed by one bullet for each source-note bullet in the snapshot.",
@@ -1433,6 +1438,11 @@ function opencodeFileOutputHints(taskPrompt: string, workspace: string): string 
   if (outputFile) hints.push(`Use this exact output file path: ${outputFile}`);
   const readmeHeading = readmeHeadingFromWorkspace(workspace);
   if (readmeHeading) hints.push(`Use this exact report heading from README.md: ${readmeHeading}`);
+  const testExpectations = testExpectationsFromWorkspace(workspace);
+  if (testExpectations.length > 0) {
+    hints.push("Implement source files so these detected test expectations pass:");
+    hints.push(...testExpectations.map((expectation) => `- ${expectation}`));
+  }
   return hints.length > 0 ? ["Detected file-output hints:", ...hints].join("\n") : "Detected file-output hints: none";
 }
 
@@ -1448,6 +1458,26 @@ function readmeHeadingFromWorkspace(workspace: string): string | undefined {
   return match?.[1];
 }
 
+function testExpectationsFromWorkspace(workspace: string): string[] {
+  const expectations: string[] = [];
+  for (const file of listWorkspaceTextFiles(workspace)) {
+    if (!looksLikeJsTestFile(file)) continue;
+    const content = readFileSync(join(workspace, file), "utf8");
+    for (const rawLine of content.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!/^(assert\.|expect\()/.test(line)) continue;
+      expectations.push(`${file}: ${line}`);
+      if (expectations.length >= 12) return expectations;
+    }
+  }
+  return expectations;
+}
+
+function looksLikeJsTestFile(file: string): boolean {
+  const name = basename(file);
+  return name === "test.js" || name.endsWith(".test.js") || file.startsWith("tests/");
+}
+
 const OPENCODE_RETRY_FEEDBACK_MAX_CHARS = 10_000;
 
 function opencodeRetryFeedback(context: {
@@ -1456,15 +1486,20 @@ function opencodeRetryFeedback(context: {
   opencodeStderr: string;
   verifier?: BenchmarkVerifierResult;
 }): string {
+  const textOutput = opencodeTextOutput(context.opencodeStdout);
   const sections = [
     "Previous attempt failed. Use this feedback to return a corrected JSON files map. Keep unchanged files out of the map.",
     "Do not edit tests, package metadata, or verifier files to satisfy failing assertions unless the task explicitly asks for that.",
     "If the verifier rejected the previous implementation, do not return the same implementation again; make a material source-code change.",
+    "If a bug-fix task keeps failing with the same implementation, replace the implementation instead of copying it.",
     "When an assertion shows actual and expected values, change the implementation so the actual value becomes the expected value.",
+    "When the expected value is falsy, such as 0, false, or an empty string, avoid fallback logic that replaces it.",
     "If the verifier says missing expected content, include that missing phrase literally in the corrected file content.",
     "If verification fails without a detailed message, re-check that the exact output filename requested by the task exists in the files map.",
     `Failure: ${limitPromptText(context.errorMessage, 1_500)}`
   ];
+  const diagnostics = opencodeDiagnosticFeedback({ verifier: context.verifier, previousTextOutput: textOutput });
+  if (diagnostics.length > 0) sections.push("Diagnostics:", ...diagnostics);
   if (context.verifier) {
     sections.push(
       "Verifier stdout:",
@@ -1473,7 +1508,6 @@ function opencodeRetryFeedback(context: {
       limitPromptText(context.verifier.stderr || "(empty)", 3_000)
     );
   }
-  const textOutput = opencodeTextOutput(context.opencodeStdout);
   if (textOutput) {
     sections.push("Previous JSON/text output:", limitPromptText(textOutput, 2_000));
   }
@@ -1481,6 +1515,26 @@ function opencodeRetryFeedback(context: {
     sections.push("OpenCode stderr:", limitPromptText(context.opencodeStderr, 1_000));
   }
   return limitPromptText(sections.join("\n"), OPENCODE_RETRY_FEEDBACK_MAX_CHARS);
+}
+
+function opencodeDiagnosticFeedback(context: { verifier?: BenchmarkVerifierResult; previousTextOutput: string }): string[] {
+  const diagnostics: string[] = [];
+  const verifierText = `${context.verifier?.stdout ?? ""}\n${context.verifier?.stderr ?? ""}`;
+  if (/\|\|/.test(context.previousTextOutput) && /!==\s*(0|false|""|'')/.test(verifierText)) {
+    diagnostics.push(
+      "The previous output used a truthiness fallback (`||`) while the verifier expected a falsy value. Replace that with explicit missing-value/default logic."
+    );
+  }
+  if (/"(?:[^"]*\/)?(?:test\.js|[^"\/]+\.test\.js)"\s*:/.test(context.previousTextOutput)) {
+    diagnostics.push("The previous output included a test file. Return only implementation files unless the task explicitly requests test edits.");
+  }
+  if (/Missing expected exception/.test(verifierText)) {
+    const expected = /expected:\s*(\/[^/]+\/)/.exec(verifierText)?.[1];
+    diagnostics.push(
+      `The verifier expected an exception${expected ? ` matching ${expected}` : ""}. Add explicit validation that throws for every assert.throws case.`
+    );
+  }
+  return diagnostics;
 }
 
 function appendAttemptOutput(current: string, label: string, output: string): string {
@@ -1547,11 +1601,14 @@ function applyOpencodeFileOutput(workspace: string, stdout: string): string[] {
   }
 
   const written: string[] = [];
-  for (const [filePath, content] of Object.entries(parsed.files as Record<string, unknown>)) {
+  const entries = Object.entries(parsed.files as Record<string, unknown>);
+  const hasImplementationEntry = entries.some(([filePath]) => !looksLikeProtectedTestPath(filePath));
+  for (const [filePath, content] of entries) {
     if (typeof content !== "string") {
       throw new Error(`opencode file-output content for ${filePath} must be a string`);
     }
     const safePath = safeWorkspaceRelativePath(filePath);
+    if (hasImplementationEntry && looksLikeProtectedTestPath(safePath)) continue;
     const target = join(workspace, safePath);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, content, "utf8");
@@ -1561,6 +1618,12 @@ function applyOpencodeFileOutput(workspace: string, stdout: string): string[] {
     throw new Error("opencode file-output mode returned an empty files map");
   }
   return written;
+}
+
+function looksLikeProtectedTestPath(filePath: string): boolean {
+  const normalized = normalize(filePath);
+  const name = basename(normalized);
+  return name === "test.js" || name.endsWith(".test.js") || normalized.startsWith(`tests/`);
 }
 
 function opencodeTextOutput(stdout: string): string {

@@ -338,3 +338,33 @@ taskset -c 0,1 env \
 
 - `011-parse-port-default` remains unsatisfying for this model and integration. The retry loop worked mechanically, and verifier feedback included `3000 !== 0`, but the model kept returning the same `Number(value) || 3000` implementation and often included test files despite instructions.
 - Recommended use: score this VibeThinker/OpenCode path on inspection/reporting tasks first. Treat code-fix tasks as out of scope until the model can make material implementation changes after verifier feedback.
+
+## Code-Fix Guardrail Iteration - 2026-06-17
+
+### Changes Added
+
+- Added compact test-expectation hints for JavaScript benchmark workspaces. Smith now extracts assertion lines from `test.js`, `*.test.js`, and `tests/` files and includes them in the file-output prompt.
+- Added code-fix prompt rules:
+  - bug-fix task snapshots may contain intentionally wrong code
+  - do not return the implementation unchanged
+  - handle parser/default cases with explicit missing-value logic
+  - add throw paths for `assert.throws` expectations
+- Added retry diagnostics:
+  - flag `||` fallback when the verifier expected a falsy value
+  - flag test-file output in the previous JSON map
+  - flag missing expected exceptions
+- Added a write guard: if OpenCode returns both implementation files and test files, Smith applies the implementation files and skips the test-file writes. This keeps retries focused on source failures instead of corrupting the verifier input.
+
+### Latest Code-Fix Results
+
+- `011-parse-port-default` with `--opencode-retries 2`:
+  - One run improved from `Number(value) || 3000` to preserving `"0"`, but still failed to implement the `assert.throws` cases; log `/tmp/smith-vibethinker/2026-06-17T06-12-44-923Z-opencode-011-parse-port-default.json`.
+  - A later run regressed to `if (!Number(value)) return 3000`, again failing the `"0"` expectation; log `/tmp/smith-vibethinker/2026-06-17T06-16-04-819Z-opencode-011-parse-port-default.json`.
+- `013-duration-formatting` with `--opencode-retries 2`:
+  - Failed after three attempts; the model repeated `Math.round(ms / 1000) + "s"` and did not infer the millisecond/minute formatting rules from the extracted assertions.
+  - Log `/tmp/smith-vibethinker/2026-06-17T06-18-54-398Z-opencode-013-duration-formatting.json`.
+
+### Updated Boundary
+
+- The added guardrails improve failure quality by protecting tests and making retry feedback more specific, but they do not make VibeThinker-3B reliable for code-fix tasks through this OpenCode file-output path.
+- Reporting/extraction tasks remain the satisfying target class for this setup. Code-fix scoring should stay disabled or separately labeled as experimental until the model can consistently synthesize new implementation logic from assertions.
